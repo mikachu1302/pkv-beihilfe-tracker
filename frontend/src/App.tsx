@@ -42,26 +42,59 @@ export function useInboxChanged(): () => void {
 }
 
 const NAV = [
-    ["/dashboard", "Dashboard"],
-    ["/posteingang", "Posteingang"],
-    ["/rechnungen", "Rechnungen"],
-    ["/rechnung/neu", "Neue Rechnung"],
-    ["/jahre", "Alle Jahre"],
-    ["/import", "Import"],
-    ["/einstellungen", "Einstellungen"],
+    ["/dashboard", "Dashboard", "dashboard"],
+    ["/posteingang", "Posteingang", "inbox"],
+    ["/rechnungen", "Rechnungen", "list"],
+    ["/rechnung/neu", "Neue Rechnung", "plus"],
+    ["/jahre", "Alle Jahre", "chart"],
+    ["/import", "Import", "import"],
+    ["/einstellungen", "Einstellungen", "settings"],
 ] as const;
+
+const NAV_KEY = "pkv.navCollapsed";
+
+/** Whether the menu is collapsed to icons; remembered on this device. */
+function useNavCollapsed(): [boolean, (v: boolean) => void] {
+    const [collapsed, setCollapsed] = useState(() => {
+        try {
+            return localStorage.getItem(NAV_KEY) === "1";
+        } catch {
+            return false;
+        }
+    });
+    const set = (v: boolean) => {
+        setCollapsed(v);
+        try {
+            localStorage.setItem(NAV_KEY, v ? "1" : "0");
+        } catch {
+            // not remembered – fine
+        }
+    };
+    return [collapsed, set];
+}
 
 function Layout({status, children}: {status: StatusDTO; children: ReactNode}) {
     const {dataVersion} = useApp();
     const inbox = useBackend(() => Svc.ListInbox(), [dataVersion]);
     const waiting = inbox.data?.length ?? 0;
+    const [collapsed, setCollapsed] = useNavCollapsed();
     return (
-        <div className="layout">
-            <nav className="sidebar">
-                <div className="brand">PKV · Beihilfe</div>
-                {NAV.map(([to, label]) => (
-                    <NavLink key={to} to={to}>
-                        {label}{to === "/posteingang" && waiting > 0 && <span className="nav-count" aria-label={`${waiting} Belege`}>{waiting}</span>}
+        <div className={`layout ${collapsed ? "nav-collapsed" : ""}`}>
+            <nav className="sidebar" aria-label="Hauptmenü">
+                <div className="brand">
+                    <span className="brand-text">PKV · Beihilfe</span>
+                    <button type="button" className="nav-toggle" aria-expanded={!collapsed}
+                            aria-label={collapsed ? "Menü ausklappen" : "Menü einklappen"}
+                            title={collapsed ? "Menü ausklappen" : "Menü einklappen"}
+                            onClick={() => setCollapsed(!collapsed)}>
+                        <Icon name={collapsed ? "expand" : "collapse"}/>
+                    </button>
+                </div>
+                {NAV.map(([to, label, icon]) => (
+                    <NavLink key={to} to={to} title={collapsed ? label : undefined} aria-label={collapsed ? label : undefined}>
+                        <Icon name={icon}/>
+                        <span className="nav-label">{label}</span>
+                        {to === "/posteingang" && waiting > 0 && <span className="nav-count" aria-label={`${waiting} Belege`}>{waiting}</span>}
                     </NavLink>
                 ))}
                 <div className="nav-foot">
@@ -167,5 +200,25 @@ export default function App() {
                 )}
             </HashRouter>
         </FeedbackProvider>
+    );
+}
+
+const ICONS: Record<string, ReactNode> = {
+    dashboard: <><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>,
+    inbox: <><path d="M3 13h5l1.5 3h5L16 13h5"/><path d="M5.5 5h13L21 13v6H3v-6z"/></>,
+    list: <><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></>,
+    plus: <><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></>,
+    chart: <><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></>,
+    import: <><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v3h16v-3"/></>,
+    settings: <><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></>,
+    collapse: <path d="M15 6l-6 6 6 6"/>,
+    expand: <path d="M9 6l6 6-6 6"/>,
+};
+
+/** Small line icons for the menu (inline SVG, colour from the text). */
+function Icon({name}: {name: string}) {
+    return (
+        <svg className="icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8"
+             strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ICONS[name]}</svg>
     );
 }

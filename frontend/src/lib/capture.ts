@@ -76,7 +76,12 @@ function worker(): Promise<OcrWorker> {
     return started;
 }
 
-async function ocr(canvas: HTMLCanvasElement, page: number, progress?: Progress, signal?: AbortSignal): Promise<TextLine[]> {
+interface OcrResult {
+    lines: TextLine[];
+    confidence: number; // Tesseract's mean word confidence, 0–100
+}
+
+async function ocr(canvas: HTMLCanvasElement, page: number, progress?: Progress, signal?: AbortSignal): Promise<OcrResult> {
     progress?.("Texterkennung wird geladen …");
     const w = await worker();
     signal?.throwIfAborted();
@@ -96,7 +101,36 @@ async function ocr(canvas: HTMLCanvasElement, page: number, progress?: Progress,
             }
         }
     }
-    return lines.filter(l => l.text !== "");
+    return {lines: lines.filter(l => l.text !== ""), confidence: data.confidence ?? 0};
+}
+
+// Below this confidence the page may lie sideways or upside down (a photo
+// without orientation data): the other orientations are tried as well.
+const OCR_RETRY_BELOW = 65;
+const OCR_GOOD = 80;
+
+function rotated(src: HTMLCanvasElement, degrees: 90 | 180 | 270): HTMLCanvasElement {
+    const swap = degrees !== 180;
+    const c = canvasFor(swap ? src.height : src.width, swap ? src.width : src.height);
+    const ctx = c.getContext("2d")!;
+    ctx.translate(c.width / 2, c.height / 2);
+    ctx.rotate((degrees * Math.PI) / 180);
+    ctx.drawImage(src, -src.width / 2, -src.height / 2);
+    return c;
+}
+
+/** OCR in the orientation that reads best. */
+async function ocrUpright(canvas: HTMLCanvasElement, page: number, progress?: Progress, signal?: AbortSignal): Promise<TextLine[]> {
+    let best = await ocr(canvas, page, progress, signal);
+    if (best.confidence >= OCR_RETRY_BELOW) return best.lines;
+    for (const degrees of [90, 270, 180] as const) {
+        signal?.throwIfAborted();
+        progress?.("Bild liegt vermutlich quer – wird gedreht …");
+        const r = await ocr(rotated(canvas, degrees), page, progress, signal);
+        if (r.confidence > best.confidence) best = r;
+        if (best.confidence >= OCR_GOOD) break;
+    }
+    return best.lines;
 }
 
 async function qrCodes(canvas: HTMLCanvasElement): Promise<string[]> {
@@ -165,7 +199,7 @@ function recognizePdf(url: string, progress?: Progress, signal?: AbortSignal): P
                 const canvas = await renderPdfPage(page, scale);
                 out.qr.push(...await qrCodes(canvas));
                 if (needOcr) {
-                    lines = await ocr(canvas, n, progress, signal);
+                    lines = await ocrUpright(canvas, n, progress, signal);
                     out.ocr = true;
                 }
             }
@@ -190,7 +224,7 @@ async function recognizeImage(url: string, progress?: Progress, signal?: AbortSi
     canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     bitmap.close();
     const qr = await qrCodes(canvas);
-    const lines = await ocr(canvas, 1, progress, signal);
+    const lines = await ocrUpright(canvas, 1, progress, signal);
     return {lines, qr, ocr: true};
 }
 

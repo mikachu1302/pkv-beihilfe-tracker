@@ -6,7 +6,7 @@ import {useApp, useInboxChanged} from "../App";
 import {useConfirm, useToast} from "../components/feedback";
 import {Badge, Empty, ErrorNotice, Field, Notice} from "../components/ui";
 import {recognize, renderPdfPreview} from "../lib/capture";
-import {CATEGORY_LABELS, errMsg, eur, plural, toInput} from "../lib/format";
+import {CATEGORY_LABELS, errMsg, eur, plural, toInput, today} from "../lib/format";
 import {useBackend} from "../lib/useBackend";
 import {useDialog} from "../lib/useDialog";
 import RefundReview from "./RefundReview";
@@ -293,7 +293,7 @@ function InboxItem({item, payers, onDone, onDiscard}: {item: InboxItemDTO; payer
                 {status && <p className="muted small" role="status">{status}</p>}
                 {error && <Notice kind="warn">{error} Die Felder lassen sich von Hand ausfüllen.</Notice>}
                 {review && <RefundReview inboxName={item.name} initial={review} payers={payers} onDone={onDone} onDiscard={onDiscard}/>}
-                {!review && (analysis?.notes ?? []).map(n => <Notice key={n} kind="warn">{n}</Notice>)}
+                {!review && (analysis?.notes ?? []).map(n => <Notice key={n} kind={n.startsWith("Rezept erkannt –") ? undefined : "warn"}>{n}</Notice>)}
                 {!review && draft && (
                     <>
                         <div className="grid" style={{marginTop: 8}}>
@@ -326,6 +326,17 @@ function InboxItem({item, payers, onDone, onDiscard}: {item: InboxItemDTO; payer
                             </Field>
                             <Field label="IBAN" htmlFor="ib-iban" hint={src("iban")}>
                                 <input id="ib-iban" value={draft.iban} onChange={e => set({iban: e.target.value})}/>
+                            </Field>
+                            <Field label="Bezahlt" htmlFor="ib-paid" hint={draft.paid.done ? "z. B. an der Apothekenkasse" : undefined}>
+                                <span className="inline">
+                                    <input id="ib-paid" type="checkbox" checked={draft.paid.done}
+                                           onChange={e => set({paid: {...draft.paid, done: e.target.checked,
+                                               date: e.target.checked ? draft.paid.date || draft.invoiceDate || today() : ""}})}/>
+                                    {draft.paid.done && (
+                                        <input type="date" aria-label="Bezahlt am" value={draft.paid.date}
+                                               onChange={e => set({paid: {...draft.paid, date: e.target.value}})}/>
+                                    )}
+                                </span>
                             </Field>
                         </div>
                         <div className="actions">

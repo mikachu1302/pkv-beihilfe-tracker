@@ -57,6 +57,22 @@ describe("Inbox", () => {
         expect(sent).toMatchObject({provider: "Dr. med. Anna Muster", amount: "290,00", iban: "DE89370400440532013000"});
     });
 
+    it("takes over \"bezahlt\" for a prescription and lets the user change it", async () => {
+        const user = userEvent.setup();
+        const rx = {...draft, provider: "Linden-Apotheke", category: "apotheke", amount: "31.40", invoiceDate: "2026-03-14",
+            paid: {done: true, date: "2026-03-14", note: ""}};
+        svc.AnalyzeDocument.mockResolvedValue({...analysis(), draft: {invoice: rx, view: invoiceRow("", rx.provider)},
+            notes: ["Rezept erkannt – an der Apotheke bezahlt"]});
+        svc.CreateInvoiceFromInbox.mockResolvedValue({invoice: {...rx, id: "x"}, view: invoiceRow("x", rx.provider, {year: 2026})});
+        renderAt("/", "/", <Inbox/>);
+        expect(await screen.findByText("Rezept erkannt – an der Apotheke bezahlt")).toBeInTheDocument();
+        expect(screen.getByLabelText("Bezahlt")).toBeChecked();
+        expect(screen.getByLabelText("Bezahlt am")).toHaveValue("2026-03-14");
+        await user.click(screen.getByRole("button", {name: "Als Rechnung speichern"}));
+        await waitFor(() => expect(svc.CreateInvoiceFromInbox).toHaveBeenCalled());
+        expect(svc.CreateInvoiceFromInbox.mock.calls[0][1]).toMatchObject({paid: {done: true, date: "2026-03-14"}});
+    });
+
     it("opens the review for a refund document", async () => {
         svc.AnalyzeDocument.mockResolvedValue(analysis("refund"));
         svc.AnalyzeRefund.mockResolvedValue({payerId: "bh", date: "2026-04-28", applicationDate: "", payoutDate: "", paidOut: "",

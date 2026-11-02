@@ -342,6 +342,17 @@ into the repo.
 - Recognition labels match at the start of a word ("Datum" but not "Geburtsdatum"); a position
   line that mentions "Kürzung" stays a position; "GebüH" (Heilpraktiker) is not confused with the
   "Gebührenordnung für Ärzte".
+- Photos taken sideways: when Tesseract's confidence is below 65, the image is also read turned
+  by 90°, 270° and 180°, and the best reading is used.
+- Prescriptions (Privatrezept with the pharmacy imprint) are recognised by the IK number
+  ("+1234567+"), PZN lines (PZN, quantity, price in cents) and the date as DDMMYY: the printed
+  total (else the sum of the prices), the date, the pharmacy's short name ("Linden-Apo" →
+  "Linden-Apotheke"), category Apotheke, and "bezahlt" on that date (paid at the counter).
+- Provider names are cleaned of OCR junk ("SYNLAB\/" → "SYNLAB"); label lines ("Ärztliche
+  Leitung:") are skipped; a name with a legal form (GmbH, eG, e. K. …) wins, also inside a long
+  sender line. An invoice number label without a number ("Rechnungsnummer | Datum" table header)
+  takes the number from the line below.
+- The menu can be collapsed to icons (remembered per device), so wide tables fit.
 - Verified end to end: a made-up Beihilfebescheid photo for three demo invoices was recognised,
   all three lines matched "sicher", checksum correct, refunds booked with the notice linked.
 - **M6:** Excel export (`internal/export`): sheets Rechnungen (SOLL/IST, status and dates per

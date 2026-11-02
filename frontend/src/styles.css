@@ -57,19 +57,30 @@ html, body {
 
 .sidebar {
   width: 200px;
+  transition: width .15s ease;
   flex: none;
   background: var(--nav);
   display: flex;
   flex-direction: column;
   padding: 16px 0;
 }
-.sidebar .brand { color: var(--nav-active); font-weight: 700; font-size: 16px; padding: 0 20px 16px; }
+.sidebar .brand { color: var(--nav-active); font-weight: 700; font-size: 16px; padding: 0 8px 16px 20px;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
 .sidebar a {
   color: var(--nav-text);
   text-decoration: none;
-  padding: 8px 20px;
+  padding: 8px 20px 8px 17px;
   border-left: 3px solid transparent;
+  display: flex; align-items: center; gap: 10px; white-space: nowrap;
 }
+.sidebar .icon { flex: none; }
+.nav-toggle { background: none; border: none; color: var(--nav-text); padding: 4px; border-radius: 6px; cursor: pointer; display: grid; place-items: center; }
+.nav-toggle:hover, .nav-toggle:focus-visible { color: var(--nav-active); background: rgba(255,255,255,.08); }
+.layout.nav-collapsed .sidebar { width: 56px; }
+.layout.nav-collapsed .brand { padding: 0 0 16px; justify-content: center; }
+.layout.nav-collapsed .brand-text, .layout.nav-collapsed .nav-label, .layout.nav-collapsed .nav-foot { display: none; }
+.layout.nav-collapsed .sidebar a { padding: 10px 0 10px 16px; position: relative; }
+.layout.nav-collapsed .nav-count { position: absolute; top: 3px; left: 30px; margin: 0; min-width: 16px; padding: 0 4px; font-size: 10px; }
 .sidebar a:hover { color: var(--nav-active); }
 .sidebar a.active { color: var(--nav-active); border-left-color: var(--accent); background: rgba(255,255,255,.05); }
 .nav-foot { margin-top: auto; padding: 12px 20px 0; color: var(--nav-text); font-size: 11px; opacity: .7; word-break: break-all; }

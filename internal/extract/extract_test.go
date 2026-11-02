@@ -215,3 +215,82 @@ func TestLabelIndex(t *testing.T) {
 		}
 	}
 }
+
+// Pharmacy imprint on a private prescription as OCR reads it through a
+// stamp and a signature (made-up numbers; noise tokens as seen in practice).
+const prescriptionOCR = `
+Sn 000123456
+X 140326 +1234567+
+ss EEE 31,40
+Sn Aßotheke |
+Ka Ye Beispiel e. K. 01234567 1 1790
+Bi / % Mär. 2026 | 07654321 1 1350
+Kg % © A
+DE Linden-Apo 12345`
+
+func TestPrescription(t *testing.T) {
+	d := Analyze(lines(prescriptionOCR), nil, now)
+	if d.Kind != KindInvoice || d.Provider != "Linden-Apotheke" || d.Amount != 3140 || d.InvoiceDate.String() != "2026-03-14" ||
+		d.Paid.String() != "2026-03-14" || d.Category != model.CatPharmacy || len(d.Notes) != 1 {
+		t.Errorf("%+v", d)
+	}
+	// A price misread through the stamp does not matter: the printed total counts.
+	d = Analyze(lines(strings.Replace(prescriptionOCR, "1 1350", "1 1150", 1)), nil, now)
+	if d.Amount != 3140 || len(d.Notes) != 1 {
+		t.Errorf("misread price: %+v", d)
+	}
+	// Without the total: the sum of the prices.
+	d = Analyze(lines(strings.Replace(prescriptionOCR, "ss EEE 31,40\n", "", 1)), nil, now)
+	if d.Amount != 3140 {
+		t.Errorf("sum of prices: %+v", d)
+	}
+	// A cash receipt of a pharmacy is no prescription.
+	if p, ok := prescription(strings.Split("Apotheke am Markt\nPZN 01234567 Ibuprofen 1 x 7,95\nSumme 7,95", "\n"), now); ok {
+		t.Errorf("receipt taken for a prescription: %+v", p)
+	}
+}
+
+// A lab invoice photographed sideways, as OCR reads it after turning it
+// upright: logo with junk characters, labels in the letterhead, invoice
+// number in a table below its header (made-up company and numbers).
+const labOCR = `
+” LABORA\/ SA
+; x A Musterweg 12 |
+; ge Diagnostik. Gute Entscheidung. 12345 Musterstadt
+; Ärztliche Leitung:
+} Dr. Erika Probe |
+4 Fragen zur Rechnung: | En |
+5 Rufnummer: 0800-1234567 |
+- LABORA MVZ Musterstadt GmbH ; Postfach 1234-°°5678 \ Servicezeiten: Mo - Do: 08:00 - 18:00 Uhr
+a RECHNUNG Kopie |
+| Rechnungsnummer Datum A
+© 4400123456789012 (Ar | We
+D = & Leistungsdatum: 03.09.2026
+\ /” Treponema p 1,150 4291 GOÄ 23,46
+Rechnungsbetrag 23,46`
+
+func TestLabInvoiceFromSidewaysPhoto(t *testing.T) {
+	d := Analyze(lines(labOCR), nil, now)
+	if d.Reference != "4400123456789012" {
+		t.Errorf("reference %q", d.Reference)
+	}
+	if d.Provider != "LABORA MVZ Musterstadt GmbH" {
+		t.Errorf("provider %q", d.Provider)
+	}
+	if d.Amount != 2346 || d.ServiceFrom.String() != "2026-09-03" {
+		t.Errorf("%+v", d)
+	}
+}
+
+func TestCleanName(t *testing.T) {
+	for in, want := range map[string]string{
+		`” SYNLAB\/ SA`:         "SYNLAB SA",
+		`| Praxis Dr. Muster |`: "Praxis Dr. Muster",
+		`© © ;`:                 "",
+		`Müller & Partner`:      "Müller & Partner",
+	} {
+		if got := cleanName(in); got != want {
+			t.Errorf("cleanName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

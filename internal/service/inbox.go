@@ -148,7 +148,8 @@ func (s *Service) AnalyzeDocument(in AnalyzeInputDTO) (AnalysisDTO, error) {
 	}
 	d := extract.Analyze(in.Lines, in.QR, s.now())
 	inv := model.Invoice{Provider: d.Provider, Payee: d.Payee, IBAN: d.IBAN, Reference: d.Reference, Category: d.Category,
-		InvoiceDate: d.InvoiceDate, ServiceFrom: d.ServiceFrom, ServiceTo: d.ServiceTo, Amount: d.Amount, Due: d.Due}
+		InvoiceDate: d.InvoiceDate, ServiceFrom: d.ServiceFrom, ServiceTo: d.ServiceTo, Amount: d.Amount, Due: d.Due,
+		Paid: model.Mark{Date: d.Paid}}
 	out := AnalysisDTO{Kind: d.Kind, Draft: s.detail(&data.Settings, &inv), Sources: d.Sources, Notes: d.Notes}
 	if out.Notes == nil {
 		out.Notes = []string{}

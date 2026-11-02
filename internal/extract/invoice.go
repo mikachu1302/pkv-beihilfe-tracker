@@ -52,6 +52,7 @@ type Draft struct {
 	ServiceTo   civil.Date
 	Amount      money.Cents
 	Due         civil.Date
+	Paid        civil.Date // already paid (prescriptions: at the pharmacy counter)
 	// Sources maps field names (provider, amount, invoiceDate, …) to SrcQR/SrcLabel/SrcGuess.
 	Sources map[string]string
 	Notes   []string
@@ -120,6 +121,12 @@ func Analyze(lines []Line, qr []string, now time.Time) Draft {
 		d.Kind = KindRefundDoc
 	case invoice > 0 || len(qr) > 0:
 		d.Kind = KindInvoice
+	}
+	if d.Kind != KindRefundDoc {
+		if p, ok := prescription(text, now); ok {
+			applyPrescription(&d, p)
+			return d
+		}
 	}
 
 	// GiroCode first: amount, IBAN, payee and reference are exact.
@@ -257,11 +264,23 @@ func Analyze(lines []Line, qr []string, now time.Time) Draft {
 		d.Notes = append(d.Notes, "Behandlungsdatum liegt nach dem Rechnungsdatum – bitte prüfen")
 	}
 
-	// Invoice number.
+	// Invoice number: after the label, or – in a table header such as
+	// "Rechnungsnummer | Datum" – in the line below it.
 	if d.Reference == "" {
-		for _, t := range text {
-			if m := numberRe.FindStringSubmatch(t); m != nil {
-				d.Reference = strings.TrimRight(m[1], ".")
+		for i, t := range text {
+			m := numberRe.FindStringSubmatch(t)
+			if m == nil {
+				continue
+			}
+			ref := strings.TrimRight(m[1], ".")
+			if !strings.ContainsAny(ref, "0123456789") { // "Rechnungsnummer Datum"
+				ref = ""
+				if i+1 < len(text) {
+					ref = numberBelow(text[i+1])
+				}
+			}
+			if ref != "" {
+				d.Reference = ref
 				set("reference", SrcLabel)
 				break
 			}
@@ -379,7 +398,7 @@ func largestAmount(text []string) money.Cents {
 // provider picks the most likely name of the practice from the header.
 func provider(lines []Line, text, lower []string) string {
 	type cand struct {
-		i     int
+		name  string
 		score float64
 	}
 	var cands []cand
@@ -388,28 +407,33 @@ func provider(lines []Line, text, lower []string) string {
 		return strings.HasPrefix(l, "herr") || strings.HasPrefix(l, "frau") || strings.HasPrefix(l, "familie")
 	}
 	for i := 0; i < limit; i++ {
-		t, l := text[i], lower[i]
-		if len(t) < 3 || len(t) > 70 || dateRe.MatchString(t) || streetRe.MatchString(t) || strings.ContainsAny(t, "@") {
-			continue
+		t := cleanName(text[i])
+		l := strings.ToLower(t)
+		size := 0.0 // bigger letters in the letterhead
+		if i < len(lines) && lines[i].H > 0 {
+			size = math.Min(lines[i].H*40, 2)
+			if lines[i].Y < 0.2 {
+				size += 0.5
+			}
 		}
-		if strings.HasPrefix(l, "rechnung") || strings.HasPrefix(l, "tel") || strings.Contains(l, "fax") || strings.Contains(l, "www.") ||
-			strings.Contains(l, "iban") || strings.Contains(l, "seite") || salutation(l) || (i > 0 && salutation(lower[i-1])) {
-			continue // header noise, or the patient's name after "Herrn"/"Frau"
+		base := 1.0 - float64(i)*0.03 + size
+		// A company with its legal form names the provider exactly, even
+		// inside a long line ("SYNLAB MVZ Augsburg GmbH ; Postfach …").
+		for _, m := range companyRe.FindAllString(t, -1) {
+			cands = append(cands, cand{strings.TrimSpace(m), base + 3})
 		}
-		score := 1.0 - float64(i)*0.03
+		if len(t) < 3 || len(t) > 70 || dateRe.MatchString(t) || streetRe.MatchString(t) || strings.ContainsAny(t, "@") ||
+			strings.HasSuffix(t, ":") || hasAny(l, headerNoise) || salutation(l) || (i > 0 && salutation(lower[i-1])) {
+			continue // header noise, labels, or the patient's name after "Herrn"/"Frau"
+		}
+		score := base
 		for _, w := range providerWords {
 			if strings.Contains(l, w) {
 				score += 2
 				break
 			}
 		}
-		if i < len(lines) && lines[i].H > 0 {
-			score += math.Min(lines[i].H*40, 2) // bigger letters in the letterhead
-			if lines[i].Y < 0.2 {
-				score += 0.5
-			}
-		}
-		cands = append(cands, cand{i, score})
+		cands = append(cands, cand{t, score})
 	}
 	if len(cands) == 0 {
 		return ""
@@ -423,8 +447,60 @@ func provider(lines []Line, text, lower []string) string {
 		}
 		return 0
 	})
-	return text[cands[0].i]
+	return cands[0].name
 }
+
+var (
+	// companyRe finds a name ending in a legal form.
+	companyRe = regexp.MustCompile(`[\p{Lu}0-9][\p{L}0-9&.\- ]{1,50}\s(?:GmbH|gGmbH|mbH|AG|eG|e\.\s?K\.|KG|OHG|GbR|PartG|PartGmbB)\b`)
+	// headerNoise are words of letterhead lines that never name the provider.
+	headerNoise = []string{"rechnung", "tel.", "telefon", "fax", "www.", "iban", "seite", "leitung", "geschäftsführ", "fragen zur",
+		"servicezeit", "rufnummer", "internet", "kontakt", "postfach", "steuer", "ust-id", "bankverbindung", "kopie", "sprechzeit"}
+	// nameJunk are characters OCR makes of logos, lines and punch holes.
+	nameJunk = `\/|"“”„‚‘’'*°^~#<>{}[]©®™»«_=;`
+)
+
+// cleanName removes what OCR adds around a name: tokens without letters or
+// digits ("|", "©", "\/") and junk characters stuck to words ("SYNLAB\/").
+func cleanName(s string) string {
+	connector := map[string]bool{"&": true, "+": true, "-": true, "–": true}
+	var keep []string
+	for _, w := range strings.Fields(s) {
+		w = strings.Trim(w, nameJunk)
+		if connector[w] && len(keep) > 0 { // "Müller & Partner"
+			keep = append(keep, w)
+			continue
+		}
+		if strings.IndexFunc(w, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) < 0 {
+			continue
+		}
+		keep = append(keep, w)
+	}
+	for len(keep) > 0 && connector[keep[len(keep)-1]] {
+		keep = keep[:len(keep)-1]
+	}
+	return strings.Join(keep, " ")
+}
+
+// numberBelow returns the invoice number in the line under a table header:
+// the first token with at least four digits that is not a date or an amount.
+func numberBelow(line string) string {
+	for _, w := range strings.Fields(line) {
+		w = strings.Trim(w, nameJunk+"(),.:")
+		digits := 0
+		for _, r := range w {
+			if unicode.IsDigit(r) {
+				digits++
+			}
+		}
+		if digits >= 4 && len(w) <= 25 && refTokenRe.MatchString(w) && !dateRe.MatchString(w) && !amountRe.MatchString(w) {
+			return w
+		}
+	}
+	return ""
+}
+
+var refTokenRe = regexp.MustCompile(`(?i)^[A-Z0-9][A-Z0-9/\-.]{3,24}$`)
 
 // labelIndex returns where label starts in line at the beginning of a word
 // ("datum" in "Datum: …", not in "Geburtsdatum"), or -1.
