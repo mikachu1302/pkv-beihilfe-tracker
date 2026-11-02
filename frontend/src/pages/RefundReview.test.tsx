@@ -32,7 +32,7 @@ describe("RefundReview", () => {
     it("shows lines, matches and the checksum, and books the refunds", async () => {
         const user = userEvent.setup();
         const onDone = vi.fn();
-        svc.ConfirmRefund.mockResolvedValue({docId: "d1", invoices: 2, aliases: 1});
+        svc.ConfirmRefund.mockResolvedValue({docId: "d1", invoices: 2, aliases: 1, rebooked: false, warnings: []});
         renderAt("/", "/", <RefundReview inboxName="Bescheid.pdf" initial={review} payers={payers} onDone={onDone} onDiscard={() => {}}/>);
 
         expect(screen.getByLabelText("Zeile 1: Erstattung")).toHaveValue("180,20");
@@ -69,5 +69,45 @@ describe("RefundReview", () => {
         const sent: RefundReviewDTO = svc.ReviewRefund.mock.calls.at(-1)![0];
         expect(sent.lines![0]).toMatchObject({refund: "170,20", edited: true});
         expect(await screen.findByText(/Differenz -10,00 €/)).toBeInTheDocument();
+    });
+
+    it("gives new lines their own stable id", async () => {
+        const user = userEvent.setup();
+        renderAt("/", "/", <RefundReview inboxName="" initial={review} payers={payers} onDone={() => {}} onDiscard={() => {}}/>);
+        await user.click(screen.getByRole("button", {name: "+ Zeile"}));
+        await user.type(screen.getByLabelText("Zeile 3: Leistungserbringer"), "Labor Nord");
+        await waitFor(() => expect(svc.ReviewRefund).toHaveBeenCalled(), {timeout: 2000});
+        const sent: RefundReviewDTO = svc.ReviewRefund.mock.calls.at(-1)![0];
+        const id = sent.lines![2].id;
+        expect(id).toMatch(/^u/);
+        expect(sent.lines!.map(l => l.id)).toEqual(["p1", "p2", id]);
+        expect(sent.lines![2].provider).toBe("Labor Nord");
+
+        await user.click(screen.getByRole("button", {name: "+ Zeile"}));
+        await waitFor(() => expect(svc.ReviewRefund.mock.calls.at(-1)![0].lines).toHaveLength(4), {timeout: 2000});
+        const ids = svc.ReviewRefund.mock.calls.at(-1)![0].lines.map((l: RefundLineDTO) => l.id);
+        expect(ids[2]).toBe(id);
+        expect(new Set(ids).size).toBe(4);
+    });
+
+    it("reads the payout typed the German way", async () => {
+        const user = userEvent.setup();
+        svc.ReviewRefund.mockImplementation(async (r: RefundReviewDTO) => ({...r, checksumOk: false, checksumDiff: "-1014.04"}));
+        renderAt("/", "/", <RefundReview inboxName="" initial={{...review, paidOut: "", checksumOk: false}} payers={payers}
+                                         onDone={() => {}} onDiscard={() => {}}/>);
+        expect(screen.getByText(/Auszahlungsbetrag nicht erkannt/)).toBeInTheDocument();
+        await user.type(screen.getByLabelText("Auszahlung (€)"), "1.234,56");
+        expect(await screen.findByText(/Auszahlung laut Beleg 1\.234,56 €/)).toBeInTheDocument();
+        expect(screen.queryByText(/Auszahlungsbetrag nicht erkannt/)).not.toBeInTheDocument();
+    });
+
+    it("reports a replaced booking and warnings after booking", async () => {
+        const user = userEvent.setup();
+        svc.ConfirmRefund.mockResolvedValue({docId: "d1", invoices: 1, aliases: 0, rebooked: true,
+            warnings: ["Der Beleg konnte nicht verschoben werden"]});
+        renderAt("/", "/", <RefundReview inboxName="Bescheid.pdf" initial={review} payers={payers} onDone={() => {}} onDiscard={() => {}}/>);
+        await user.click(screen.getByRole("button", {name: "Erstattungen übernehmen (1 von 2)"}));
+        expect(await screen.findByText("Erstattungen für 1 Rechnung übernommen. Dieser Bescheid war bereits gebucht – die frühere Buchung wurde ersetzt.")).toBeInTheDocument();
+        expect(screen.getByText("Der Beleg konnte nicht verschoben werden")).toHaveClass("toast", "warn");
     });
 });

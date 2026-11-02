@@ -1,6 +1,6 @@
 import {useEffect, useState} from "react";
 import {Desktop, Svc} from "../api";
-import type {ImportPreviewDTO} from "../api";
+import type {ImportPreviewDTO, ImportRowDTO} from "../api";
 import {useToast} from "../components/feedback";
 import {ErrorNotice, Field, Loading, Notice} from "../components/ui";
 import {date, errMsg, eur, plural} from "../lib/format";
@@ -20,11 +20,11 @@ export default function Import() {
     const [error, setError] = useState("");
     const [busy, setBusy] = useState(false);
 
+    // Preselect the first Beihilfe and PKV once the settings are there.
     useEffect(() => {
-        if (!settings.data) return;
-        setBh(b => b || (beihilfen[0]?.id ?? ""));
-        setPkv(p => p || (pkvs[0]?.id ?? ""));
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        const all = settings.data?.payers ?? [];
+        setBh(b => b || (all.find(x => x.kind === "beihilfe")?.id ?? ""));
+        setPkv(p => p || (all.find(x => x.kind === "pkv")?.id ?? ""));
     }, [settings.data]);
 
     async function choose() {
@@ -68,6 +68,9 @@ export default function Import() {
     if (settings.error) return <ErrorNotice error={settings.error}/>;
     if (!settings.data) return <Loading/>;
     const rows = preview?.rows ?? [];
+    // The import reads every sheet with a table: name the sheet when there is more than one.
+    const sheets = new Set(rows.map(r => r.sheet)).size > 1;
+    const where = (r: ImportRowDTO) => (sheets ? `${r.sheet}, Zeile ${r.row}` : `Zeile ${r.row}`);
     return (
         <>
             <div className="page-head"><h1>Excel importieren</h1></div>
@@ -99,7 +102,7 @@ export default function Import() {
             {preview && (
                 <>
                     <div className="panel">
-                        <strong>{preview.file}</strong> · Blatt „{preview.sheet}“ · {plural(rows.length, "Rechnung", "Rechnungen")}
+                        <strong>{preview.file}</strong> · {sheets ? "Blätter" : "Blatt"} „{preview.sheet}“ · {plural(rows.length, "Rechnung", "Rechnungen")}
                         {" "}({(preview.years ?? []).map(y => `${y.year || "ohne Datum"}: ${y.count}`).join(", ")})
                         {preview.allowances > 0 && <> · {plural(preview.allowances, "Leistung", "Leistungen")} ohne Rechnung</>}
                         {preview.duplicates > 0 && <Notice kind="warn">{plural(preview.duplicates, "Rechnung ist", "Rechnungen sind")} schon vorhanden (gleiches Datum, Betrag und Behandler) und nicht ausgewählt.</Notice>}
@@ -113,14 +116,14 @@ export default function Import() {
                                     <input type="checkbox" aria-label="Alle auswählen" checked={include.size === rows.length}
                                            onChange={() => setInclude(include.size === rows.length ? new Set() : new Set(rows.map(r => r.key)))}/>
                                 </th>
-                                <th>Zeile</th><th>Rechnungsdatum</th><th>Behandler</th><th className="num">Betrag</th><th>Status</th><th>Hinweise</th>
+                                <th>{sheets ? "Blatt / Zeile" : "Zeile"}</th><th>Rechnungsdatum</th><th>Behandler</th><th className="num">Betrag</th><th>Status</th><th>Hinweise</th>
                             </tr>
                             </thead>
                             <tbody>
                             {rows.map(r => (
                                 <tr key={r.key}>
-                                    <td><input type="checkbox" aria-label={`Zeile ${r.row} importieren`} checked={include.has(r.key)} onChange={() => toggle(r.key)}/></td>
-                                    <td className="muted">{r.row}</td>
+                                    <td><input type="checkbox" aria-label={`${where(r)} importieren`} checked={include.has(r.key)} onChange={() => toggle(r.key)}/></td>
+                                    <td className="muted">{sheets ? `${r.sheet} · ${r.row}` : r.row}</td>
                                     <td>{date(r.invoiceDate)}</td>
                                     <td>{r.provider}{r.note && <div className="sub">{r.note}</div>}</td>
                                     <td className="num">{eur(r.amount)}</td>

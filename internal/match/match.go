@@ -79,6 +79,7 @@ const (
 	nearDays      = 3
 	maxCandidates = 5
 	maxGroup      = 4
+	maxPool       = 30
 	groupScore    = scoreAmountExact + scoreDateNear
 )
 
@@ -91,9 +92,15 @@ func Match(lines []Line, invoices []model.Invoice, s *model.Settings, opt Option
 	if opt.AutoMargin == 0 {
 		opt.AutoMargin = 20
 	}
-	aliases := map[string]string{}
+	// One name on a refund document may stand for several providers (a
+	// billing service for several doctors).
+	aliases := map[string]map[string]bool{}
 	for _, a := range s.Aliases {
-		aliases[normalize(a.From)] = normalize(a.To)
+		from := normalize(a.From)
+		if aliases[from] == nil {
+			aliases[from] = map[string]bool{}
+		}
+		aliases[from][normalize(a.To)] = true
 	}
 	var cands []*model.Invoice
 	for i := range invoices {
@@ -138,8 +145,8 @@ func Match(lines []Line, invoices []model.Invoice, s *model.Settings, opt Option
 		}
 	}
 	lineExact, invExact := slices.Clone(lineUsed), slices.Clone(invUsed)
-	groupLines(lines, cands, lineUsed, invUsed, results)
-	groupInvoices(lines, cands, lineUsed, invUsed, results)
+	groupLines(lines, cands, opt.PayerID, lineUsed, invUsed, results)
+	groupInvoices(lines, cands, opt.PayerID, lineUsed, invUsed, results)
 
 	// 1:1 assignment of everything not grouped.
 	var rows, cols []int
@@ -192,7 +199,7 @@ func lead(scores [][]int, i, j int) int {
 	return scores[i][j] - best
 }
 
-func score(l Line, inv *model.Invoice, s *model.Settings, payerID string, aliases map[string]string) (int, bool, []string) {
+func score(l Line, inv *model.Invoice, s *model.Settings, payerID string, aliases map[string]map[string]bool) (int, bool, []string) {
 	if l.Refund > 0 && inv.Amount > 0 && l.Refund > inv.Amount {
 		return 0, false, nil // a refund can never exceed the invoice
 	}
@@ -279,9 +286,18 @@ func dateNear(d civil.Date, inv *model.Invoice) bool {
 	return false
 }
 
-// compatible: a date that could belong to the invoice (used for groups).
-func compatible(d civil.Date, inv *model.Invoice) bool {
-	return d.IsZero() || inv.Matches(d) || dateNear(d, inv)
+// compatible: a line date that could belong to an invoice whose claim
+// towards payer is still open (used for groups). Lines without a date are
+// never grouped: every invoice would be compatible, and searching all
+// subsets of them takes far too long.
+func compatible(d civil.Date, inv *model.Invoice, payer string) bool {
+	if d.IsZero() {
+		return false
+	}
+	if c := inv.Claims[payer]; c.Refunded.Done() || len(c.Refunds) > 0 || c.Skip {
+		return false
+	}
+	return inv.Matches(d) || dateNear(d, inv)
 }
 
 var stopwords = map[string]bool{
@@ -303,7 +319,7 @@ func normalize(s string) string {
 	return strings.Join(out, " ")
 }
 
-func providerSimilarity(name string, inv *model.Invoice, aliases map[string]string) float64 {
+func providerSimilarity(name string, inv *model.Invoice, aliases map[string]map[string]bool) float64 {
 	n := normalize(name)
 	if n == "" {
 		return 0
@@ -314,7 +330,7 @@ func providerSimilarity(name string, inv *model.Invoice, aliases map[string]stri
 		if o == "" {
 			continue
 		}
-		if a, ok := aliases[n]; ok && a == o {
+		if aliases[n][o] {
 			return 1
 		}
 		best = max(best, dice(n, o))
@@ -444,7 +460,7 @@ func hungarian(cost [][]int) []int {
 
 // groupLines finds several unassigned lines that together make up one unassigned invoice
 // (e.g. a dental bill split into fee, material and lab).
-func groupLines(lines []Line, cands []*model.Invoice, lineUsed, invUsed []bool, results []Result) {
+func groupLines(lines []Line, cands []*model.Invoice, payer string, lineUsed, invUsed []bool, results []Result) {
 	for j, inv := range cands {
 		if invUsed[j] || inv.Amount <= 0 {
 			continue
@@ -452,7 +468,7 @@ func groupLines(lines []Line, cands []*model.Invoice, lineUsed, invUsed []bool, 
 		var pool []int
 		var amounts []money.Cents
 		for i, l := range lines {
-			if !lineUsed[i] && l.Billed > 0 && compatible(l.Date, inv) {
+			if !lineUsed[i] && l.Billed > 0 && compatible(l.Date, inv, payer) {
 				pool = append(pool, i)
 				amounts = append(amounts, l.Billed)
 			}
@@ -473,7 +489,7 @@ func groupLines(lines []Line, cands []*model.Invoice, lineUsed, invUsed []bool, 
 }
 
 // groupInvoices finds one unassigned line that covers several unassigned invoices.
-func groupInvoices(lines []Line, cands []*model.Invoice, lineUsed, invUsed []bool, results []Result) {
+func groupInvoices(lines []Line, cands []*model.Invoice, payer string, lineUsed, invUsed []bool, results []Result) {
 	for i, l := range lines {
 		if lineUsed[i] || l.Billed <= 0 {
 			continue
@@ -481,7 +497,7 @@ func groupInvoices(lines []Line, cands []*model.Invoice, lineUsed, invUsed []boo
 		var pool []int
 		var amounts []money.Cents
 		for j, inv := range cands {
-			if !invUsed[j] && inv.Amount > 0 && compatible(l.Date, inv) {
+			if !invUsed[j] && inv.Amount > 0 && compatible(l.Date, inv, payer) {
 				pool = append(pool, j)
 				amounts = append(amounts, inv.Amount)
 			}
@@ -502,8 +518,12 @@ func groupInvoices(lines []Line, cands []*model.Invoice, lineUsed, invUsed []boo
 }
 
 // findSubset returns indices of 2..maxGroup amounts that add up to target
-// (smallest groups first), or nil.
+// (smallest groups first), or nil. Larger pools than maxPool are not
+// searched (the number of subsets grows with the fourth power).
 func findSubset(amounts []money.Cents, target money.Cents) []int {
+	if len(amounts) > maxPool {
+		return nil
+	}
 	for size := 2; size <= maxGroup && size <= len(amounts); size++ {
 		if s := subsetOfSize(amounts, target, size, 0, nil); s != nil {
 			return s

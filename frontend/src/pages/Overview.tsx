@@ -83,7 +83,8 @@ export default function Overview() {
                             </thead>
                             <tbody>
                             {years.map(y => (
-                                <tr key={y.year} className="click" onClick={() => open(y.year)} title="Dashboard dieses Jahres öffnen">
+                                <tr key={y.year} className="click" tabIndex={0} onClick={() => open(y.year)}
+                                    onKeyDown={e => e.key === "Enter" && open(y.year)} title="Dashboard dieses Jahres öffnen">
                                     <td>{y.year === 0 ? "ohne Datum" : y.year}</td>
                                     <td className="num">{y.invoices}</td>
                                     <td className="num">{eur(y.billed)}</td>

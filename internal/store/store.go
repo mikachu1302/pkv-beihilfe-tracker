@@ -23,7 +23,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"maps"
 	"os"
@@ -37,7 +36,10 @@ import (
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/model"
 )
 
-// SchemaVersion is the current record file format.
+// SchemaVersion is the current record file format. Older app versions drop
+// fields they do not know when they save a record, so adding a field to a
+// record type needs a new version: files with a newer version are left alone
+// by older apps (see Load).
 const SchemaVersion = 1
 
 // Names in the data folder.
@@ -68,10 +70,7 @@ var kindDirs = map[Kind]string{
 
 const settingsID = "settings"
 
-var (
-	yearDirRe = regexp.MustCompile(`^\d{4}$`)
-	extRe     = regexp.MustCompile(`^\.[a-z0-9]{1,5}$`)
-)
+var yearDirRe = regexp.MustCompile(`^\d{4}$`)
 
 // ErrNewerSchema means a file was written by a newer version of the app.
 var ErrNewerSchema = errors.New("file was written by a newer app version")
@@ -105,9 +104,10 @@ type Store struct {
 	device string
 	now    func() time.Time
 
-	mu    sync.Mutex
-	paths map[string]string   // record key → path relative to root
-	base  map[string]envelope // record key → version last read or written
+	mu      sync.Mutex
+	paths   map[string]string   // record key → path relative to root
+	base    map[string]envelope // record key → version last read or written
+	blocked map[string]string   // relative path → why the file must not be overwritten
 
 	ownMu sync.Mutex
 	own   map[string]ownStamp // absolute path → state after our last write or removal
@@ -130,7 +130,8 @@ func Open(root, device string) (*Store, error) {
 		}
 	}
 	return &Store{root: root, device: device, now: time.Now,
-		paths: map[string]string{}, base: map[string]envelope{}, own: map[string]ownStamp{}}, nil
+		paths: map[string]string{}, base: map[string]envelope{}, blocked: map[string]string{},
+		own: map[string]ownStamp{}}, nil
 }
 
 // Root returns the data folder.
@@ -145,21 +146,35 @@ type loaded struct {
 
 // Load reads the whole data folder. Conflict copies and records found in more
 // than one place are merged and written back to their canonical file.
+//
+// Files that cannot be read, or that come from a newer app version, are
+// reported and never overwritten: saving a record whose file is one of them
+// fails until the file is fixed. If merging conflict copies fails (a file
+// locked by another program), the merged state is used in memory, the copies
+// stay and the merge is tried again on the next load.
 func (s *Store) Load() (*Data, []Issue, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var issues []Issue
 	groups := map[string][]loaded{}
+	blocked := map[string]string{}
 
-	addFile := func(rel string, required bool) {
+	// inYear: rel is in a year folder, where only records live. In the root
+	// folder only the settings are ours; other JSON files may be the user's.
+	addFile := func(rel string, inYear bool) {
+		required := inYear || rel == SettingsFile
 		env, err := readEnvelope(filepath.Join(s.root, rel))
 		switch {
 		case errors.Is(err, ErrNewerSchema):
-			issues = append(issues, Issue{rel, "Datei stammt von einer neueren App-Version und wird ignoriert"})
+			const text = "Datei stammt von einer neueren App-Version und wird ignoriert"
+			issues = append(issues, Issue{rel, text})
+			blocked[rel] = text
 			return
 		case err != nil:
 			if required {
-				issues = append(issues, Issue{rel, "Datei nicht lesbar: " + err.Error()})
+				text := "Datei nicht lesbar: " + err.Error()
+				issues = append(issues, Issue{rel, text})
+				blocked[rel] = text
 			}
 			return
 		}
@@ -179,7 +194,7 @@ func (s *Store) Load() (*Data, []Issue, error) {
 				return
 			}
 			id = head.ID
-		} else if required {
+		} else if inYear {
 			return // settings only live in the root folder
 		}
 		k := key(env.Type, id)
@@ -195,7 +210,7 @@ func (s *Store) Load() (*Data, []Issue, error) {
 		switch {
 		case strings.HasPrefix(name, "."):
 		case !e.IsDir() && strings.HasSuffix(strings.ToLower(name), ".json"):
-			addFile(name, false) // other JSON files may belong to the user
+			addFile(name, false)
 		case e.IsDir() && yearDirRe.MatchString(name):
 			for _, dir := range kindDirs {
 				files, err := os.ReadDir(filepath.Join(s.root, name, dir))
@@ -214,7 +229,7 @@ func (s *Store) Load() (*Data, []Issue, error) {
 	}
 
 	data := &Data{}
-	s.paths, s.base = map[string]string{}, map[string]envelope{}
+	paths, bases := map[string]string{}, map[string]envelope{}
 	for _, k := range slices.Sorted(maps.Keys(groups)) {
 		g := groups[k]
 		slices.SortFunc(g, func(a, b loaded) int { return strings.Compare(a.path, b.path) })
@@ -232,29 +247,30 @@ func (s *Store) Load() (*Data, []Issue, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		if len(g) > 1 || g[0].path != path {
-			if err := s.write(filepath.Join(s.root, path), env); err != nil {
-				return nil, nil, err
-			}
+		if why, ok := blocked[path]; ok {
+			// The canonical file is unreadable or newer: leave everything as it is.
 			for _, l := range g {
-				if l.path == path {
-					continue
+				issues = append(issues, Issue{l.path, "nicht zusammengeführt, weil " + path + " nicht verwendet werden kann (" + why + ")"})
+			}
+			continue
+		}
+		if len(g) > 1 || g[0].path != path {
+			if text, ok := s.relocate(g, path, env); ok {
+				for _, l := range g {
+					if l.path != path {
+						issues = append(issues, Issue{l.path, text})
+					}
 				}
-				if err := s.remove(filepath.Join(s.root, l.path)); err != nil {
-					return nil, nil, err
-				}
-				text := "Konfliktkopie zusammengeführt"
-				if len(g) == 1 {
-					text = "Datei an den richtigen Ort verschoben: " + path
-				}
-				issues = append(issues, Issue{l.path, text})
+			} else {
+				issues = append(issues, Issue{g[0].path, text})
 			}
 		}
-		s.paths[k], s.base[k] = path, env
+		paths[k], bases[k] = path, env
 		if err := appendRecord(data, env); err != nil {
 			return nil, nil, err
 		}
 	}
+	s.paths, s.base, s.blocked = paths, bases, blocked
 	slices.SortFunc(data.Invoices, func(a, b model.Invoice) int {
 		if c := a.ServiceDate().Compare(b.ServiceDate()); c != 0 {
 			return c
@@ -262,6 +278,35 @@ func (s *Store) Load() (*Data, []Issue, error) {
 		return strings.Compare(a.ID, b.ID)
 	})
 	return data, issues, nil
+}
+
+// relocate writes the merged record env to its canonical path and removes the
+// other files of group g. It returns the text for the issue list and whether
+// it succeeded; on failure the files stay and are merged again next time.
+func (s *Store) relocate(g []loaded, path string, env envelope) (string, bool) {
+	abs := filepath.Join(s.root, path)
+	if err := s.write(abs, env); err != nil {
+		return "Konfliktkopie konnte nicht zusammengeführt werden: " + err.Error(), false
+	}
+	written, _ := os.Stat(abs)
+	for _, l := range g {
+		if l.path == path {
+			continue
+		}
+		other := filepath.Join(s.root, l.path)
+		// On case-insensitive file systems (macOS, Windows) "Einstellungen.json"
+		// is the file just written – removing it would delete the record.
+		if fi, err := os.Stat(other); err == nil && written != nil && os.SameFile(fi, written) {
+			continue
+		}
+		if err := s.remove(other); err != nil {
+			return "Konfliktkopie konnte nicht entfernt werden: " + err.Error(), false
+		}
+	}
+	if len(g) == 1 {
+		return "Datei an den richtigen Ort verschoben: " + path, true
+	}
+	return "Konfliktkopie zusammengeführt", true
 }
 
 // canonical re-encodes data through its Go type (field order, defaults).
@@ -425,6 +470,9 @@ func save[T any](s *Store, kind Kind, id string, rec T) (T, error) {
 	if err != nil {
 		return zero, err
 	}
+	if why, ok := s.blocked[path]; ok {
+		return zero, fmt.Errorf("%s wird nicht überschrieben: %s", path, why)
+	}
 	if err := s.write(filepath.Join(s.root, path), env); err != nil {
 		return zero, err
 	}
@@ -454,19 +502,35 @@ func (s *Store) timestamp(base envelope) string {
 	return t.Format(layout) + "@" + s.device
 }
 
-// AddDocument stores a document under belege/ named by its SHA-256 and returns
-// the file name. Storing the same content twice yields the same name.
-func (s *Store) AddDocument(r io.Reader, ext string) (string, error) {
+// documentExts are the file types kept as documents. Documents are opened
+// with the system's default app, so executables must never get there.
+var documentExts = map[string]bool{
+	".pdf": true, ".jpg": true, ".jpeg": true, ".png": true, ".webp": true, ".gif": true,
+	".bmp": true, ".tif": true, ".tiff": true, ".heic": true, ".heif": true,
+}
+
+// ErrDocumentType means a file is not a PDF or an image.
+var ErrDocumentType = errors.New("unsupported document type")
+
+// DocumentName returns the name AddDocument stores content under: its
+// SHA-256 plus the (lower-case) extension. ext must be a PDF or image type.
+func DocumentName(content []byte, ext string) (string, error) {
 	ext = strings.ToLower(ext)
-	if !extRe.MatchString(ext) {
-		return "", fmt.Errorf("invalid file extension %q", ext)
+	if !documentExts[ext] {
+		return "", fmt.Errorf("%w: %q", ErrDocumentType, ext)
 	}
-	b, err := io.ReadAll(r)
+	sum := sha256.Sum256(content)
+	return hex.EncodeToString(sum[:]) + ext, nil
+}
+
+// AddDocument stores a document under belege/ (see DocumentName) and returns
+// the file name. Storing the same content twice yields the same name.
+func (s *Store) AddDocument(content []byte, ext string) (string, error) {
+	name, err := DocumentName(content, ext)
 	if err != nil {
 		return "", err
 	}
-	sum := sha256.Sum256(b)
-	name := hex.EncodeToString(sum[:]) + ext
+	b := content
 	path := filepath.Join(s.root, DocumentsDir, name)
 	if _, err := os.Stat(path); err == nil {
 		return name, nil
@@ -505,24 +569,42 @@ func (s *Store) ListInbox() ([]InboxFile, error) {
 	return out, nil
 }
 
-// InboxPath returns the full path of an inbox file (the name is reduced to its base).
-func (s *Store) InboxPath(name string) string {
-	return filepath.Join(s.root, InboxDir, filepath.Base(name))
+// ErrInvalidName means a file name is empty, hidden or a path.
+var ErrInvalidName = errors.New("ungültiger Dateiname")
+
+// fileName checks that name is a plain, visible file name.
+func fileName(name string) (string, error) {
+	if name == "" || name != filepath.Base(name) || strings.HasPrefix(name, ".") || strings.ContainsAny(name, `/\`) {
+		return "", fmt.Errorf("%w: %q", ErrInvalidName, name)
+	}
+	return name, nil
 }
+
+// InboxPath returns the full path of an inbox file.
+func (s *Store) InboxPath(name string) (string, error) {
+	name, err := fileName(name)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(s.root, InboxDir, name), nil
+}
+
+// InboxDirPath returns the inbox folder.
+func (s *Store) InboxDirPath() string { return filepath.Join(s.root, InboxDir) }
 
 // AddToInbox writes a file into the inbox folder under a free name and returns it.
 func (s *Store) AddToInbox(name string, data []byte) (string, error) {
-	name = strings.TrimSpace(filepath.Base(name))
-	if name == "" || name == "." || strings.HasPrefix(name, ".") {
+	name = strings.TrimSpace(name[strings.LastIndexAny(name, `/\`)+1:]) // also Windows paths
+	if name == "" || strings.HasPrefix(name, ".") {
 		name = "Beleg" + filepath.Ext(name)
 	}
 	base, ext := strings.TrimSuffix(name, filepath.Ext(name)), filepath.Ext(name)
-	path := s.InboxPath(name)
+	path := filepath.Join(s.InboxDirPath(), name)
 	for i := 2; ; i++ {
 		if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
 			break
 		}
-		path = s.InboxPath(fmt.Sprintf("%s (%d)%s", base, i, ext))
+		path = filepath.Join(s.InboxDirPath(), fmt.Sprintf("%s (%d)%s", base, i, ext))
 	}
 	if err := writeFileAtomic(path, data); err != nil {
 		return "", err
@@ -533,12 +615,20 @@ func (s *Store) AddToInbox(name string, data []byte) (string, error) {
 
 // RemoveFromInbox deletes an inbox file.
 func (s *Store) RemoveFromInbox(name string) error {
-	return s.remove(s.InboxPath(name))
+	path, err := s.InboxPath(name)
+	if err != nil {
+		return err
+	}
+	return s.remove(path)
 }
 
 // DocumentPath returns the full path of a stored document.
-func (s *Store) DocumentPath(name string) string {
-	return filepath.Join(s.root, DocumentsDir, filepath.Base(name))
+func (s *Store) DocumentPath(name string) (string, error) {
+	name, err := fileName(name)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(s.root, DocumentsDir, name), nil
 }
 
 // write stores env at path and remembers the result as our own change.

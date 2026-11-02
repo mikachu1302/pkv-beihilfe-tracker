@@ -40,7 +40,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer func() { _ = os.RemoveAll(cfg) }()
+	cleanup = func() { _ = os.RemoveAll(cfg) }
+	defer cleanup()
 
 	s := service.NewWithConfigDir(cfg)
 	must(s.SetDataDir(dir))
@@ -51,7 +52,7 @@ func main() {
 	check(err)
 	set.Coverage = append(set.Coverage, service.CoverageDTO{From: "2026-01-01", Shares: []service.ShareDTO{
 		{PayerID: set.Payers[0].ID, Rate: "70"}, {PayerID: set.Payers[1].ID, Rate: "30"}}})
-	must(s.SaveSettings(set))
+	must(s.SaveSettings(set, nil))
 	bh, pkv := set.Payers[0].ID, set.Payers[1].ID
 
 	r := rand.New(rand.NewPCG(2026, 11))
@@ -109,8 +110,12 @@ func main() {
 
 func must[T any](_ T, err error) { check(err) }
 
+// cleanup removes the temporary config folder; log.Fatal skips deferred calls.
+var cleanup = func() {}
+
 func check(err error) {
 	if err != nil {
+		cleanup()
 		log.Fatal(err)
 	}
 }

@@ -1,14 +1,12 @@
-# Feel free to remove those if you don't want/need to use them.
-# Make sure to check the documentation at https://nfpm.goreleaser.com
-#
-# The lines below are called `modelines`. See `:help modeline`
+# Linux packages (.deb, .rpm) built by `wails3 task linux:create:deb|rpm`.
+# Documentation: https://nfpm.goreleaser.com
 
 name: "pkv-beihilfe-tracker"
 arch: ${GOARCH}
 platform: "linux"
-version: "0.1.0"
-section: "default"
-priority: "extra"
+version: "0.1.0" # set from the tag by the release workflow
+section: "misc"
+priority: "optional"
 maintainer: "mikachu1302"
 description: "Arztrechnungen, Beihilfe und PKV im Blick"
 vendor: "mikachu1302"
@@ -18,64 +16,27 @@ release: "1"
 
 contents:
   - src: "./bin/pkv-beihilfe-tracker"
-    dst: "/usr/local/bin/pkv-beihilfe-tracker"
-  - src: "./build/appicon.png"
-    dst: "/usr/share/icons/hicolor/128x128/apps/pkv-beihilfe-tracker.png"
+    dst: "/usr/bin/pkv-beihilfe-tracker"
+  - src: "./build/appicon.svg"
+    dst: "/usr/share/icons/hicolor/scalable/apps/pkv-beihilfe-tracker.svg"
   - src: "./build/linux/pkv-beihilfe-tracker.desktop"
     dst: "/usr/share/applications/pkv-beihilfe-tracker.desktop"
 
-# Default dependencies for the GTK4 + WebKitGTK 6.0 stack (Ubuntu 24.04+ / Debian 13+)
-# Built with the gtk3 tag: GTK3 and WebKitGTK 4.1.
+# The app is built with the gtk3 tag: GTK 3 and WebKitGTK 4.1 (Debian/Ubuntu names).
 depends:
   - libgtk-3-0
   - libwebkit2gtk-4.1-0
 
-# Distribution-specific overrides for different package formats
 overrides:
-  # RPM packages for Fedora / RHEL / AlmaLinux / Rocky Linux
-  rpm:
+  rpm: # Fedora, RHEL, AlmaLinux, Rocky Linux
     depends:
       - gtk3
       - webkit2gtk4.1
-
-  # Arch Linux packages
   archlinux:
     depends:
       - gtk3
       - webkit2gtk-4.1
 
-# scripts section to ensure desktop database is updated after install
+# Updates the menu and icon caches after installing.
 scripts:
   postinstall: "./build/linux/nfpm/scripts/postinstall.sh"
-  # You can also add preremove, postremove if needed
-  # preremove: "./build/linux/nfpm/scripts/preremove.sh"
-  # postremove: "./build/linux/nfpm/scripts/postremove.sh"
-
-# If you build your app with -tags gtk3 (legacy WebKit2GTK 4.1 stack — supported through v3.0.x, removed in v3.1),
-# replace the depends/overrides above with these:
-#
-# depends:
-#   - libgtk-3-0
-#   - libwebkit2gtk-4.1-0
-# overrides:
-#   rpm:
-#     depends:
-#       - gtk3
-#       - webkit2gtk4.1
-#   archlinux:
-#     depends:
-#       - gtk3
-#       - webkit2gtk-4.1
-#
-# replaces:
-#   - foobar
-# provides:
-#   - bar
-# recommends:
-#   - whatever
-# suggests:
-#   - something-else
-# conflicts:
-#   - not-foo
-#   - not-bar
-# changelog: "changelog.yaml"

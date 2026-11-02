@@ -34,10 +34,12 @@ type Bundle struct {
 
 // BundleResult reports what went into the PDF.
 type BundleResult struct {
-	Documents int
-	Missing   []string // providers without a readable document
+	Documents int      // documents included (PDFs and photos)
+	Missing   []string // providers of invoices without a document that could be included
 }
 
+// imageExt are the photo types pdfcpu can put on a page. HEIC (iPhone) is
+// not among them; such documents are reported as missing.
 var imageExt = map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".tif": true, ".tiff": true, ".webp": true}
 
 // WriteBundle writes one PDF: a cover page listing the invoices, followed by
@@ -65,18 +67,20 @@ func WriteBundle(b Bundle, out string) (BundleResult, error) {
 				if _, err := os.Stat(doc); err == nil {
 					parts = append(parts, doc)
 					found = true
+					res.Documents++
 				}
 			case imageExt[ext]:
+				// A photo that cannot be converted is left out and the
+				// invoice is reported as missing if nothing else is there.
 				page := filepath.Join(tmp, fmt.Sprintf("%02d-%02d.pdf", i+1, j+1))
 				if err := api.ImportImagesFile(ctx, []string{doc}, page, pdfcpu.DefaultImportConfig(), nil); err == nil {
 					parts = append(parts, page)
 					found = true
+					res.Documents++
 				}
 			}
 		}
-		if found {
-			res.Documents++
-		} else {
+		if !found {
 			res.Missing = append(res.Missing, it.Provider)
 		}
 	}

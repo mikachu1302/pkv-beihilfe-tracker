@@ -224,8 +224,10 @@ func sortPayers(s *model.Settings, ps []PayerYear) {
 	})
 }
 
-// Total sums several years (e.g. for the overview of all years). Year is 0;
-// per-year settings (deductible, BRE comparison) are not summed.
+// Total sums several years (e.g. for the overview of all years). Year is 0.
+// Amounts that result from per-year settings – the annual deduction and the
+// deductible – are summed as well; the BRE comparison is per year and stays
+// empty.
 func Total(s *model.Settings, years []Year) Year {
 	t := Year{}
 	byID := map[string]*PayerYear{}

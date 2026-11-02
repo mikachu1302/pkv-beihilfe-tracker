@@ -1,9 +1,11 @@
 package match
 
 import (
+	"fmt"
 	"math/rand/v2"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/civil"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/model"
@@ -216,4 +218,35 @@ func brute(scores [][]int, minScore, i int, used map[int]bool) int {
 		}
 	}
 	return best
+}
+
+func TestGroupsSkipRefundedInvoices(t *testing.T) {
+	invoices := []model.Invoice{inv("p1", "Apotheke", "2026-05-02", "", "20"), inv("p2", "Apotheke", "2026-05-02", "", "37,60")}
+	invoices[0].Claims = map[string]model.Claim{"bh": {Refunds: []model.Refund{{ID: "r", Amount: eur("14")}}}}
+	r := Match([]Line{{ID: "1", Date: d("2026-05-02"), Billed: eur("57,60")}}, invoices, settings(), Options{PayerID: "bh"})
+	if len(r[0].InvoiceIDs) > 1 {
+		t.Errorf("group with a refunded invoice: %+v", r[0])
+	}
+}
+
+func TestUndatedLineIsFastWithManyInvoices(t *testing.T) {
+	var invoices []model.Invoice
+	for i := range 2000 {
+		invoices = append(invoices, inv(fmt.Sprintf("i%d", i), "Praxis", "2024-01-01", "", fmt.Sprintf("%d,%02d", 10+i%90, i%100)))
+	}
+	start := time.Now()
+	Match([]Line{{ID: "1", Billed: eur("123,45")}, {ID: "2", Billed: eur("99,99")}}, invoices, settings(), Options{PayerID: "bh"})
+	if el := time.Since(start); el > 2*time.Second {
+		t.Errorf("undated lines took %v", el)
+	}
+}
+
+func TestAliasForSeveralProviders(t *testing.T) {
+	s := settings()
+	s.Aliases = []model.Alias{{From: "PVS Süd eG", To: "Dr. Muster"}, {From: "PVS Süd eG", To: "Dr. Anders"}}
+	invoices := []model.Invoice{inv("a", "Dr. Muster", "2026-03-14", "", "100")}
+	r := Match([]Line{{ID: "1", Date: d("2026-03-14"), Provider: "PVS Süd eG", Billed: eur("100")}}, invoices, s, Options{PayerID: "bh"})
+	if len(r[0].Candidates) == 0 || !slices.Contains(r[0].Candidates[0].Reasons, "Name ähnlich") {
+		t.Errorf("first alias lost: %+v", r[0])
+	}
 }

@@ -16,8 +16,9 @@ vars:
   PACKAGE_MANAGER: '{{.PACKAGE_MANAGER | default "npm"}}'
   VITE_PORT: '{{.WAILS_VITE_PORT | default 9246}}'
   EXTRA_TAGS: '{{.EXTRA_TAGS | default (eq OS "linux" | ternary "gtk3" "")}}'
+  # APP_VERSION (set by the release workflow from the tag) wins over git describe.
   VERSION:
-    sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+    sh: echo "${APP_VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
   VERSION_FLAG: '-X github.com/mikachu1302/pkv-beihilfe-tracker/internal/service.Version={{.VERSION}}'
 
 tasks:

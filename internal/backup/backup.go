@@ -11,8 +11,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -41,15 +43,41 @@ func CheckDir(dataDir, backupDir string) error {
 	if backupDir == "" {
 		return errors.New("kein Sicherungsordner gewählt")
 	}
-	d, err1 := filepath.Abs(dataDir)
-	b, err2 := filepath.Abs(backupDir)
+	d, err1 := resolve(dataDir)
+	b, err2 := resolve(backupDir)
 	if err1 != nil || err2 != nil {
 		return errors.Join(err1, err2)
 	}
-	if rel, err := filepath.Rel(d, b); err == nil && (rel == "." || !strings.HasPrefix(rel, "..")) {
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" { // usually case-insensitive
+		d, b = strings.ToLower(d), strings.ToLower(b)
+	}
+	rel, err := filepath.Rel(d, b)
+	if err != nil { // e.g. another drive on Windows
+		return nil
+	}
+	if rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return ErrInsideDataDir
 	}
 	return nil
+}
+
+// resolve returns the absolute path with symbolic links resolved as far as
+// the path exists (the backup folder may not exist yet).
+func resolve(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	var rest []string
+	for p := abs; ; p = filepath.Dir(p) {
+		if resolved, err := filepath.EvalSymlinks(p); err == nil {
+			return filepath.Join(append([]string{resolved}, rest...)...), nil
+		}
+		if filepath.Dir(p) == p {
+			return abs, nil
+		}
+		rest = append([]string{filepath.Base(p)}, rest...)
+	}
 }
 
 // Create writes a snapshot of dataDir (without hidden files) into backupDir
@@ -92,8 +120,13 @@ func Create(dataDir, backupDir string, now time.Time, keep int) (Info, error) {
 
 func writeZip(w io.Writer, dataDir string) error {
 	zw := zip.NewWriter(w)
+	// The sync tool or the app may remove files while the snapshot runs.
+	gone := func(err error) bool { return errors.Is(err, fs.ErrNotExist) }
 	err := filepath.WalkDir(dataDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
+			if gone(err) && path != dataDir {
+				return nil
+			}
 			return err
 		}
 		if path != dataDir && strings.HasPrefix(d.Name(), ".") {
@@ -110,7 +143,9 @@ func writeZip(w io.Writer, dataDir string) error {
 			return err
 		}
 		info, err := d.Info()
-		if err != nil {
+		if gone(err) {
+			return nil
+		} else if err != nil {
 			return err
 		}
 		hdr, err := zip.FileInfoHeader(info)
@@ -119,15 +154,17 @@ func writeZip(w io.Writer, dataDir string) error {
 		}
 		hdr.Name = filepath.ToSlash(rel)
 		hdr.Method = zip.Deflate
+		src, err := os.Open(path)
+		if gone(err) {
+			return nil
+		} else if err != nil {
+			return err
+		}
+		defer src.Close()
 		dst, err := zw.CreateHeader(hdr)
 		if err != nil {
 			return err
 		}
-		src, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer src.Close()
 		_, err = io.Copy(dst, src)
 		return err
 	})

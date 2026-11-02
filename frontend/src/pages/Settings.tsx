@@ -27,16 +27,32 @@ function newPayerID(kind: string, payers: PayerDTO[]): string {
 }
 
 export default function Settings() {
-    const {status, reloadStatus} = useApp();
+    const {status, reloadStatus, dataVersion} = useApp();
     const toast = useToast();
-    const loaded = useBackend(() => Svc.GetSettings(), []);
+    // Loaded again when another device changed the data folder or another folder was chosen.
+    const loaded = useBackend(() => Svc.GetSettings(), [dataVersion, status.dataDir]);
+    // The settings the form is based on (as loaded or last saved), and newer
+    // ones that arrived while the form had unsaved edits.
+    const [base, setBase] = useState<SettingsDTO | null>(null);
+    const [newer, setNewer] = useState<SettingsDTO | null>(null);
+    const [seen, setSeen] = useState<SettingsDTO>();
     const [s, setS] = useState<SettingsDTO | null>(null);
     const [error, setError] = useState("");
     const [warnings, setWarnings] = useState<ProblemDTO[]>([]);
 
-    useEffect(() => {
-        if (loaded.data) setS(forForm(loaded.data));
-    }, [loaded.data]);
+    const edited = s !== null && base !== null && JSON.stringify(s) !== JSON.stringify(forForm(base));
+    const apply = (d: SettingsDTO) => {
+        setBase(d);
+        setS(forForm(d));
+        setNewer(null);
+    };
+    // Fresh settings from the backend replace the form unless it has unsaved
+    // edits – those are kept and the user decides (hint below).
+    if (loaded.data && loaded.data !== seen) {
+        setSeen(loaded.data);
+        if (!edited) apply(loaded.data);
+        else if (JSON.stringify(loaded.data) !== JSON.stringify(base)) setNewer(loaded.data);
+    }
 
     if (loaded.error) return <ErrorNotice error={loaded.error}/>;
     if (!s) return <Loading/>;
@@ -73,8 +89,10 @@ export default function Settings() {
         if (!s) return;
         setError("");
         try {
-            const res = await Svc.SaveSettings(s);
-            setS(forForm(res.settings));
+            // The backend merges: values changed elsewhere since base was loaded are kept
+            // unless this form changed the same value.
+            const res = await Svc.SaveSettings(s, base);
+            apply(res.settings);
             setWarnings(res.problems ?? []);
             toast.show("Einstellungen gespeichert");
             reloadStatus();
@@ -86,8 +104,22 @@ export default function Settings() {
     return (
         <>
             <div className="page-head"><h1>Einstellungen</h1></div>
-            <DataFolder dir={status.dataDir} onChanged={reloadStatus}/>
+            <DataFolder dir={status.dataDir} onChanged={() => {
+                reloadStatus();
+                loaded.reload();
+            }}/>
             <Backups onChanged={reloadStatus}/>
+            {newer && (
+                <Notice kind="warn">
+                    <div className="row">
+                        <span>
+                            Die Einstellungen wurden inzwischen geändert (anderes Gerät oder anderer Datenordner) – neu laden?
+                            „Speichern“ übernimmt nur die hier geänderten Werte, „Neu laden“ verwirft sie.
+                        </span>
+                        <button onClick={() => apply(newer)}>Neu laden</button>
+                    </div>
+                </Notice>
+            )}
             {error && <ErrorNotice error={error}/>}
             {warnings.length > 0 && <Notice kind="warn"><ul>{warnings.map(w => <li key={w.text}>{w.text}</li>)}</ul></Notice>}
 
@@ -184,7 +216,10 @@ export default function Settings() {
 
             <div className="actions">
                 <button className="primary" onClick={save}>Speichern</button>
-                <button onClick={() => loaded.data && setS(forForm(loaded.data))}>Zurücksetzen</button>
+                <button onClick={() => {
+                    const d = newer ?? base;
+                    if (d) apply(d);
+                }}>Zurücksetzen</button>
             </div>
         </>
     );

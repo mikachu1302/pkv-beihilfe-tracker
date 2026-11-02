@@ -22,6 +22,36 @@ export function num(v: string | number | undefined | null): number {
     return Number.isNaN(n) ? 0 : n;
 }
 
+/**
+ * Reads an amount as people write it or OCR returns it – "286,40", "1.234,56 €",
+ * "286.40", "-12,50", "12,50-", "EUR 7" – with the same rules as the backend
+ * (money.Parse): a single "." followed by exactly three digits is a thousands
+ * separator ("1.234" = 1234). NaN if the text is not an amount.
+ */
+export function parseAmount(v: string | number | undefined | null): number {
+    if (typeof v === "number") return v;
+    let s = (v ?? "").trim().replace(/€|EUR|Eur|eur|[\s\u00a0\u202f']/g, "");
+    let neg = false;
+    if (s.startsWith("-")) [neg, s] = [true, s.slice(1)];
+    else if (s.endsWith("-")) [neg, s] = [true, s.slice(0, -1)];
+    else if (s.startsWith("+")) s = s.slice(1);
+    const dot = s.lastIndexOf("."), comma = s.lastIndexOf(",");
+    let int = s, frac = "";
+    if (dot >= 0 && comma >= 0) {
+        const [sep, thousands] = dot > comma ? [dot, ","] : [comma, "."];
+        [int, frac] = [s.slice(0, sep).replaceAll(thousands, ""), s.slice(sep + 1)];
+    } else if (comma >= 0) {
+        if (s.indexOf(",") !== comma) int = s.replaceAll(",", ""); // 1,234,567
+        else [int, frac] = [s.slice(0, comma), s.slice(comma + 1)];
+    } else if (dot >= 0) {
+        if (s.indexOf(".") !== dot || s.length - dot - 1 === 3) int = s.replaceAll(".", "");
+        else [int, frac] = [s.slice(0, dot), s.slice(dot + 1)];
+    }
+    if ((int === "" && frac === "") || !/^\d*$/.test(int) || !/^\d*$/.test(frac)) return NaN;
+    const n = Number(`${int || "0"}.${frac || "0"}`);
+    return neg ? -n : n;
+}
+
 /** CSS class for positive / negative numbers. */
 export function signClass(v: string | number | undefined | null): string {
     const n = num(v);

@@ -3,15 +3,18 @@
 // user editing files – while the app is running. Relevant are record files
 // (*.json) and any file in the inbox folder.
 //
-// It watches the data folder, its year folders and their record folders
-// (fsnotify is not recursive, so new folders are added as they appear),
-// ignores hidden temp files and the app's own writes, and calls onChange
-// once a burst of events has settled.
+// It watches the data folder, the inbox folder, the year folders and their
+// record folders – nothing else, as on macOS every watched folder costs one
+// file descriptor per file in it (fsnotify is not recursive, so new folders
+// are added as they appear). It ignores hidden temp files and the app's own
+// writes, and calls onChange once a burst of events has settled. A year or
+// record folder that is removed or renamed also counts as a change.
 package watch
 
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -69,13 +72,28 @@ func (w *Watcher) Close() error {
 	return err
 }
 
-// addTree watches dir and its sub folders down to the record folders
-// (root = depth 0, year = 1, record folder = 2).
+var yearRe = regexp.MustCompile(`^\d{4}$`)
+
+// wanted reports whether the folder name at depth (root = 0, year or inbox
+// = 1, record folder = 2) is one to watch.
+func wanted(name string, depth int) bool {
+	switch {
+	case hidden(name):
+		return false
+	case depth == 1:
+		return name == InboxDir || yearRe.MatchString(name)
+	case depth == 2:
+		return true // folders inside a year folder: the record folders
+	}
+	return depth == 0
+}
+
+// addTree watches dir and the wanted sub folders below it.
 func (w *Watcher) addTree(dir string, depth int) error {
 	if err := w.fs.Add(dir); err != nil {
 		return err
 	}
-	if depth >= 2 {
+	if depth >= 2 || depth == 1 && filepath.Base(dir) == InboxDir {
 		return nil
 	}
 	entries, err := os.ReadDir(dir)
@@ -83,7 +101,7 @@ func (w *Watcher) addTree(dir string, depth int) error {
 		return err
 	}
 	for _, e := range entries {
-		if e.IsDir() && !hidden(e.Name()) {
+		if e.IsDir() && wanted(e.Name(), depth+1) {
 			if err := w.addTree(filepath.Join(dir, e.Name()), depth+1); err != nil {
 				return err
 			}
@@ -131,13 +149,25 @@ func (w *Watcher) handle(ev fsnotify.Event) {
 	if hidden(name) || ev.Op == fsnotify.Chmod {
 		return
 	}
+	d := w.depth(ev.Name)
 	if ev.Has(fsnotify.Create) {
 		if fi, err := os.Stat(ev.Name); err == nil && fi.IsDir() {
-			if d := w.depth(ev.Name); d <= 2 {
+			if d <= 2 && wanted(name, d) && (d < 2 || yearRe.MatchString(filepath.Base(filepath.Dir(ev.Name)))) {
 				_ = w.addTree(ev.Name, d)
 				// Files may have arrived before the folder was watched.
 				w.note(ev.Name, true)
 			}
+			return
+		}
+	}
+	if ev.Has(fsnotify.Remove) || ev.Has(fsnotify.Rename) {
+		// A year or record folder moved away (to the trash, or renamed by
+		// hand): its records are gone. The app never removes folders.
+		if d == 1 && yearRe.MatchString(name) || d == 2 && yearRe.MatchString(filepath.Base(filepath.Dir(ev.Name))) && filepath.Ext(name) == "" {
+			w.mu.Lock()
+			w.force = true
+			w.mu.Unlock()
+			w.schedule()
 			return
 		}
 	}

@@ -11,10 +11,13 @@ export const testStatus: StatusDTO = {
     issues: [], problems: [], warnings: [],
 };
 
-/** Renders an element inside router, feedback and app-state providers. */
+/**
+ * Renders an element inside router, feedback and app-state providers.
+ * setApp changes the app state of the same tree (e.g. a live update raising dataVersion).
+ */
 export function renderAt(path: string, routePattern: string, element: ReactElement, app?: Partial<AppState>) {
-    const state: AppState = {status: testStatus, reloadStatus: () => {}, year: 2026, setYear: () => {}, dataVersion: 0, ...app};
-    return render(
+    let state: AppState = {status: testStatus, reloadStatus: () => {}, year: 2026, setYear: () => {}, dataVersion: 0, ...app};
+    const tree = () => (
         <FeedbackProvider>
             <AppContext.Provider value={state}>
                 <MemoryRouter initialEntries={[path]}>
@@ -24,6 +27,12 @@ export function renderAt(path: string, routePattern: string, element: ReactEleme
                     </Routes>
                 </MemoryRouter>
             </AppContext.Provider>
-        </FeedbackProvider>,
+        </FeedbackProvider>
     );
+    const result = render(tree());
+    const setApp = (patch: Partial<AppState>) => {
+        state = {...state, ...patch};
+        result.rerender(tree());
+    };
+    return {...result, setApp};
 }

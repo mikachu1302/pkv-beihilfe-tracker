@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=SC1111 # German typographic quotes („…“) in messages are intended
 # Installiert PKV Beihilfe Tracker für den aktuellen Benutzer – ohne Root:
 # Programm nach ~/.local/bin, Eintrag im Anwendungsmenü, Symbol.
 #
@@ -13,7 +14,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 prefix=${PREFIX:-$HOME/.local}
 bin=$prefix/bin/$APP
 desktop=$prefix/share/applications/$APP.desktop
-icon=$prefix/share/icons/hicolor/512x512/apps/$APP.png
+icon=$prefix/share/icons/hicolor/scalable/apps/$APP.svg
 
 refresh() {
 	update-desktop-database "$prefix/share/applications" >/dev/null 2>&1 || true
@@ -27,7 +28,7 @@ if [ "${1:-}" = "--uninstall" ]; then
 	exit 0
 fi
 
-for f in "$APP" "$APP.png" "$APP.desktop"; do
+for f in "$APP" "$APP.svg" "$APP.desktop"; do
 	if [ ! -f "$here/$f" ]; then
 		echo "Datei fehlt: $here/$f – bitte das Archiv vollständig entpacken." >&2
 		exit 1
@@ -37,7 +38,7 @@ done
 mkdir -p "$(dirname "$bin")" "$(dirname "$desktop")" "$(dirname "$icon")"
 cp "$here/$APP" "$bin"
 chmod 755 "$bin"
-cp "$here/$APP.png" "$icon"
+cp "$here/$APP.svg" "$icon"
 chmod 644 "$icon"
 sed -e "s|^Exec=.*|Exec=$bin|" -e "s|^Icon=.*|Icon=$APP|" -e "s|^Name=.*|Name=PKV Beihilfe Tracker|" \
 	"$here/$APP.desktop" >"$desktop"

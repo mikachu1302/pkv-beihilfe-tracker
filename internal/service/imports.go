@@ -20,6 +20,7 @@ type pendingImport struct {
 // ImportRowDTO is one invoice of a spreadsheet preview.
 type ImportRowDTO struct {
 	Key         string   `json:"key"`
+	Sheet       string   `json:"sheet"`
 	Row         int      `json:"row"`
 	Provider    string   `json:"provider"`
 	InvoiceDate string   `json:"invoiceDate"`
@@ -88,17 +89,22 @@ func (s *Service) PreviewSpreadsheet(path, beihilfePayerID, pkvPayerID string) (
 
 	out := ImportPreviewDTO{Token: token, File: filepath.Base(path), Sheet: res.Sheet, Rows: []ImportRowDTO{},
 		Years: []YearCountDTO{}, Allowances: len(res.Allowances), Warnings: len(res.Warnings)}
-	warnings := map[int][]string{}
+	type rowKey struct {
+		sheet string
+		row   int
+	}
+	warnings := map[rowKey][]string{}
 	for _, w := range res.Warnings {
-		warnings[w.Row] = append(warnings[w.Row], w.Text)
+		k := rowKey{w.Sheet, w.Row}
+		warnings[k] = append(warnings[k], w.Text)
 	}
 	years := map[int]int{}
 	for i := range res.Invoices {
 		inv := &res.Invoices[i]
-		row := ImportRowDTO{Key: strconv.Itoa(i), Row: res.Rows[i], Provider: inv.Provider,
+		row := ImportRowDTO{Key: strconv.Itoa(i), Sheet: res.RowSheets[i], Row: res.Rows[i], Provider: inv.Provider,
 			InvoiceDate: inv.InvoiceDate.String(), ServiceDate: inv.ServiceDate().String(), Year: inv.ServiceYear(),
 			Amount: inv.Amount.String(), Note: inv.Note, Status: claimSummary(&data.Settings, inv),
-			Warnings: append([]string{}, warnings[res.Rows[i]]...)}
+			Warnings: append([]string{}, warnings[rowKey{res.RowSheets[i], res.Rows[i]}]...)}
 		for j := range data.Invoices {
 			e := &data.Invoices[j]
 			if !e.Deleted && e.Amount == inv.Amount && e.InvoiceDate.Equal(inv.InvoiceDate) && sameProvider(e.Provider, inv.Provider) {
@@ -170,7 +176,8 @@ func (s *Service) CommitSpreadsheet(token string, keys []string) (ImportResultDT
 		}
 		chosen[i] = true
 	}
-	rows := map[int]bool{}
+	// The records keep the IDs from the preview, so committing again after
+	// an error overwrites instead of duplicating.
 	for i := range p.res.Invoices {
 		if !chosen[i] {
 			out.Skipped++
@@ -181,18 +188,21 @@ func (s *Service) CommitSpreadsheet(token string, keys []string) (ImportResultDT
 			return out, fmt.Errorf("Speichern fehlgeschlagen: %w", err)
 		}
 		replaceInvoice(data, saved)
-		rows[p.res.Rows[i]] = true
 		out.Invoices++
 	}
 	for i, a := range p.res.Allowances {
-		if !rows[p.res.AllowanceRows[i]] {
+		if !chosen[p.res.AllowanceOf[i]] {
 			continue
 		}
 		saved, err := st.SaveAllowance(a)
 		if err != nil {
 			return out, fmt.Errorf("Speichern fehlgeschlagen: %w", err)
 		}
-		data.Allowances = append(data.Allowances, saved)
+		if j := slices.IndexFunc(data.Allowances, func(x model.Allowance) bool { return x.ID == saved.ID }); j >= 0 {
+			data.Allowances[j] = saved
+		} else {
+			data.Allowances = append(data.Allowances, saved)
+		}
 		out.Allowances++
 	}
 	delete(s.pending, token)

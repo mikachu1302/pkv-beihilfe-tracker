@@ -167,3 +167,51 @@ Auszahlungsbetrag                                  40,32`), nil, now)
 		t.Errorf("kind = %s", d.Kind)
 	}
 }
+
+func TestFalsePositivesFromReview(t *testing.T) {
+	// The patient's birth date must not become the invoice date, and the
+	// GOÄ's full name must not make a doctor's invoice a Heilpraktiker one.
+	d := Analyze(lines(`
+Praxis Dr. Beispiel
+Patient: Kind Beispiel, Geburtsdatum: 14.02.2015
+Rechnung nach der Gebührenordnung für Ärzte (GOÄ)
+Rechnungsdatum 20.10.2026
+Behandlung durch Dr. Anna Muster folgende Leistungen:
+12.10.2026  1  Beratung  10,72
+Rechnungsbetrag 10,72
+Steuernr. DE 123 456 789 IBAN DE89 3704 0044 0532 0130 00`), nil, now)
+	if d.InvoiceDate.String() != "2026-10-20" {
+		t.Errorf("invoice date %s", d.InvoiceDate)
+	}
+	if d.Category != model.CatDoctor {
+		t.Errorf("category %q", d.Category)
+	}
+	if d.Provider != "Dr. Anna Muster" {
+		t.Errorf("provider %q", d.Provider)
+	}
+	if d.IBAN != "DE89370400440532013000" {
+		t.Errorf("iban %q", d.IBAN)
+	}
+	if got := category("gebüh-ziffer 4 beratung"); got != model.CatNaturopath {
+		t.Errorf("GebüH: %q", got)
+	}
+	if got := category("versandgebühr 2,50 praxis"); got != model.CatDoctor {
+		t.Errorf("Gebühr: %q", got)
+	}
+}
+
+func TestLabelIndex(t *testing.T) {
+	for _, c := range []struct {
+		line, label string
+		want        int
+	}{
+		{"datum: 01.02.2026", "datum", 0},
+		{"geburtsdatum: 01.02.2015", "datum", -1},
+		{"geburtsdatum 01.02.2015, datum 03.04.2026", "datum", 25},
+		{"behandlungsdatum", "datum", -1},
+	} {
+		if got := labelIndex(c.line, c.label); got != c.want {
+			t.Errorf("labelIndex(%q, %q) = %d, want %d", c.line, c.label, got, c.want)
+		}
+	}
+}

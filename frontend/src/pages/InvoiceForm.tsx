@@ -1,4 +1,4 @@
-import {useEffect, useRef, useState} from "react";
+import {useEffect, useId, useRef, useState} from "react";
 import {useNavigate, useParams} from "react-router";
 import {Desktop, Svc} from "../api";
 import type {ClaimDTO, ClaimViewDTO, InvoiceDTO, InvoiceRowDTO, MarkDTO, RefundDTO} from "../api";
@@ -276,6 +276,7 @@ function MarkField({label, mark, onChange, withNote}: {
 
 function ClaimCard({claim: c, view: v, onChange}: {claim: ClaimDTO; view: ClaimViewDTO; onChange: (p: Partial<ClaimDTO>) => void}) {
     const toast = useToast();
+    const id = useId();
     const refunds = c.refunds ?? [];
     const setRefund = (i: number, patch: Partial<RefundDTO>) =>
         onChange({refunds: refunds.map((r, j) => (j === i ? {...r, ...patch} : r))});
@@ -353,14 +354,14 @@ function ClaimCard({claim: c, view: v, onChange}: {claim: ClaimDTO; view: ClaimV
             <details style={{marginTop: 10}}>
                 <summary>Abweichende Werte</summary>
                 <div className="grid" style={{marginTop: 8}}>
-                    <Field label="Satz (%)" hint="Leer = aus dem Versicherungsschutz">
-                        <input aria-label="Satz" value={c.rate} placeholder={v.rate} onChange={e => onChange({rate: e.target.value})}/>
+                    <Field label="Satz (%)" htmlFor={`${id}-rate`} hint="Leer = aus dem Versicherungsschutz">
+                        <input id={`${id}-rate`} value={c.rate} placeholder={v.rate} onChange={e => onChange({rate: e.target.value})}/>
                     </Field>
-                    <Field label="Erstattungsfähig (€)" hint="Leer = Rechnungsbetrag">
-                        <input aria-label="Erstattungsfähig" value={c.eligible} onChange={e => onChange({eligible: e.target.value})}/>
+                    <Field label="Erstattungsfähig (€)" htmlFor={`${id}-eligible`} hint="Leer = Rechnungsbetrag">
+                        <input id={`${id}-eligible`} value={c.eligible} onChange={e => onChange({eligible: e.target.value})}/>
                     </Field>
-                    <Field label="SOLL (€)" hint="Leer = berechnet">
-                        <input aria-label="SOLL" value={c.expected} onChange={e => onChange({expected: e.target.value})}/>
+                    <Field label="SOLL (€)" htmlFor={`${id}-expected`} hint="Leer = berechnet">
+                        <input id={`${id}-expected`} value={c.expected} onChange={e => onChange({expected: e.target.value})}/>
                     </Field>
                 </div>
             </details>

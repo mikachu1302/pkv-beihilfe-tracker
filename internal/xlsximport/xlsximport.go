@@ -45,13 +45,15 @@ type Warning struct {
 
 // Result is the preview of an import; nothing is saved yet.
 type Result struct {
-	Sheet      string            `json:"sheet"`
+	Sheet      string            `json:"sheet"` // the imported sheets, comma separated
 	Invoices   []model.Invoice   `json:"invoices"`
 	Allowances []model.Allowance `json:"allowances"`
 	Warnings   []Warning         `json:"warnings"`
-	// Rows[i] is the spreadsheet row of Invoices[i]; AllowanceRows likewise.
-	Rows          []int `json:"rows"`
-	AllowanceRows []int `json:"allowanceRows"`
+	// Invoices[i] comes from row Rows[i] of sheet RowSheets[i].
+	Rows      []int    `json:"rows"`
+	RowSheets []string `json:"rowSheets"`
+	// Allowances[i] was found in the row of Invoices[AllowanceOf[i]].
+	AllowanceOf []int `json:"allowanceOf"`
 }
 
 type field int
@@ -173,6 +175,9 @@ func importWorkbook(f *excelize.File, opt Options, now time.Time) (*Result, erro
 	if opt.PKVPayerID == "" {
 		return nil, errors.New("PKV payer missing")
 	}
+	// Every sheet with an invoice table is imported (some keep one sheet per year).
+	res := &Result{}
+	var sheets []string
 	for _, sheet := range f.GetSheetList() {
 		rows, err := f.GetRows(sheet, excelize.Options{RawCellValue: true})
 		if err != nil {
@@ -182,18 +187,21 @@ func importWorkbook(f *excelize.File, opt Options, now time.Time) (*Result, erro
 		if !ok {
 			continue
 		}
-		res := &Result{Sheet: sheet}
+		sheets = append(sheets, sheet)
 		for r := hr + 1; r < len(rows); r++ {
-			importRow(res, rows[r], r+1, cols, opt, now)
+			importRow(res, sheet, rows[r], r+1, cols, opt, now)
 		}
-		return res, nil
 	}
-	return nil, ErrNoTable
+	if len(sheets) == 0 {
+		return nil, ErrNoTable
+	}
+	res.Sheet = strings.Join(sheets, ", ")
+	return res, nil
 }
 
-func importRow(res *Result, row []string, rowNum int, cols columns, opt Options, now time.Time) {
+func importRow(res *Result, sheet string, row []string, rowNum int, cols columns, opt Options, now time.Time) {
 	warn := func(format string, args ...any) {
-		res.Warnings = append(res.Warnings, Warning{Sheet: res.Sheet, Row: rowNum, Text: fmt.Sprintf(format, args...)})
+		res.Warnings = append(res.Warnings, Warning{Sheet: sheet, Row: rowNum, Text: fmt.Sprintf(format, args...)})
 	}
 	cell := func(f field) string {
 		c, ok := cols.idx[f]
@@ -231,8 +239,8 @@ func importRow(res *Result, row []string, rowNum int, cols columns, opt Options,
 	invDate := date(fInvoiceDate, "Rechnungsdatum")
 	amt, hasAmount := amount(fAmount, "Gesamtbetrag")
 	provider := cell(fProvider)
-	if invDate.IsZero() && !hasAmount && provider == "" {
-		return // empty or separator row
+	if invDate.IsZero() && provider == "" {
+		return // empty or separator row, or a total below the table
 	}
 	var notes []string
 	for _, c := range cols.notes {
@@ -281,7 +289,7 @@ func importRow(res *Result, row []string, rowNum int, cols columns, opt Options,
 			continue
 		}
 		c := model.Claim{Submitted: model.Mark{Date: sub}}
-		if hasRef {
+		if hasRef && ref != 0 { // a 0 is a placeholder, not a refund of 0 €
 			c.Refunds = []model.Refund{{ID: model.NewID(now), Amount: ref, Note: "aus Excel übernommen"}}
 			refunded += ref
 			rounding++
@@ -297,10 +305,11 @@ func importRow(res *Result, row []string, rowNum int, cols columns, opt Options,
 	}
 	res.Invoices = append(res.Invoices, inv)
 	res.Rows = append(res.Rows, rowNum)
+	res.RowSheets = append(res.RowSheets, sheet)
 
 	if a, ok := amount(fAllowance, "Krankenhaustagegeld"); ok && a != 0 {
 		d := inv.ServiceDate()
-		res.AllowanceRows = append(res.AllowanceRows, rowNum)
+		res.AllowanceOf = append(res.AllowanceOf, len(res.Invoices)-1)
 		res.Allowances = append(res.Allowances, model.Allowance{
 			ID: model.NewID(now), PayerID: opt.PKVPayerID, Kind: model.AllowanceHospitalDay,
 			Date: d, Amount: a, Received: model.Mark{Date: d}, Note: "aus Excel übernommen",

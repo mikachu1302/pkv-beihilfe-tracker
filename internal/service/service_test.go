@@ -255,13 +255,13 @@ func TestSaveSettings(t *testing.T) {
 	set.Payers = append(set.Payers, PayerDTO{Kind: "pkv", Name: "Neue PKV"})
 	set.Coverage = append(set.Coverage, CoverageDTO{From: "2027-01-01", Shares: []ShareDTO{
 		{PayerID: "beihilfe-bund", Rate: "70"}, {PayerID: "neue-pkv", Rate: "20"}}})
-	res, err := s.SaveSettings(set)
+	res, err := s.SaveSettings(set, nil)
 	if err != nil || len(res.Settings.Payers) != 3 || res.Settings.Payers[2].ID != "neue-pkv" || len(res.Problems) != 1 {
 		t.Fatalf("save: %+v, %v", res, err)
 	}
 	set = res.Settings
 	set.Coverage[1].Shares[1].PayerID = "gibt-es-nicht"
-	if _, err := s.SaveSettings(set); err == nil || !strings.Contains(err.Error(), "unbekannter Kostenträger") {
+	if _, err := s.SaveSettings(set, nil); err == nil || !strings.Contains(err.Error(), "unbekannter Kostenträger") {
 		t.Errorf("invalid settings saved: %v", err)
 	}
 }
@@ -498,8 +498,8 @@ func TestPhoneUploadReachesInbox(t *testing.T) {
 	if again.URL != pu.URL {
 		t.Error("a second start must reuse the open upload")
 	}
-	url := "http://127.0.0.1" + pu.URL[strings.LastIndex(pu.URL, ":"):]
-	res, err := http.Post(url, "image/jpeg", strings.NewReader("foto"))
+	url := pu.URL
+	res, err := http.Post(url, "image/jpeg", strings.NewReader("\xFF\xD8\xFF\xE0foto"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -732,5 +732,140 @@ func TestAcceptDeviation(t *testing.T) {
 		if r.InvoiceID == id && (r.Kind == "deviation" || r.Kind == "clarify") {
 			t.Errorf("reminder left: %+v", r)
 		}
+	}
+}
+
+func TestRetickRefundedAddsNoSecondRefund(t *testing.T) {
+	s := newTestService(t)
+	ids := refundFixture(t, s)
+	r, _ := s.AnalyzeRefund(AnalyzeInputDTO{Lines: linesOf(notice)})
+	if _, err := s.ConfirmRefund("", r, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, on := range []bool{false, true} {
+		if _, err := s.SetMark(MarkChangeDTO{InvoiceID: ids[1], PayerID: "beihilfe-bund", Mark: MarkRefunded, On: on}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	det, _ := s.GetInvoice(ids[1])
+	if c := claim(det.View, "beihilfe-bund"); c.Actual != "31.57" || c.Refunded.Date == "" {
+		t.Errorf("after untick + tick: %+v", c)
+	}
+}
+
+func TestRefundLinesWithoutUniqueIDsAreAllBooked(t *testing.T) {
+	s := newTestService(t)
+	ids := refundFixture(t, s)
+	// Two lines added by hand for the same invoice: one without ID, one
+	// copied with the ID of another line, and an invoice listed twice.
+	r := RefundReviewDTO{PayerID: "beihilfe-bund", Date: "2026-05-02", PaidOut: "50,00", Lines: []RefundLineDTO{
+		{ID: "", Refund: "20,00", Edited: true, InvoiceIDs: []string{ids[0]}, Match: "confirmed"},
+		{ID: "m1", Refund: "30,00", Edited: true, InvoiceIDs: []string{ids[0], ids[0]}, Match: "confirmed"},
+		{ID: "m1", Refund: "5,00", Edited: true, InvoiceIDs: []string{ids[1]}, Match: "confirmed"},
+	}}
+	rv, err := s.ReviewRefund(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rv.Lines[0].ID == rv.Lines[1].ID || rv.Lines[1].ID == rv.Lines[2].ID || rv.Lines[0].ID == rv.Lines[2].ID {
+		t.Errorf("line IDs not unique: %q %q %q", rv.Lines[0].ID, rv.Lines[1].ID, rv.Lines[2].ID)
+	}
+	if _, err := s.ConfirmRefund("", r, false); err != nil {
+		t.Fatal(err)
+	}
+	det, _ := s.GetInvoice(ids[0])
+	if c := claim(det.View, "beihilfe-bund"); c.Actual != "50.00" {
+		t.Errorf("first invoice: %+v", c)
+	}
+	det, _ = s.GetInvoice(ids[1])
+	if c := claim(det.View, "beihilfe-bund"); c.Actual != "5.00" {
+		t.Errorf("second invoice: %+v", c)
+	}
+}
+
+func TestConfirmSameDocumentAgainRebooks(t *testing.T) {
+	s := newTestService(t)
+	ids := refundFixture(t, s)
+	r, _ := s.AnalyzeRefund(AnalyzeInputDTO{Lines: linesOf(notice)})
+	pdf := base64.StdEncoding.EncodeToString([]byte("%PDF bescheid"))
+	inbox, _ := s.AddToInbox("Bescheid.pdf", pdf)
+	first, err := s.ConfirmRefund(inbox, r, false)
+	if err != nil || first.Rebooked {
+		t.Fatalf("first: %+v %v", first, err)
+	}
+	// The same file again (retry, or scanned twice), this time with line 3 left out.
+	inbox, _ = s.AddToInbox("Bescheid.pdf", pdf)
+	r.Lines = r.Lines[:2]
+	second, err := s.ConfirmRefund(inbox, r, false)
+	if err != nil || !second.Rebooked || second.DocID != first.DocID {
+		t.Fatalf("second: %+v %v", second, err)
+	}
+	det, _ := s.GetInvoice(ids[0])
+	if c := claim(det.View, "beihilfe-bund"); c.Actual != "180.20" {
+		t.Errorf("first invoice counted twice: %+v", c)
+	}
+	det, _ = s.GetInvoice(ids[2])
+	if c := claim(det.View, "beihilfe-bund"); c.Actual != "0.00" || c.Refunded.Date != "" {
+		t.Errorf("earlier booking of line 3 not taken back: %+v", c)
+	}
+	if d, _ := s.Dashboard(2026); d.Payers[0].Refunded.Count != 2 {
+		t.Errorf("dashboard: %+v", d.Payers[0].Refunded)
+	}
+}
+
+func TestSameFileCannotBecomeTwoInvoices(t *testing.T) {
+	s := newTestService(t)
+	pdf := base64.StdEncoding.EncodeToString([]byte("%PDF rechnung"))
+	name, _ := s.AddToInbox("Rechnung.pdf", pdf)
+	if _, err := s.CreateInvoiceFromInbox(name, sampleInvoice()); err != nil {
+		t.Fatal(err)
+	}
+	name, _ = s.AddToInbox("Rechnung erneut.pdf", pdf)
+	if _, err := s.CreateInvoiceFromInbox(name, sampleInvoice()); err == nil || !strings.Contains(err.Error(), "bereits erfasst") {
+		t.Errorf("second invoice from the same file: %v", err)
+	}
+	if _, err := s.CreateInvoiceFromInbox("../einstellungen.json", sampleInvoice()); err == nil {
+		t.Error("path accepted as inbox name")
+	}
+	exe, _ := s.AddToInbox("tool.exe", base64.StdEncoding.EncodeToString([]byte("MZ")))
+	if _, err := s.CreateInvoiceFromInbox(exe, sampleInvoice()); err == nil {
+		t.Error("executable stored as document")
+	}
+}
+
+func TestSaveSettingsKeepsChangesMadeMeanwhile(t *testing.T) {
+	s := newTestService(t)
+	refundFixture(t, s)
+	original, _ := s.GetSettings()
+	// While the settings form is open, a statement teaches an alias.
+	r, _ := s.AnalyzeRefund(AnalyzeInputDTO{Lines: linesOf(`
+Muster PKV
+Leistungsabrechnung vom 15.05.2026
+03.03.2026   PVS Beispiel eG   286,40   85,92
+Gesamterstattung                         85,92`)})
+	if res, err := s.ConfirmRefund("", r, false); err != nil || res.Aliases != 1 {
+		t.Fatalf("confirm: %+v %v", res, err)
+	}
+	form := original
+	form.ClarifyTolerance = "2,50"
+	res, err := s.SaveSettings(form, &original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Settings.Aliases) != 1 || res.Settings.ClarifyTolerance != "2.50" {
+		t.Errorf("saved: aliases %+v, tolerance %s", res.Settings.Aliases, res.Settings.ClarifyTolerance)
+	}
+}
+
+func TestPayerNameIsMatchedAsWord(t *testing.T) {
+	set := &model.Settings{Payers: []model.Payer{
+		{ID: "bh", Kind: model.Beihilfe, Name: "Beihilfe"},
+		{ID: "pkv", Kind: model.PKV, Name: "Muster PKV"},
+	}}
+	if got := guessPayer(set, "Leistungsabrechnung zum Beihilfetarif BT70"); got != "pkv" {
+		t.Errorf("Beihilfetarif → %q", got)
+	}
+	if got := guessPayer(set, "Ihre Beihilfe, Bescheid vom"); got != "bh" {
+		t.Errorf("Beihilfe → %q", got)
 	}
 }

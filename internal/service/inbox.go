@@ -1,13 +1,13 @@
 package service
 
 import (
-	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -15,6 +15,7 @@ import (
 
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/extract"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/model"
+	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/store"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/upload"
 )
 
@@ -164,7 +165,11 @@ func (s *Service) CreateInvoiceFromInbox(name string, d InvoiceDTO) (InvoiceDeta
 	if err != nil {
 		return InvoiceDetailDTO{}, err
 	}
-	b, err := os.ReadFile(st.InboxPath(name))
+	path, err := st.InboxPath(name)
+	if err != nil {
+		return InvoiceDetailDTO{}, err
+	}
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return InvoiceDetailDTO{}, fmt.Errorf("Datei im Posteingang nicht gefunden: %w", err)
 	}
@@ -175,21 +180,40 @@ func (s *Service) CreateInvoiceFromInbox(name string, d InvoiceDTO) (InvoiceDeta
 	if err := validateInvoice(&inv); err != nil {
 		return InvoiceDetailDTO{}, err
 	}
-	doc, err := st.AddDocument(bytes.NewReader(b), strings.ToLower(filepath.Ext(name)))
+	docName, err := documentName(b, name)
 	if err != nil {
+		return InvoiceDetailDTO{}, err
+	}
+	// The same file again: scanned twice, or the inbox file could not be
+	// removed last time. A second invoice would count the costs twice.
+	for i := range data.Invoices {
+		if other := &data.Invoices[i]; !other.Deleted && slices.Contains(other.Attachments, docName) {
+			return InvoiceDetailDTO{}, fmt.Errorf("Dieser Beleg ist bereits erfasst (%s) – die Datei kann im Posteingang verworfen werden", invoiceLabel(other))
+		}
+	}
+	if _, err := st.AddDocument(b, filepath.Ext(name)); err != nil {
 		return InvoiceDetailDTO{}, fmt.Errorf("Beleg konnte nicht abgelegt werden: %w", err)
 	}
 	inv.ID = s.newID()
-	inv.Attachments = append(inv.Attachments, doc)
+	inv.Attachments = append(inv.Attachments, docName)
 	saved, err := st.SaveInvoice(inv)
 	if err != nil {
 		return InvoiceDetailDTO{}, fmt.Errorf("Speichern fehlgeschlagen: %w", err)
 	}
 	replaceInvoice(data, saved)
-	if err := st.RemoveFromInbox(name); err != nil {
-		return InvoiceDetailDTO{}, err
-	}
+	// The invoice is saved. If the file cannot be removed (locked by the sync
+	// tool), it stays in the inbox; using it again is caught above.
+	_ = st.RemoveFromInbox(name)
 	return s.detail(&data.Settings, &saved), nil
+}
+
+// documentName is store.DocumentName for the inbox file name, with a message for the user.
+func documentName(content []byte, name string) (string, error) {
+	doc, err := store.DocumentName(content, filepath.Ext(name))
+	if errors.Is(err, store.ErrDocumentType) {
+		return "", fmt.Errorf("Dateityp „%s“ wird als Beleg nicht unterstützt – nur PDF und Bilder", filepath.Ext(name))
+	}
+	return doc, err
 }
 
 // DocumentURL returns the webview URL of a stored document.
@@ -205,7 +229,7 @@ func (s *Service) DocumentPath(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return st.DocumentPath(name), nil
+	return st.DocumentPath(name)
 }
 
 // ServeFile serves inbox files and documents to the webview. It returns
@@ -225,12 +249,20 @@ func (s *Service) ServeFile(w http.ResponseWriter, r *http.Request) bool {
 		return true
 	}
 	var path string
+	var err error
 	switch {
 	case strings.HasPrefix(rest, "inbox/"):
-		path = st.InboxPath(strings.TrimPrefix(rest, "inbox/"))
+		path, err = st.InboxPath(strings.TrimPrefix(rest, "inbox/"))
 	case strings.HasPrefix(rest, "doc/"):
-		path = st.DocumentPath(strings.TrimPrefix(rest, "doc/"))
+		path, err = st.DocumentPath(strings.TrimPrefix(rest, "doc/"))
 	default:
+		err = os.ErrNotExist
+	}
+	if err != nil {
+		http.NotFound(w, r)
+		return true
+	}
+	if fi, err := os.Stat(path); err != nil || fi.IsDir() {
 		http.NotFound(w, r)
 		return true
 	}
@@ -260,7 +292,7 @@ func (s *Service) StartPhoneUpload() (PhoneUploadDTO, error) {
 		if s.upload != nil {
 			_ = s.upload.Stop()
 		}
-		if s.upload, err = upload.Start(filepath.Dir(st.InboxPath("x")), phoneUploadTTL, s.now); err != nil {
+		if s.upload, err = upload.Start(st.InboxDirPath(), phoneUploadTTL, s.now); err != nil {
 			return PhoneUploadDTO{}, fmt.Errorf("Upload für das Handy konnte nicht gestartet werden: %w", err)
 		}
 	}

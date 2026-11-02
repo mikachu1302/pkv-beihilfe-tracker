@@ -144,7 +144,7 @@ func (s *Service) SaveInvoice(d InvoiceDTO, original *InvoiceDTO) (InvoiceDetail
 			if err != nil {
 				return InvoiceDetailDTO{}, err
 			}
-			if inv, err = rebaseInvoice(base, inv, *cur); err != nil {
+			if inv, err = rebase(base, inv, *cur); err != nil {
 				return InvoiceDetailDTO{}, err
 			}
 		}
@@ -160,8 +160,9 @@ func (s *Service) SaveInvoice(d InvoiceDTO, original *InvoiceDTO) (InvoiceDetail
 	return s.detail(&data.Settings, &saved), nil
 }
 
-// rebaseInvoice applies the changes from base to mine onto theirs (field by field).
-func rebaseInvoice(base, mine, theirs model.Invoice) (model.Invoice, error) {
+// rebase applies the changes from base to mine onto theirs (field by field):
+// a form saved after the record changed in the background keeps both.
+func rebase[T any](base, mine, theirs T) (T, error) {
 	b, err := json.Marshal(base)
 	if err != nil {
 		return mine, err
@@ -178,9 +179,9 @@ func rebaseInvoice(base, mine, theirs model.Invoice) (model.Invoice, error) {
 	if err != nil {
 		return mine, err
 	}
-	var inv model.Invoice
-	err = json.Unmarshal(out, &inv)
-	return inv, err
+	var v T
+	err = json.Unmarshal(out, &v)
+	return v, err
 }
 
 // DeleteInvoice marks an invoice as deleted (it stays in the file, so the
@@ -271,6 +272,8 @@ func (s *Service) SetMark(ch MarkChangeDTO) (InvoiceRowDTO, error) {
 			c.Submitted = mark()
 			if ch.On {
 				c.Held = false
+			} else {
+				c.SubmissionID = ""
 			}
 		case MarkRefunded:
 			if err := s.setRefunded(&c, &data.Settings, &inv, ch, date); err != nil {
@@ -285,6 +288,10 @@ func (s *Service) SetMark(ch MarkChangeDTO) (InvoiceRowDTO, error) {
 		case MarkKeepsPremiumRefund:
 			c.KeepsPremiumRefund = ch.On
 		case MarkAcceptDeviation:
+			if !ch.On {
+				c.Expected = nil // back to the computed SOLL
+				break
+			}
 			var actual money.Cents
 			for _, r := range c.Refunds {
 				actual += r.Amount
@@ -334,10 +341,13 @@ func (s *Service) setRefunded(c *model.Claim, set *model.Settings, inv *model.In
 		for _, cv := range calc.Invoice(set, &tmp, date).Claims {
 			if cv.PayerID == ch.PayerID {
 				amount = cv.Expected - cv.Actual
-				if amount <= 0 {
-					amount = cv.Expected
-				}
 			}
+		}
+		if amount <= 0 && len(c.Refunds) > 0 {
+			// Nothing open (refunds booked from a Bescheid stay when the
+			// tick is removed): set the tick again, add no second refund.
+			c.Refunded = model.Mark{Date: date}
+			return nil
 		}
 	}
 	if amount <= 0 {
@@ -396,7 +406,12 @@ func (s *Service) BulkSubmit(b BulkSubmitDTO) (BulkSubmitResultDTO, error) {
 	sub := model.Submission{ID: s.newID(), PayerID: b.PayerID, Date: date,
 		Channel: strings.TrimSpace(b.Channel), Note: strings.TrimSpace(b.Note)}
 	var changed []model.Invoice
+	seen := map[string]bool{}
 	for _, id := range b.InvoiceIDs {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
 		cur, err := findInvoice(data, id)
 		if err != nil {
 			return res, err

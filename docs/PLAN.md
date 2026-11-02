@@ -1,6 +1,7 @@
 # pkv-beihilfe-tracker – Technical Plan
 
-Status: M1–M6 implemented · 2026-11-02 · 2026-11-02 – section 16 lists what changed during implementation
+Status: M1–M6 implemented, reviewed · 2026-11-02 – section 16 lists what changed during
+implementation; where it differs from sections 1–15, section 16 is what the code does.
 
 ## 1. Goal
 
@@ -65,7 +66,7 @@ The tax effect of the BRE and BRE tiers are out of scope (user decision).
 | Phone | (a) inbox folder `Eingang/` in the data folder; (b) QR code → upload page in the home network | (a) needs no code on the phone; (b) works without any cloud |
 | UI language | German (confirmed); code and docs English | Domain is German only |
 | Private data | Never in the repo; tests use synthetic data | As in crypto-tax |
-| Distribution | GitHub Actions builds Linux (RPM, AppImage), Windows (installer), macOS (DMG, ad-hoc signed, not notarised) | No cost; one-time OS warnings accepted |
+| Distribution | GitHub Actions builds Linux (DEB, RPM, tar.gz with `install.sh`), Windows (NSIS installer), macOS (universal app as DMG and zip, ad-hoc signed, not notarised); see `docs/INSTALLATION.md` | No cost; one-time OS warnings accepted |
 
 ## 5. Data folder
 
@@ -81,8 +82,8 @@ The tax effect of the BRE and BRE tiers are out of scope (user decision).
     leistungen/<id>.json           benefits without an invoice (Krankenhaustagegeld)
 ```
 
-Device-local settings (path of the data folder, device ID, window state) live in the OS
-config folder, not in the data folder.
+Device-local settings (path of the data folder, device ID, backup folder) live in the OS
+config folder (`internal/config`), not in the data folder.
 
 Record file:
 
@@ -105,6 +106,12 @@ Record file:
   two year folders) are merged leaf by leaf, written to the canonical path, and the copies are
   removed; the user sees a note.
 - Arrays are leaves as a whole. Deleting = `deleted: true`.
+- Files that cannot be read, or that come from a newer app version (`schema` > current), are
+  reported and never overwritten: saving such a record fails until the file is fixed, and
+  conflict copies of it are left alone.
+- An older app version drops fields it does not know when it saves a record. A new field
+  therefore needs a schema bump (`store.SchemaVersion`), which makes older versions leave
+  such files alone.
 - Users should set the data folder to "always keep on this device" (no placeholder files).
 
 ## 6. Data model (`internal/model`)
@@ -158,9 +165,12 @@ ServiceYear = Leistungsjahr · PremiumRefund = Beitragsrückerstattung.
 - Phone (a): iPhone Files app "Dokumente scannen", the Nextcloud app's scanner, or any scanner
   app → save or share into `Eingang/` of the synced folder.
 - Phone (b): "Mit Handy fotografieren" starts a local HTTP server only while the dialog is
-  open and shows a QR code with a one-time token. The phone's browser opens a page, takes
-  photos (`<input type=file capture>`) and uploads them; optionally encrypted with a key that
-  only exists in the URL fragment. Works without any cloud. Cropping/deskewing on the desktop.
+  open (at most 15 minutes) and shows a QR code with a secret link (random token; usable for
+  several photos until it expires). The phone's browser opens a page, takes photos
+  (`<input type=file capture>`) and uploads them. Works without any cloud. Plain HTTP inside
+  the home network (a self-signed certificate would scare the user with a browser warning);
+  the planned extra encryption with a key in the URL fragment and cropping/deskewing on the
+  desktop were not built (section 15).
 - Invoice parser (rules, German): invoice date, number, treatment period, total
   ("Rechnungsbetrag", "Gesamtbetrag", "Endbetrag", "zu zahlen"), IBAN, provider, category (GOÄ,
   GOZ, PZN, Heilmittel). The GiroCode fills payee, IBAN, amount and reference. Always a
@@ -170,17 +180,22 @@ ServiceYear = Leistungsjahr · PremiumRefund = Beitragsrückerstattung.
 
 - Extraction: header (payer, document date, "Antrag vom", payout), lines (date, billed,
   eligible, refund), deductions; rows rebuilt from text positions.
-- Layout profile per payer: the user marks the columns once on the first document.
+- Layout profile per payer: which amount of a line means billed, eligible and refund
+  (section 16, M5), confirmed once and remembered.
 - Checksum: Σ refunds − Σ deductions = payout, otherwise the gap is highlighted.
-- Score per line and invoice: exact amount (50), date = invoice/treatment date or within the
-  period (30), ±3 days (10), provider similarity or alias (≤ 15), claim submitted and open
-  (10), refund ≈ share × billed (5); already refunded −30, skipped −20; refund above the
-  invoice excludes the pair.
+- Score per line and invoice: exact amount (50) or amount off by one digit (20), date =
+  invoice/treatment date or within the period (30), ±3 days (10), provider similarity or alias
+  (≤ 15), claim submitted and open (10), refund ≈ share × billed (5); already refunded −30,
+  skipped −20; refund above the invoice excludes the pair.
 - Groups first (several lines = one invoice, one line = several invoices; exact sums of ≤ 4
-  items), only for items without an exact amount partner; then 1:1 assignment maximising the
-  total score (Hungarian algorithm).
+  items), only for items without an exact amount partner, only for lines with a date and
+  invoices whose claim is still open, and only in pools of at most 30 items (the number of
+  subsets grows with the fourth power); then 1:1 assignment maximising the total score
+  (Hungarian algorithm).
 - "auto" only if amount and date match exactly and the runner-up is ≥ 20 points behind;
-  groups are always suggestions. Option: review everything.
+  groups are always suggestions. Nothing is booked before the user confirms the whole
+  document in the review, so a separate "review everything" option was not needed.
+- An alias name may stand for several providers (a billing service for several doctors).
 - On confirm: refund per invoice, tick erstattet, backfill eingereicht from "Antrag vom", link
   the document, suggest Klärungsbedarf on deviations, learn aliases.
 
@@ -191,16 +206,21 @@ ServiceYear = Leistungsjahr · PremiumRefund = Beitragsrückerstattung.
 - **Rechnung**: detail form with SOLL/IST per payer, documents, refunds.
 - **Dashboard** per year; **Übersicht** of all years.
 - **Posteingang**: drafts from scans and refund documents with review.
-- **Einstellungen**: payers, coverage periods, year settings, data folder, aliases.
+- **Einstellungen**: payers, coverage periods, year settings, data folder, backups. Aliases
+  and column layouts are learned from confirmed refund documents and kept, but there is no
+  screen to edit them yet (section 15).
 
 ## 11. Spreadsheet import (`internal/xlsximport`)
 
 Columns are recognised by header text (typos tolerated): Rechnungsdatum, Behandlungsdatum,
 Anweisung am (paid), Behandler, Bemerkung (several), Gesamtbetrag, Eingereicht/Erstattet
-Beihilfe, Eingereicht/Erstattet Krankenkasse, Krankenhaus Tagegeld. Computed columns and the
-yearly summary blocks are ignored; dates come from raw cell values. Each row may produce
-warnings (dates before the invoice, implausible years, refunds above the amount). The UI shows
-a preview before saving (M2).
+Beihilfe, Eingereicht/Erstattet Krankenkasse, Krankenhaus Tagegeld. Every sheet with such a
+table is read (one sheet per year works). Computed columns and summary blocks next to the
+table are ignored, and so are rows with neither a date nor a provider (totals below the
+table); a refund of 0 counts as empty. Dates come from raw cell values. Each row may produce
+warnings (dates before the invoice, implausible years, refunds above the amount). The UI
+shows a preview before saving (M2); the records keep their IDs from the preview, so saving
+again after an error does not duplicate them.
 
 ## 12. Build and packaging
 
@@ -212,8 +232,11 @@ a preview before saving (M2).
 
 ## 13. Privacy
 
-Health data: no telemetry, no network access except the local upload page while it is open,
-OCR on the device, nothing leaves the data folder. Real data never goes into the repo.
+Health data: no telemetry, no network access except the local upload page while it is open
+(bound to the LAN address in the QR code, limited to 100 files / 500 MB, images and PDFs
+checked by content), OCR on the device, nothing leaves the data folder. Only PDFs and images
+are stored as documents (they are opened with the system's default app). Real data never goes
+into the repo.
 
 ## 14. Milestones
 
@@ -229,6 +252,11 @@ OCR on the device, nothing leaves the data folder. Real data never goes into the
 ## 15. Open points
 
 - App name (working title: pkv-beihilfe-tracker; window title "PKV Beihilfe Tracker").
+- A screen to view and delete learned aliases and column layouts.
+- Phone upload: optional end-to-end encryption (key in the URL fragment); cropping and
+  deskewing photos on the desktop.
+- HEIC photos (iPhone) are stored and recognised, but cannot go into the PDF bundle (pdfcpu
+  cannot convert them); they are listed as missing there.
 
 ## 16. Changes during implementation
 
@@ -238,7 +266,8 @@ OCR on the device, nothing leaves the data folder. Real data never goes into the
 - **M2:** The service layer (`internal/service`) speaks DTOs with amounts as strings; input
   accepts the German format. Every change is written immediately (no "save all").
 - Ticking "erstattet" in the list asks for the amount, prefilled with the open SOLL;
-  unticking removes refunds entered by hand (refunds from documents stay).
+  unticking removes refunds entered by hand (refunds from documents stay). Ticking it again
+  when nothing is open only sets the tick and adds no second refund.
 - "Eigenanteil" on the dashboard is shown as "noch nicht erstattet" (it includes claims held
   back or still open); the final own share counts settled invoices only.
 - Charts follow the dataviz method: thin segmented bar per payer (SOLL by status, figures in
@@ -248,18 +277,23 @@ OCR on the device, nothing leaves the data folder. Real data never goes into the
   screenshots; `cmd/demodata` creates a demo data folder.
 - Own app icon (`build/appicon.svg`); the template's macOS vector icon was removed so the
   `.icns` is used.
-- The linter's ST1005 rule is off for `internal/service` and `internal/backup`: their errors are
-  German UI texts.
-- **M3:** `internal/watch` (fsnotify) watches the data folder, its year and record folders, adds
-  new folders, debounces bursts (0.8 s) and ignores the app's own writes (the store remembers size
-  and mtime of what it wrote). After a reload the frontend gets a `data-changed` event: lists and
+- The linter's ST1005 rule is off for `internal/service`, `internal/backup` and
+  `internal/upload`: their errors are German UI texts.
+- **M3:** `internal/watch` (fsnotify) watches the data folder, `Eingang/`, the year and record
+  folders – nothing else (on macOS every watched folder costs a file descriptor per file) –,
+  adds new folders, treats a removed or renamed year folder as a change, debounces bursts
+  (0.8 s) and ignores the app's own writes (the store remembers size and mtime of what it
+  wrote). If merging conflict copies fails during a reload (a file locked by another program),
+  the merged state is used in memory and the merge is tried again next time. After a reload the frontend gets a `data-changed` event: lists and
   dashboard refresh, a toast tells the user.
 - An open invoice form keeps its original; saving sends both and the service applies only the
   fields edited in the form to the current version (`leaf.Rebase`, three-way). The form shows a
   notice when its invoice was changed elsewhere.
 - `internal/backup`: zip snapshots (without hidden files) to a device-local backup folder, once a
-  day on start and on demand, the newest 20 are kept; a folder inside the data folder is refused.
-  Restore = unzip into an empty folder and choose it as data folder.
+  day on start and on demand, the newest 20 are kept; a folder inside the data folder is refused
+  (symbolic links resolved). Snapshots run without holding the service lock, so the app stays
+  usable; files that disappear meanwhile are skipped. Restore = unzip into an empty folder and
+  choose it as data folder.
 - **M4:** Recognition runs in the webview: pdf.js for the text layer (pages are rendered for
   GiroCodes; OCR when a page has no text), Tesseract.js 7 with the German "best_int" model,
   zxing-wasm for QR codes. All assets are copied into the app (`scripts/copy-assets.mjs`,
@@ -272,7 +306,9 @@ OCR on the device, nothing leaves the data folder. Real data never goes into the
   (`/datafile/inbox/…`, `/datafile/doc/…`).
 - Phone upload: `internal/upload` serves an embedded page on the LAN with a random token; files
   arrive in `Eingang/` and reach the UI through the folder watcher (inbox files count as
-  changes; the toast says "Neuer Beleg im Posteingang").
+  changes; the toast says "Neuer Beleg im Posteingang"). It stops when the data folder changes.
+- Creating an invoice from an inbox file that is already the document of another invoice is
+  refused (same content = same SHA-256 name); the inbox file may then be discarded.
 - Verified end to end (server mode + headless Firefox): a made-up invoice photo sent through
   the phone page was recognised in about 6 s with all fields correct and saved with the photo
   in `belege/`.
@@ -287,9 +323,17 @@ OCR on the device, nothing leaves the data folder. Real data never goes into the
 - The review (`ReviewRefund`) keeps lines the user assigned by hand ("confirmed") and amounts
   edited by hand; the 1:1 matching runs only over the rest.
 - Booking: one refund per line and invoice (a line covering several invoices is split by their
-  amounts), linked to the stored document (doc/line ID, re-booking replaces), "erstattet" with
-  the payout date or the notice date, "eingereicht" backfilled from "Antrag vom", aliases learned
-  from names that differ from the invoice (e.g. billing services).
+  amounts), linked to the stored document (doc/line ID), "erstattet" with the payout date or the
+  notice date, "eingereicht" backfilled from "Antrag vom", aliases learned from names that
+  differ from the invoice (e.g. billing services). Every line gets a unique ID; the amounts are
+  recomputed from the layout when confirming.
+- Confirming the same document file again (a retry, or the Bescheid scanned twice) re-uses its
+  record and replaces the earlier booking instead of counting the refunds twice. Once the
+  refunds are booked, failures to save learned aliases or to remove the inbox file are reported
+  as warnings, not errors, so that nobody retries a booking that already happened.
+- Recognition labels match at the start of a word ("Datum" but not "Geburtsdatum"); a position
+  line that mentions "Kürzung" stays a position; "GebüH" (Heilpraktiker) is not confused with the
+  "Gebührenordnung für Ärzte".
 - Verified end to end: a made-up Beihilfebescheid photo for three demo invoices was recognised,
   all three lines matched "sicher", checksum correct, refunds booked with the notice linked.
 - **M6:** Excel export (`internal/export`): sheets Rechnungen (SOLL/IST, status and dates per
@@ -301,6 +345,9 @@ OCR on the device, nothing leaves the data folder. Real data never goes into the
   weeks, Klärungsbedarf and deviations, the premium refund decision (January–June for the
   previous year), documents in the inbox; urgent items first. No system notifications.
 - Release workflow (`.github/workflows/release.yml`): a tag `v*` builds a Windows installer
-  (NSIS), a macOS universal app (zip, ad-hoc signed) and Linux DEB/RPM/tar.gz and attaches them to
-  a GitHub release; started by hand it only uploads artifacts. The Linux packages depend on GTK3
-  and WebKitGTK 4.1 (the template assumed GTK4).
+  (NSIS), a macOS universal app (DMG and zip, ad-hoc signed) and Linux DEB/RPM/tar.gz and
+  attaches them to a GitHub release (tags with a suffix such as `-beta.1` become pre-releases);
+  started by hand it only uploads artifacts. The version comes from the tag (`APP_VERSION`);
+  Linux is built on Ubuntu 22.04 so the binary runs on glibc ≥ 2.35. The Linux packages install
+  to `/usr/bin`, depend on GTK3 and WebKitGTK 4.1 and use the SVG icon.
+- Claim deadlines from 29 February end on 28 February in non-leap years (§ 188 Abs. 3 BGB).

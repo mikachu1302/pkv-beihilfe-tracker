@@ -42,13 +42,15 @@ bindings:  ## regenerate the TypeScript bindings
 	$(WAILS) generate bindings -f '$(if $(TAGS),-tags $(TAGS))' -clean=true -ts -i
 
 frontend-check: bindings
-	cd frontend && npx tsc --noEmit && npx vitest run
+	cd frontend && npx tsc --noEmit && npm run lint && npx vitest run
 
-check: dist frontend-check ## what CI runs (lint only when installed)
+check: dist frontend-check ## what CI runs (linters only when installed)
 	test -z "$$(gofmt -l . | grep -v node_modules)" || (gofmt -l . ; exit 1)
 	go vet $(if $(TAGS),-tags $(TAGS)) ./...
 	go test -race $(if $(TAGS),-tags $(TAGS)) ./...
 	-command -v golangci-lint >/dev/null && golangci-lint run
+	-command -v shellcheck >/dev/null && shellcheck build/linux/install.sh build/linux/nfpm/scripts/postinstall.sh scripts/install.sh
+	-command -v govulncheck >/dev/null && govulncheck $(if $(TAGS),-tags $(TAGS)) ./...
 
 # Linux release folder + archive: binary, icon, menu entry and install.sh
 # (the same files `make install` uses). Builds first if there is no binary.
@@ -57,7 +59,7 @@ dist-linux:
 	rm -rf $(DIST_LINUX) $(DIST_LINUX).tar.gz
 	mkdir -p $(DIST_LINUX)
 	cp bin/$(APP) build/linux/install.sh $(DIST_LINUX)/
-	cp build/appicon.png $(DIST_LINUX)/$(APP).png
+	cp build/appicon.svg $(DIST_LINUX)/$(APP).svg
 	cp build/linux/$(APP).desktop $(DIST_LINUX)/
 	tar -czf $(DIST_LINUX).tar.gz -C dist $(notdir $(DIST_LINUX))
 	@echo "$(DIST_LINUX).tar.gz"

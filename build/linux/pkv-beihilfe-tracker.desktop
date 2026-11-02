@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=PKV Beihilfe Tracker
+Comment=Arztrechnungen, Beihilfe und PKV im Blick
+Exec=pkv-beihilfe-tracker
+Icon=pkv-beihilfe-tracker
+Categories=Office;Finance;
+Keywords=Arztrechnung;Rechnung;Beihilfe;PKV;Krankenversicherung;Erstattung;
+Terminal=false
+StartupNotify=false

@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/civil"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/model"
@@ -60,8 +62,10 @@ var (
 	amountRe    = regexp.MustCompile(`\d{1,3}(?:\.\d{3})+,\d{2}|\d+,\d{2}`)
 	ibanRe      = regexp.MustCompile(`\b([A-Z]{2}\d{2}(?:\s?[0-9A-Z]{4}){3,7}(?:\s?[0-9A-Z]{1,3})?)\b`)
 	numberRe    = regexp.MustCompile(`(?i)(?:rechnungs?\s*-?\s*(?:nr|nummer)|re\.?\s*-?\s*nr|rechnung\s+nr|beleg\s*-?\s*nr|belegnummer)\.?\s*:?\s*([A-Z0-9][A-Z0-9/\-.]{2,24})`)
-	treatedByRe = regexp.MustCompile(`(?i)(?:behandlung\s+durch|behandelnde[rn]?\s+(?:arzt|ärztin|zahnarzt|zahnärztin)\s*:?|leistungserbringer\s*:)\s+(.+?)(?:,|;|\s{2,}|$)`)
-	streetRe    = regexp.MustCompile(`(?i)(straße|strasse|str\.|weg\b|platz\b|allee\b|gasse\b|ring\b)\s*\d|\b\d{5}\s+[A-ZÄÖÜ][a-zäöüß]`)
+	treatedByRe = regexp.MustCompile(`(?i)(?:behandlung\s+durch|behandelnde[rn]?\s+(?:arzt|ärztin|zahnarzt|zahnärztin)\s*:?|leistungserbringer\s*:)\s+(.+?)(?:[,;:(]|$)`)
+	// GebüH (Gebührenverzeichnis für Heilpraktiker), not "Gebühr" or "Gebührenordnung für Ärzte".
+	gebuehRe = regexp.MustCompile(`gebüh(?:[^a-zäöüß]|$)`)
+	streetRe = regexp.MustCompile(`(?i)(straße|strasse|str\.|weg\b|platz\b|allee\b|gasse\b|ring\b)\s*\d|\b\d{5}\s+[A-ZÄÖÜ][a-zäöüß]`)
 )
 
 // Words that point to a refund document or to an invoice (one point each).
@@ -173,8 +177,8 @@ func Analyze(lines []Line, qr []string, now time.Time) Draft {
 			break
 		}
 		for i, l := range lower {
-			if strings.Contains(l, lab) {
-				if ds := datesIn(text[i], maxYear); len(ds) > 0 {
+			if at := labelIndex(l, lab); at >= 0 {
+				if ds := datesIn(text[i][at:], maxYear); len(ds) > 0 {
 					d.InvoiceDate = ds[0]
 				} else if i+1 < len(text) {
 					if ds := datesIn(text[i+1], maxYear); len(ds) > 0 {
@@ -264,15 +268,16 @@ func Analyze(lines []Line, qr []string, now time.Time) Draft {
 		}
 	}
 
-	// IBAN printed on the invoice.
+	// IBAN printed on the invoice (a line may also hold a BIC or a tax number first).
 	if d.IBAN == "" {
+	ibans:
 		for _, t := range text {
-			if m := ibanRe.FindStringSubmatch(strings.ToUpper(t)); m != nil {
+			for _, m := range ibanRe.FindAllStringSubmatch(strings.ToUpper(t), -1) {
 				iban := strings.ReplaceAll(m[1], " ", "")
 				if len(iban) >= 15 && validIBAN(iban) {
 					d.IBAN = iban
 					set("iban", SrcLabel)
-					break
+					break ibans
 				}
 			}
 		}
@@ -282,9 +287,11 @@ func Analyze(lines []Line, qr []string, now time.Time) Draft {
 	// practitioner in the text ("für die Behandlung durch Dr. …").
 	for _, t := range text {
 		if m := treatedByRe.FindStringSubmatch(t); m != nil {
-			d.Provider = strings.TrimSpace(m[1])
-			set("provider", SrcLabel)
-			break
+			if name := personName(m[1]); name != "" {
+				d.Provider = name
+				set("provider", SrcLabel)
+				break
+			}
 		}
 	}
 	if d.Provider == "" {
@@ -419,6 +426,46 @@ func provider(lines []Line, text, lower []string) string {
 	return text[cands[0].i]
 }
 
+// labelIndex returns where label starts in line at the beginning of a word
+// ("datum" in "Datum: …", not in "Geburtsdatum"), or -1.
+func labelIndex(line, label string) int {
+	for i := 0; i < len(line); {
+		j := strings.Index(line[i:], label)
+		if j < 0 {
+			return -1
+		}
+		at := i + j
+		if r, _ := utf8.DecodeLastRuneInString(line[:at]); at == 0 || !unicode.IsLetter(r) {
+			return at
+		}
+		i = at + 1
+	}
+	return -1
+}
+
+// nameParticles may appear in lower case inside a name.
+var nameParticles = map[string]bool{"von": true, "van": true, "de": true, "der": true, "zu": true, "und": true, "u.": true, "&": true}
+
+// personName cuts the name off the text that follows it on the same line:
+// "Dr. med. Anna Muster folgende Leistungen" → "Dr. med. Anna Muster".
+// Names are capitalised; lower-case words end them, except particles and
+// abbreviated titles such as "med." or "dent.".
+func personName(s string) string {
+	var keep []string
+	for _, w := range strings.Fields(s) {
+		r, _ := utf8.DecodeRuneInString(w)
+		if unicode.IsUpper(r) || unicode.IsDigit(r) || nameParticles[w] || strings.HasSuffix(w, ".") && len(w) <= 7 {
+			keep = append(keep, w)
+			continue
+		}
+		break
+	}
+	for len(keep) > 0 && nameParticles[keep[len(keep)-1]] {
+		keep = keep[:len(keep)-1]
+	}
+	return strings.TrimRight(strings.Join(keep, " "), " .-–")
+}
+
 func category(all string) model.Category {
 	has := func(words ...string) bool {
 		for _, w := range words {
@@ -435,7 +482,7 @@ func category(all string) model.Category {
 		return model.CatPharmacy
 	case has("physiotherap", "krankengymnastik", "manuelle lymphdrainage", "heilmittel", "ergotherap", "logopäd"):
 		return model.CatTherapy
-	case has("heilpraktiker", "gebüh"):
+	case has("heilpraktiker"), gebuehRe.MatchString(all):
 		return model.CatNaturopath
 	case has("krankenhaus", "stationär", "wahlleistung"):
 		return model.CatHospital

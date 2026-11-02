@@ -22,9 +22,19 @@ func TestParse(t *testing.T) {
 }
 
 func TestArithmetic(t *testing.T) {
+	// § 188 Abs. 3 BGB: a deadline from 29 February ends on 28 February.
 	d := MustParse("2024-02-29")
-	if got := d.AddYears(3); got.String() != "2027-03-01" {
+	if got := d.AddYears(3); got.String() != "2027-02-28" {
 		t.Errorf("AddYears = %s", got)
+	}
+	if got := d.AddYears(4); got.String() != "2028-02-29" {
+		t.Errorf("AddYears leap to leap = %s", got)
+	}
+	if got := MustParse("2025-03-01").AddYears(-1); got.String() != "2024-03-01" {
+		t.Errorf("AddYears back = %s", got)
+	}
+	if n := MustParse("0001-01-01").DaysUntil(MustParse("9999-12-31")); n != 3652058 {
+		t.Errorf("DaysUntil across millennia = %d", n)
 	}
 	if n := MustParse("2026-01-01").DaysUntil(MustParse("2026-03-01")); n != 59 {
 		t.Errorf("DaysUntil = %d", n)

@@ -94,7 +94,7 @@ func TestImportLegacyLayout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Sheet != "Auflistung" || len(res.Invoices) != 4 || fmt.Sprint(res.Rows) != "[2 3 5 6]" || fmt.Sprint(res.AllowanceRows) != "[5]" {
+	if res.Sheet != "Auflistung" || len(res.Invoices) != 4 || fmt.Sprint(res.Rows) != "[2 3 5 6]" || fmt.Sprint(res.AllowanceOf) != "[2]" {
 		t.Fatalf("sheet %q, %d invoices", res.Sheet, len(res.Invoices))
 	}
 	r2 := res.Invoices[0]
@@ -191,5 +191,33 @@ func TestImportFile(t *testing.T) {
 	t.Logf("sheet %q: %d invoices %v, %d allowances, %d warnings", res.Sheet, len(res.Invoices), years, len(res.Allowances), len(res.Warnings))
 	for _, w := range res.Warnings {
 		t.Logf("row %d: %s", w.Row, w.Text)
+	}
+}
+
+func TestSheetsTotalsAndZeroRefunds(t *testing.T) {
+	f := excelize.NewFile()
+	defer f.Close()
+	headers := []any{"Rechnungsdatum", "Behandler", "Gesamtbetrag", "Eingereicht Krankenkasse", "Betrag Erstattet Krankenkasse"}
+	for i, sh := range []string{"2024", "2025"} {
+		if i == 0 {
+			f.SetSheetName("Sheet1", sh)
+		} else {
+			f.NewSheet(sh)
+		}
+		f.SetSheetRow(sh, "A1", &headers)
+		f.SetSheetRow(sh, "A2", &[]any{fmt.Sprintf("1%d.03.%s", i, sh), "Praxis " + sh, 100, "", 0})
+		f.SetSheetRow(sh, "A4", &[]any{nil, nil, 100}) // total below the table
+	}
+	var buf bytes.Buffer
+	f.Write(&buf)
+	res, err := Import(&buf, Options{PKVPayerID: "pkv"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Sheet != "2024, 2025" || len(res.Invoices) != 2 || fmt.Sprint(res.RowSheets) != "[2024 2025]" {
+		t.Fatalf("sheets %q, invoices %+v", res.Sheet, res.Invoices)
+	}
+	if c := res.Invoices[0].Claims["pkv"]; len(c.Refunds) != 0 {
+		t.Errorf("0 imported as a refund: %+v", c)
 	}
 }

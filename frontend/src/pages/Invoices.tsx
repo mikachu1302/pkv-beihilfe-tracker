@@ -8,6 +8,7 @@ import {MarkBox} from "../components/MarkBox";
 import {Badge, Empty, ErrorNotice, Loading, YearSelect} from "../components/ui";
 import {CATEGORY_LABELS, date, eur, num, plural, toInput, today} from "../lib/format";
 import {useBackend} from "../lib/useBackend";
+import {useDialog} from "../lib/useDialog";
 import {exportExcel} from "./Overview";
 
 type Filter = "all" | "open" | "submitted" | "clarify" | "deadline" | "unpaid";
@@ -278,12 +279,13 @@ function RefundPopover({claim, onSave, onCancel}: {claim: ClaimViewDTO; onSave: 
     const open = num(claim.expected) - num(claim.actual);
     const [amount, setAmount] = useState(toInput((open > 0 ? open : num(claim.expected)).toFixed(2)));
     const [d, setD] = useState(today());
+    const ref = useDialog<HTMLDivElement>(onCancel);
     return (
-        <div className="popover" role="dialog" aria-label={`Erstattung ${claim.payerName}`}>
+        <div ref={ref} className="popover" role="dialog" aria-label={`Erstattung ${claim.payerName}`} tabIndex={-1}>
             <div className="grid" style={{gridTemplateColumns: "1fr 1fr"}}>
                 <div className="field">
                     <label htmlFor="refund-amount">Erstattet (€)</label>
-                    <input id="refund-amount" autoFocus value={amount} onChange={e => setAmount(e.target.value)}
+                    <input id="refund-amount" value={amount} onChange={e => setAmount(e.target.value)}
                            onKeyDown={e => e.key === "Enter" && onSave(amount, d)}/>
                 </div>
                 <div className="field">
@@ -303,11 +305,12 @@ function RefundPopover({claim, onSave, onCancel}: {claim: ClaimViewDTO; onSave: 
 
 function ClarifyPopover({onSave, onCancel}: {onSave: (note: string) => void; onCancel: () => void}) {
     const [note, setNote] = useState("");
+    const ref = useDialog<HTMLDivElement>(onCancel);
     return (
-        <div className="popover" role="dialog" aria-label="Klärungsbedarf">
+        <div ref={ref} className="popover" role="dialog" aria-label="Klärungsbedarf" tabIndex={-1}>
             <div className="field">
                 <label htmlFor="clarify-note">Klärungsbedarf – Grund</label>
-                <input id="clarify-note" autoFocus value={note} placeholder="z. B. Steigerungssatz gekürzt"
+                <input id="clarify-note" value={note} placeholder="z. B. Steigerungssatz gekürzt"
                        onChange={e => setNote(e.target.value)} onKeyDown={e => e.key === "Enter" && onSave(note)}/>
             </div>
             <div className="actions" style={{marginTop: 10}}>

@@ -74,3 +74,22 @@ func TestBackupDirInsideDataDirIsRefused(t *testing.T) {
 		t.Errorf("sibling folder refused: %v", err)
 	}
 }
+
+func TestCheckDirEdgeCases(t *testing.T) {
+	data := dataDir(t)
+	// A sibling whose name starts with ".." is outside the data folder.
+	if err := CheckDir(data, filepath.Join(data, "..sicherung")); !errors.Is(err, ErrInsideDataDir) {
+		t.Errorf("folder inside named ..sicherung: %v", err)
+	}
+	if err := CheckDir(data, data+"-sicherung"); err != nil {
+		t.Errorf("sibling refused: %v", err)
+	}
+	// A link that points into the data folder.
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(data, link); err != nil {
+		t.Skip("no symlinks:", err)
+	}
+	if err := CheckDir(data, filepath.Join(link, "neu", "sicherung")); !errors.Is(err, ErrInsideDataDir) {
+		t.Errorf("backup through a link into the data folder: %v", err)
+	}
+}

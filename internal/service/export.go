@@ -48,36 +48,17 @@ type SubmissionPDFDTO struct {
 // ExportSubmission writes one PDF for a submission to payerID: a cover page
 // listing the invoices, followed by their documents.
 func (s *Service) ExportSubmission(invoiceIDs []string, payerID, path string) (SubmissionPDFDTO, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	st, data, err := s.ready()
-	if err != nil {
-		return SubmissionPDFDTO{}, err
-	}
-	p, ok := data.Settings.Payer(payerID)
-	if !ok {
-		return SubmissionPDFDTO{}, fmt.Errorf("unbekannter Kostenträger %q", payerID)
-	}
 	if strings.TrimSpace(path) == "" {
 		return SubmissionPDFDTO{}, errors.New("kein Dateiname")
 	}
 	if !strings.HasSuffix(strings.ToLower(path), ".pdf") {
 		path += ".pdf"
 	}
-	b := export.Bundle{Payer: p.Name, Date: s.today()}
-	for _, id := range invoiceIDs {
-		inv, err := findInvoice(data, id)
-		if err != nil {
-			return SubmissionPDFDTO{}, err
-		}
-		item := export.BundleItem{Provider: inv.Provider, ServiceDate: inv.ServiceDate(), InvoiceDate: inv.InvoiceDate,
-			Reference: inv.Reference, Amount: inv.Amount}
-		for _, a := range inv.Attachments {
-			item.Documents = append(item.Documents, st.DocumentPath(a))
-		}
-		b.Items = append(b.Items, item)
+	b, err := s.bundle(invoiceIDs, payerID)
+	if err != nil {
+		return SubmissionPDFDTO{}, err
 	}
-	slices.SortStableFunc(b.Items, func(a, c export.BundleItem) int { return a.ServiceDate.Compare(c.ServiceDate) })
+	// Merging the documents can take a while: done without holding the lock.
 	res, err := export.WriteBundle(b, path)
 	if err != nil {
 		return SubmissionPDFDTO{}, fmt.Errorf("PDF konnte nicht erstellt werden: %w", err)
@@ -87,6 +68,37 @@ func (s *Service) ExportSubmission(invoiceIDs []string, payerID, path string) (S
 		out.Missing = []string{}
 	}
 	return out, nil
+}
+
+// bundle collects what ExportSubmission writes.
+func (s *Service) bundle(invoiceIDs []string, payerID string) (export.Bundle, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st, data, err := s.ready()
+	if err != nil {
+		return export.Bundle{}, err
+	}
+	p, ok := data.Settings.Payer(payerID)
+	if !ok {
+		return export.Bundle{}, fmt.Errorf("unbekannter Kostenträger %q", payerID)
+	}
+	b := export.Bundle{Payer: p.Name, Date: s.today()}
+	for _, id := range invoiceIDs {
+		inv, err := findInvoice(data, id)
+		if err != nil {
+			return export.Bundle{}, err
+		}
+		item := export.BundleItem{Provider: inv.Provider, ServiceDate: inv.ServiceDate(), InvoiceDate: inv.InvoiceDate,
+			Reference: inv.Reference, Amount: inv.Amount}
+		for _, a := range inv.Attachments {
+			if path, err := st.DocumentPath(a); err == nil {
+				item.Documents = append(item.Documents, path)
+			}
+		}
+		b.Items = append(b.Items, item)
+	}
+	slices.SortStableFunc(b.Items, func(a, c export.BundleItem) int { return a.ServiceDate.Compare(c.ServiceDate) })
+	return b, nil
 }
 
 // ReminderDTO is something to do.
@@ -133,21 +145,22 @@ func (s *Service) Reminders() ([]ReminderDTO, error) {
 			switch {
 			case !c.Deadline.IsZero() && c.DeadlineDays < 0:
 				add(ReminderDTO{Kind: "deadline", Text: fmt.Sprintf("Antragsfrist bei %s abgelaufen (%s): %s", c.PayerName, c.Deadline.DE(), label),
-					InvoiceID: inv.ID, Year: v.Year, Urgent: true})
+					InvoiceID: inv.ID, PayerID: c.PayerID, Year: v.Year, Urgent: true})
 			case !c.Deadline.IsZero() && c.DeadlineDays <= calc.DeadlineWarnDays:
 				add(ReminderDTO{Kind: "deadline", Text: fmt.Sprintf("Bei %s bis %s einreichen (noch %d Tage): %s", c.PayerName, c.Deadline.DE(), c.DeadlineDays, label),
-					InvoiceID: inv.ID, Year: v.Year, Urgent: c.DeadlineDays <= 30})
+					InvoiceID: inv.ID, PayerID: c.PayerID, Year: v.Year, Urgent: c.DeadlineDays <= 30})
 			}
 			if c.Status == calc.StatusSubmitted && today.DaysUntil(c.Submitted.Date) < -42 {
 				add(ReminderDTO{Kind: "refund", Text: fmt.Sprintf("Erstattung von %s seit %d Wochen offen: %s", c.PayerName, -today.DaysUntil(c.Submitted.Date)/7, label),
-					InvoiceID: inv.ID, Year: v.Year})
+					InvoiceID: inv.ID, PayerID: c.PayerID, Year: v.Year})
 			}
 			if c.Clarify.Done() {
 				note := ""
 				if c.Clarify.Note != "" {
 					note = " – " + c.Clarify.Note
 				}
-				add(ReminderDTO{Kind: "clarify", Text: fmt.Sprintf("Klärungsbedarf bei %s%s: %s", c.PayerName, note, label), InvoiceID: inv.ID, Year: v.Year})
+				add(ReminderDTO{Kind: "clarify", Text: fmt.Sprintf("Klärungsbedarf bei %s%s: %s", c.PayerName, note, label),
+					InvoiceID: inv.ID, PayerID: c.PayerID, Year: v.Year})
 			} else if c.SuggestClarify {
 				add(ReminderDTO{Kind: "deviation", Text: fmt.Sprintf("%s hat %s € statt %s € erstattet: %s", c.PayerName, c.Actual.DE(), c.Expected.DE(), label),
 					InvoiceID: inv.ID, PayerID: c.PayerID, Year: v.Year})

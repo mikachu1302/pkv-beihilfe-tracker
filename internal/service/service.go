@@ -58,6 +58,7 @@ type Service struct {
 	watchDebounce time.Duration
 	emitter       Emitter
 	backupErr     error
+	bg            sync.WaitGroup // background backups
 	upload        *upload.Server
 	inboxSeen     []string // inbox file names at the last reload
 
@@ -109,6 +110,10 @@ func (s *Service) open(dir string) error {
 	}
 	s.st, s.data, s.issues, s.loadErr = st, data, issues, nil
 	s.stopWatch()
+	if s.upload != nil { // it writes into the inbox of the previous folder
+		_ = s.upload.Stop()
+		s.upload = nil
+	}
 	s.inboxSeen = s.inboxSeen[:0]
 	if files, err := st.ListInbox(); err == nil {
 		for _, f := range files {
@@ -176,11 +181,19 @@ func (s *Service) SetEmitter(e Emitter) {
 //wails:ignore
 func (s *Service) ServiceShutdown() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.stopWatch()
 	if s.upload != nil {
 		_ = s.upload.Stop()
 		s.upload = nil
+	}
+	s.mu.Unlock()
+	// Let a running backup finish (it writes to a temp file first, so an
+	// interrupted one leaves no broken snapshot – but a finished one is better).
+	done := make(chan struct{})
+	go func() { s.bg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
 	}
 	return nil
 }
@@ -318,15 +331,15 @@ func (s *Service) Years() ([]int, error) {
 	return years, nil
 }
 
-// replaceInvoice puts inv into the in-memory list (by ID).
+// replaceInvoice puts inv into the in-memory list (by ID), keeping it sorted
+// by service date.
 func replaceInvoice(d *store.Data, inv model.Invoice) {
-	for i := range d.Invoices {
-		if d.Invoices[i].ID == inv.ID {
-			d.Invoices[i] = inv
-			return
-		}
+	i := slices.IndexFunc(d.Invoices, func(x model.Invoice) bool { return x.ID == inv.ID })
+	if i >= 0 {
+		d.Invoices[i] = inv
+	} else {
+		d.Invoices = append(d.Invoices, inv)
 	}
-	d.Invoices = append(d.Invoices, inv)
 	slices.SortStableFunc(d.Invoices, func(a, b model.Invoice) int {
 		if c := a.ServiceDate().Compare(b.ServiceDate()); c != 0 {
 			return c

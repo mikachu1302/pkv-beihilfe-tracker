@@ -1,4 +1,5 @@
 // Small presentational components shared by the pages.
+import {useId} from "react";
 import type {ReactNode} from "react";
 
 export function Notice({kind, children}: {kind?: "warn" | "bad" | "good"; children: ReactNode}) {
@@ -21,7 +22,11 @@ export function Badge({kind, children, title}: {kind?: "good" | "warn" | "bad"; 
     return <span className={`badge ${kind ?? ""}`} title={title}>{children}</span>;
 }
 
-/** Year dropdown used on several pages. */
+/**
+ * Year dropdown used on several pages. Year 0 holds the invoices without a
+ * treatment date ("ohne Datum") – except with allLabel, where 0 means all
+ * years (the backend's ListInvoices(0)); undated invoices are included there.
+ */
 export function YearSelect({years, value, onChange, allLabel}: {
     years: number[];
     value: number;
@@ -31,12 +36,12 @@ export function YearSelect({years, value, onChange, allLabel}: {
     return (
         <select aria-label="Jahr" style={{width: "auto"}} value={value} onChange={e => onChange(Number(e.target.value))}>
             {allLabel && <option value={0}>{allLabel}</option>}
-            {years.map(y => <option key={y} value={y}>{y === 0 ? "ohne Datum" : y}</option>)}
+            {years.filter(y => !allLabel || y !== 0).map(y => <option key={y} value={y}>{y === 0 ? "ohne Datum" : y}</option>)}
         </select>
     );
 }
 
-/** Labelled form field wrapper. */
+/** Labelled form field wrapper. Without htmlFor the label names the group of controls inside. */
 export function Field({label, htmlFor, hint, wide, children}: {
     label: string;
     htmlFor?: string;
@@ -44,9 +49,11 @@ export function Field({label, htmlFor, hint, wide, children}: {
     wide?: boolean;
     children: ReactNode;
 }) {
+    const id = useId();
+    const group = htmlFor ? {} : {role: "group", "aria-labelledby": id};
     return (
-        <div className={`field ${wide ? "wide" : ""}`}>
-            <label htmlFor={htmlFor}>{label}</label>
+        <div className={`field ${wide ? "wide" : ""}`} {...group}>
+            <label id={id} htmlFor={htmlFor}>{label}</label>
             {children}
             {hint && <div className="hint">{hint}</div>}
         </div>

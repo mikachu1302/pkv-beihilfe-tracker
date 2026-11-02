@@ -122,3 +122,26 @@ func TestInboxFilesAreRelevant(t *testing.T) {
 	os.WriteFile(filepath.Join(inbox, "Handy-1.jpg"), []byte("jpg"), 0o644)
 	wait(t, ch)
 }
+
+func TestYearFolderRemovedIsAChange(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "2025", "rechnungen")
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, "a.json"), []byte(`{}`), 0o644)
+	_, ch := start(t, root, nil)
+	// Moved to the trash by hand: rename out of the data folder.
+	if err := os.Rename(filepath.Join(root, "2025"), filepath.Join(t.TempDir(), "2025")); err != nil {
+		t.Skip("cannot move across file systems:", err)
+	}
+	wait(t, ch)
+}
+
+func TestOtherFoldersAreNotWatched(t *testing.T) {
+	root := t.TempDir()
+	own := filepath.Join(root, "Privat")
+	os.MkdirAll(filepath.Join(own, "2026"), 0o755)
+	_, ch := start(t, root, nil)
+	os.WriteFile(filepath.Join(own, "notizen.json"), []byte(`{}`), 0o644)
+	os.WriteFile(filepath.Join(own, "2026", "x.json"), []byte(`{}`), 0o644)
+	quiet(t, ch)
+}

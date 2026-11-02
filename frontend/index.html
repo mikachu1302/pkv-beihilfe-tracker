@@ -3,6 +3,11 @@
 <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <!-- Everything is served by the app itself. 'wasm-unsafe-eval': Tesseract, zxing and pdf.js
+         decoders are WebAssembly; blob: workers: pdf.js wraps its worker under the wails:// scheme;
+         data: images: the phone QR code. Removed by the Vite dev server (inline Fast Refresh
+         preamble, HMR websocket on another origin), see vite.config.ts. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'none'"/>
     <title>PKV Beihilfe Tracker</title>
 </head>
 <body>

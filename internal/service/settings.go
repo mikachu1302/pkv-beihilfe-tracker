@@ -218,8 +218,11 @@ func (s *Service) GetSettings() (SettingsDTO, error) {
 }
 
 // SaveSettings validates and stores the settings. Errors prevent saving;
-// warnings are returned with the result.
-func (s *Service) SaveSettings(d SettingsDTO) (SettingsResultDTO, error) {
+// warnings are returned with the result. original is the state the form was
+// loaded from (may be nil): changes made in the meantime – aliases learned
+// from a Bescheid, edits on another device – are kept unless the form
+// changed the same value.
+func (s *Service) SaveSettings(d SettingsDTO, original *SettingsDTO) (SettingsResultDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	st, data, err := s.ready()
@@ -229,6 +232,15 @@ func (s *Service) SaveSettings(d SettingsDTO) (SettingsResultDTO, error) {
 	set, err := settingsFromDTO(d)
 	if err != nil {
 		return SettingsResultDTO{}, err
+	}
+	if original != nil {
+		base, err := settingsFromDTO(*original)
+		if err != nil {
+			return SettingsResultDTO{}, err
+		}
+		if set, err = rebase(base, set, data.Settings); err != nil {
+			return SettingsResultDTO{}, err
+		}
 	}
 	var errs []string
 	res := SettingsResultDTO{Problems: []ProblemDTO{}}

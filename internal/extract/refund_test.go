@@ -91,3 +91,20 @@ func TestLayoutEdgeCases(t *testing.T) {
 		t.Errorf("empty document: %+v", d)
 	}
 }
+
+func TestRefundHeaderAndRemarksFromReview(t *testing.T) {
+	d := AnalyzeRefund(lines(`
+Beihilfestelle Beispiel
+Max Beispiel, Geburtsdatum 14.02.1992
+Bescheid vom 28.04.2026
+03.03.2026  Dr. Muster  Kürzung nach Ziffer 5  286,40  257,43  180,20
+05.03.2026  Apotheke     45,10   45,10   31,57
+Eigenbehalt                         -10,00
+Auszahlungsbetrag                  201,77`), now)
+	if d.Date.String() != "2026-04-28" {
+		t.Errorf("date %s (birth date taken?)", d.Date)
+	}
+	if len(d.Positions) != 2 || len(d.Deductions) != 1 || d.Deductions[0].Amount != 1000 {
+		t.Errorf("positions %d, deductions %+v", len(d.Positions), d.Deductions)
+	}
+}

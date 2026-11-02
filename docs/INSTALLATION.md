@@ -19,7 +19,9 @@ abfragt. Installieren, Aktualisieren oder Entfernen der App ändert daran nichts
 ## Linux
 
 Benötigt werden GTK 3 und **WebKitGTK 4.1** – auf den meisten Desktop-Systemen schon vorhanden;
-die Pakete (`.rpm`, `.deb`) ziehen sie automatisch nach.
+die Pakete (`.rpm`, `.deb`) ziehen sie automatisch nach. Die fertigen Pakete laufen auf 64-Bit-PCs
+(x86_64) mit einer aktuellen Distribution: Ubuntu 22.04 oder neuer, Linux Mint 21+, Debian 12+,
+Fedora 36+, openSUSE Tumbleweed, Arch. Für ältere Systeme oder ARM: aus dem Quellcode bauen.
 
 ### Paket (empfohlen)
 
@@ -147,7 +149,7 @@ make uninstall
 
 | | Linux | macOS | Windows |
 |---|---|---|---|
-| Programm | `~/.local/bin` bzw. `/usr/local/bin` | `/Applications` bzw. `~/Applications` | `C:\Program Files\mikachu1302\PKV Beihilfe Tracker` |
+| Programm | Paket: `/usr/bin`, ohne Root: `~/.local/bin` | `/Applications` bzw. `~/Applications` | `C:\Program Files\mikachu1302\PKV Beihilfe Tracker` |
 | Einstellungen des Geräts (Datenordner, Sicherungsordner) | `~/.config/pkv-beihilfe-tracker` | `~/Library/Application Support/pkv-beihilfe-tracker` | `%AppData%\pkv-beihilfe-tracker` |
 | Rechnungen, Belege, Einstellungen der Versicherung | im gewählten Datenordner | ebenso | ebenso |
 
@@ -157,14 +159,17 @@ make uninstall
 ## Probleme
 
 - **Linux: Fenster bleibt weiß oder leer** (manche Grafiktreiber, v. a. NVIDIA unter Wayland):
-  mit `WEBKIT_DISABLE_DMABUF_RENDERER=1 pkv-beihilfe-tracker` starten. Hilft das, die Zeile
-  `Exec=` in `~/.local/share/applications/pkv-beihilfe-tracker.desktop` entsprechend ergänzen
-  (`Exec=env WEBKIT_DISABLE_DMABUF_RENDERER=1 …`).
+  mit `WEBKIT_DISABLE_DMABUF_RENDERER=1 pkv-beihilfe-tracker` starten. Hilft das, den Menüeintrag
+  anpassen: `~/.local/share/applications/pkv-beihilfe-tracker.desktop` (bei `.deb`/`.rpm` vorher
+  `/usr/share/applications/pkv-beihilfe-tracker.desktop` dorthin kopieren) und die Zeile `Exec=`
+  zu `Exec=env WEBKIT_DISABLE_DMABUF_RENDERER=1 pkv-beihilfe-tracker` ändern.
 - **Linux: „libwebkit2gtk-4.1.so.0: cannot open shared object file“** – WebKitGTK 4.1 nachinstallieren
   (siehe oben).
 - **macOS: „ist beschädigt und kann nicht geöffnet werden“** – das ist die Download-Markierung, nicht
   ein Defekt: den `xattr`-Befehl oben ausführen.
 - **Handy erreicht die Upload-Seite nicht:** Handy und Computer müssen im selben WLAN sein (kein
-  Gäste-WLAN). Fragt die Firewall unter Windows oder macOS nach, für private Netzwerke erlauben;
-  unter Linux mit aktiver Firewall (z. B. firewalld) den angezeigten Port freigeben oder die Belege
-  über den Cloud-Ordner `Eingang` schicken.
+  Gäste-WLAN). Der Link gilt, solange das Fenster offen ist (höchstens 15 Minuten). Fragt die
+  Firewall unter Windows oder macOS nach, für private Netzwerke erlauben; unter Linux mit aktiver
+  Firewall (z. B. firewalld) den angezeigten Port freigeben oder die Belege über den Cloud-Ordner
+  `Eingang` schicken. Die Übertragung im WLAN ist unverschlüsselt (HTTP) – nur im eigenen,
+  verschlüsselten WLAN verwenden.

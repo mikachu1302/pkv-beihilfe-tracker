@@ -7,6 +7,11 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same branch makes the running checks obsolete.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Go tests (${{ matrix.os }})
@@ -38,7 +43,7 @@ jobs:
       - name: gofmt
         run: test -z "$(gofmt -l .)" || (gofmt -l . ; exit 1)
       - name: shellcheck (install scripts)
-        run: shellcheck build/linux/install.sh scripts/install.sh
+        run: shellcheck build/linux/install.sh build/linux/nfpm/scripts/postinstall.sh scripts/install.sh
       - run: go vet -tags gtk3 ./...
       - run: go test -race -tags gtk3 ./...
       - uses: golangci/golangci-lint-action@v8
@@ -49,7 +54,7 @@ jobs:
         run: go run golang.org/x/vuln/cmd/govulncheck@latest -tags gtk3 ./...
 
   frontend:
-    name: Frontend (typecheck, test, build)
+    name: Frontend (typecheck, lint, test, build)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -70,6 +75,8 @@ jobs:
       - name: Generate TypeScript bindings
         run: wails3 generate bindings -f '-tags gtk3' -clean=true -ts -i
       - run: npm run typecheck
+        working-directory: frontend
+      - run: npm run lint
         working-directory: frontend
       - run: npm test
         working-directory: frontend

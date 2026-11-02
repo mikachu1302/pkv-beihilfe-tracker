@@ -135,11 +135,12 @@ func AnalyzeRefund(lines []Line, now time.Time) RefundDraft {
 	firstDate := func(labels []string) civil.Date {
 		for _, lab := range labels {
 			for i, l := range lower {
-				if !strings.Contains(l, lab) {
+				at := labelIndex(l, lab)
+				if at < 0 {
 					continue
 				}
 				// the date after the label on the same line, else on the next line
-				after := text[i][strings.Index(l, lab):]
+				after := text[i][at:]
 				if ds := datesIn(after, maxYear); len(ds) > 0 {
 					return ds[0]
 				}
@@ -169,8 +170,12 @@ func AnalyzeRefund(lines []Line, now time.Time) RefundDraft {
 		if len(amts) == 0 {
 			continue
 		}
+		// A line with a date and several amounts is a position, even if
+		// it says "Kürzung" (a remark on that position).
+		dateLoc := dateRe.FindStringIndex(t)
+		position := dateLoc != nil && dateLoc[1] <= amts[0].start && len(amts) >= 2
 		switch {
-		case hasAny(l, deductionWords):
+		case !position && hasAny(l, deductionWords):
 			label := strings.TrimSpace(strings.TrimRight(t[:amts[0].start], " :.-–"))
 			if label == "" {
 				label = "Abzug"
@@ -182,7 +187,7 @@ func AnalyzeRefund(lines []Line, now time.Time) RefundDraft {
 		case headerLine[i]:
 			continue
 		}
-		ds := dateRe.FindStringIndex(t)
+		ds := dateLoc
 		if ds == nil {
 			continue
 		}

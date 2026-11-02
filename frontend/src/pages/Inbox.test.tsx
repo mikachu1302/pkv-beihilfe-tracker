@@ -1,4 +1,4 @@
-import {screen, waitFor} from "@testing-library/react";
+import {fireEvent, screen, waitFor} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import type {AnalysisDTO, InvoiceDTO} from "../api";
@@ -45,7 +45,7 @@ describe("Inbox", () => {
         expect(screen.getByLabelText("Betrag (€) *")).toHaveValue("286,40");
         expect(screen.getByText("aus GiroCode")).toBeInTheDocument();
         expect(screen.getByText("bitte prüfen")).toBeInTheDocument();
-        expect(capture.recognize).toHaveBeenCalledWith("/datafile/inbox/scan.pdf", "pdf", expect.any(Function));
+        expect(capture.recognize).toHaveBeenCalledWith("/datafile/inbox/scan.pdf", "pdf", expect.any(Function), expect.any(AbortSignal));
         expect(svc.AnalyzeDocument).toHaveBeenCalledWith({lines: [{text: "Rechnung", page: 1, x: 0, y: 0, w: 0, h: 0}], qr: ["BCD"]});
 
         await user.clear(screen.getByLabelText("Betrag (€) *"));
@@ -86,6 +86,70 @@ describe("Inbox", () => {
         expect(screen.getByText("http://192.168.1.20:41234/u/abc")).toBeInTheDocument();
         await user.click(screen.getByRole("button", {name: "Fertig"}));
         await waitFor(() => expect(svc.StopPhoneUpload).toHaveBeenCalled());
+    });
+
+    it("keeps the edited draft when the list reloads", async () => {
+        const user = userEvent.setup();
+        const view = renderAt("/", "/", <Inbox/>);
+        const provider = await screen.findByLabelText("Behandler *");
+        await user.clear(provider);
+        await user.type(provider, "Praxis Beispiel");
+
+        // A live update reloads the list: new objects for the same file, plus a new file.
+        svc.ListInbox.mockResolvedValue([
+            {name: "scan.pdf", size: 1000, modified: "2026-11-02 10:15", type: "pdf", url: "/datafile/inbox/scan.pdf"},
+            {name: "foto.jpg", size: 2000, modified: "2026-11-02 10:30", type: "image", url: "/datafile/inbox/foto.jpg"},
+        ]);
+        view.setApp({dataVersion: 1});
+        expect(await screen.findByText("foto.jpg")).toBeInTheDocument();
+        expect(screen.getByLabelText("Behandler *")).toHaveValue("Praxis Beispiel");
+        expect(capture.recognize).toHaveBeenCalledTimes(1);
+        expect(capture.renderPdfPreview).toHaveBeenCalledTimes(1);
+    });
+
+    it("reads a changed file again without discarding edits", async () => {
+        const user = userEvent.setup();
+        const view = renderAt("/", "/", <Inbox/>);
+        const provider = await screen.findByLabelText("Behandler *");
+        await user.clear(provider);
+        await user.type(provider, "Praxis Beispiel");
+
+        svc.ListInbox.mockResolvedValue([{name: "scan.pdf", size: 1200, modified: "2026-11-02 10:20", type: "pdf", url: "/datafile/inbox/scan.pdf"}]);
+        svc.AnalyzeDocument.mockResolvedValue({...analysis(), draft: {invoice: {...draft, provider: "Dr. Neu"}, view: invoiceRow("", "Dr. Neu")}});
+        view.setApp({dataVersion: 1});
+        await waitFor(() => expect(capture.recognize).toHaveBeenCalledTimes(2));
+        await waitFor(() => expect(svc.AnalyzeDocument).toHaveBeenCalledTimes(2));
+        expect(screen.getByLabelText("Behandler *")).toHaveValue("Praxis Beispiel");
+        expect(capture.renderPdfPreview).toHaveBeenCalledTimes(2);
+    });
+
+    it("closes the confirm dialog with Escape and returns the focus", async () => {
+        const user = userEvent.setup();
+        renderAt("/", "/", <Inbox/>);
+        await screen.findByLabelText("Behandler *");
+        const discard = screen.getByRole("button", {name: "Verwerfen"});
+        await user.click(discard);
+        const dialog = await screen.findByRole("alertdialog", {name: "„scan.pdf“ aus dem Posteingang löschen?"});
+        expect(dialog).toHaveAttribute("aria-modal", "true");
+        expect(screen.getByRole("button", {name: "Abbrechen"})).toHaveFocus();
+        await user.keyboard("{Escape}");
+        expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+        expect(discard).toHaveFocus();
+        expect(svc.DiscardInbox).not.toHaveBeenCalled();
+    });
+
+    it("refuses dropped files above the size limit", async () => {
+        svc.AddToInbox.mockResolvedValue("klein.pdf");
+        renderAt("/", "/", <Inbox/>);
+        await screen.findByLabelText("Behandler *");
+        const small = new File(["%PDF-1.4"], "klein.pdf", {type: "application/pdf"});
+        const big = new File(["%PDF-1.4"], "gross.pdf", {type: "application/pdf"});
+        Object.defineProperty(big, "size", {value: 41 * 1024 * 1024});
+        const page = screen.getByRole("heading", {name: "Posteingang"}).closest(".page-head")!.parentElement!;
+        fireEvent.drop(page, {dataTransfer: {files: [small, big], types: ["Files"]}});
+        await waitFor(() => expect(svc.AddToInbox).toHaveBeenCalledTimes(1));
+        expect(svc.AddToInbox.mock.calls[0][0]).toBe("klein.pdf");
+        expect(await screen.findByText("„gross.pdf“ ist größer als 40 MB und wurde nicht hinzugefügt. 1 Datei hinzugefügt.")).toBeInTheDocument();
     });
 
     it("shows an empty inbox", async () => {

@@ -56,41 +56,57 @@ func (s *Service) BackupStatus() BackupStatusDTO {
 // and makes a first snapshot.
 func (s *Service) SetBackupDir(dir string) (BackupStatusDTO, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	st, _, err := s.ready()
 	if err != nil {
+		defer s.mu.Unlock()
 		return s.backupStatus(), err
 	}
 	dir = strings.TrimSpace(dir)
 	if dir != "" {
 		if err := backup.CheckDir(st.Root(), dir); err != nil {
+			defer s.mu.Unlock()
 			return s.backupStatus(), err
 		}
 	}
 	s.cfg.BackupDir = dir
 	if err := s.cfg.Save(s.cfgDir); err != nil {
+		defer s.mu.Unlock()
 		return s.backupStatus(), err
 	}
 	s.backupErr = nil
-	if dir != "" {
-		_, s.backupErr = backup.Create(st.Root(), dir, s.now(), backup.DefaultKeep)
+	if dir == "" {
+		defer s.mu.Unlock()
+		return s.backupStatus(), nil
 	}
-	return s.backupStatus(), s.backupErr
+	return s.snapshot(st.Root(), dir)
 }
 
 // BackupNow makes a snapshot right away.
 func (s *Service) BackupNow() (BackupStatusDTO, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	st, _, err := s.ready()
 	if err != nil {
+		defer s.mu.Unlock()
 		return s.backupStatus(), err
 	}
 	if s.cfg.BackupDir == "" {
+		defer s.mu.Unlock()
 		return s.backupStatus(), errors.New("bitte zuerst einen Sicherungsordner wählen")
 	}
-	_, s.backupErr = backup.Create(st.Root(), s.cfg.BackupDir, s.now(), backup.DefaultKeep)
-	return s.backupStatus(), s.backupErr
+	return s.snapshot(st.Root(), s.cfg.BackupDir)
+}
+
+// snapshot zips the data folder without holding the lock – that can take a
+// while with many documents, and the app must stay usable. The caller holds
+// the lock; snapshot releases it.
+func (s *Service) snapshot(root, dir string) (BackupStatusDTO, error) {
+	now := s.now()
+	s.mu.Unlock()
+	_, err := backup.Create(root, dir, now, backup.DefaultKeep)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.backupErr = err
+	return s.backupStatus(), err
 }
 
 // autoBackup starts a snapshot in the background when the last one is older
@@ -99,12 +115,21 @@ func (s *Service) autoBackup() {
 	if s.cfg == nil || s.cfg.BackupDir == "" || s.st == nil {
 		return
 	}
+	now := s.now()
 	list, err := backup.List(s.cfg.BackupDir)
-	if err == nil && len(list) > 0 && s.now().Sub(list[0].Time) < autoBackupAge {
-		return
+	for _, b := range list {
+		// A snapshot named with a future time (clock was wrong) does not count.
+		if err == nil && !b.Time.After(now.Add(time.Minute)) {
+			if now.Sub(b.Time) < autoBackupAge {
+				return
+			}
+			break
+		}
 	}
-	root, dir, now := s.st.Root(), s.cfg.BackupDir, s.now()
+	root, dir := s.st.Root(), s.cfg.BackupDir
+	s.bg.Add(1)
 	go func() {
+		defer s.bg.Done()
 		_, err := backup.Create(root, dir, now, backup.DefaultKeep)
 		s.mu.Lock()
 		s.backupErr = err

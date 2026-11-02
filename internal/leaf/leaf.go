@@ -2,6 +2,10 @@
 // object (strings, numbers, booleans, null, arrays) – keyed by a path such as
 // "/claims/bh/submitted/date", and builds objects back from leaves. It is the
 // basis for merging two versions of a record field by field.
+//
+// Two consequences of working with leaves: an empty object has no leaves and
+// disappears on the way back, and arrays are merged as a whole, never element
+// by element.
 package leaf
 
 import (
@@ -53,7 +57,9 @@ func walk(prefix string, obj map[string]any, out map[string]json.RawMessage) err
 	return nil
 }
 
-// Unflatten rebuilds a JSON object from leaves.
+// Unflatten rebuilds a JSON object from leaves. If one path is a leaf and
+// also the parent of other leaves (which Flatten never produces), the object
+// wins and the leaf is dropped.
 func Unflatten(leaves map[string]json.RawMessage) (json.RawMessage, error) {
 	root := map[string]any{}
 	for _, p := range slices.Sorted(maps.Keys(leaves)) {

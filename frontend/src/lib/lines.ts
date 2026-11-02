@@ -20,7 +20,7 @@ export interface TextLine {
 
 /**
  * Groups pieces whose vertical centres are close into lines (sorted top to
- * bottom, pieces left to right). Wide gaps become two spaces so columns stay
+ * bottom, pieces left to right). Wide gaps become three spaces so columns stay
  * apart ("Rechnungsbetrag   286,40").
  */
 export function groupLines(pieces: Piece[], page: number): TextLine[] {

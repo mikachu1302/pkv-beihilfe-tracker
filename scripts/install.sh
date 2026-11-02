@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=SC1111 # German typographic quotes („…“) in messages are intended
 # Lädt die neueste Version von PKV Beihilfe Tracker aus den GitHub-Releases
 # und installiert sie für den aktuellen Benutzer:
 #   Linux: ~/.local/bin + Anwendungsmenü (ohne Root)

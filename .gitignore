@@ -19,10 +19,10 @@ Eingang/
 belege/
 
 # wails / frontend
-build/linux/pkv-beihilfe-tracker.desktop
 build/linux/appimage/build/
 .task/
 node_modules/
 frontend/dist/
 frontend/bindings/
 frontend/public/ocr/
+frontend/public/pdfjs/

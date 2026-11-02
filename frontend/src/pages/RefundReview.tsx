@@ -3,11 +3,40 @@ import {Svc} from "../api";
 import type {PayerDTO, RefundLineDTO, RefundReviewDTO} from "../api";
 import {useToast} from "../components/feedback";
 import {Badge, Field, Notice} from "../components/ui";
-import {errMsg, eur, num, plural} from "../lib/format";
+import {errMsg, eur, num, parseAmount, plural} from "../lib/format";
 
-/** "180.20" (from the backend) → "180,20"; text typed by the user stays as it is. */
-function shown(v: string): string {
+let lineSeq = 0;
+
+/**
+ * ID for a line added here, assigned once so it stays the React key: the
+ * backend keeps non-empty unique IDs and only numbers lines without one.
+ */
+function newLineId(): string {
+    return `u${Date.now().toString(36)}${(++lineSeq).toString(36)}`;
+}
+
+/** "180.20" (from the backend) → "180,20". */
+function german(v: string): string {
     return /^-?\d+\.\d{2}$/.test(v) ? v.replace(".", ",") : v;
+}
+
+/**
+ * Amounts of a backend result in the German format for the inputs. Converted
+ * once here, not while rendering: text the user typed comes back unchanged and
+ * stays as typed (otherwise "1.23" on the way to "1.234,56" would turn into "1,23").
+ */
+function forForm(r: RefundReviewDTO, sent?: RefundReviewDTO): RefundReviewDTO {
+    const keep = (v: string, typed: string | undefined) => (v === typed ? v : german(v));
+    const before = new Map((sent?.lines ?? []).map(l => [l.id, l]));
+    return {
+        ...r,
+        paidOut: keep(r.paidOut, sent?.paidOut),
+        lines: (r.lines ?? []).map(l => {
+            const b = before.get(l.id);
+            return {...l, id: l.id || newLineId(), billed: keep(l.billed, b?.billed), eligible: keep(l.eligible, b?.eligible),
+                refund: keep(l.refund, b?.refund)};
+        }),
+    };
 }
 
 const MATCH: Record<string, [string, "good" | "warn" | "bad" | undefined]> = {
@@ -17,9 +46,14 @@ const MATCH: Record<string, [string, "good" | "warn" | "bad" | undefined]> = {
     none: ["keine Rechnung", "bad"],
 };
 
+const COLUMNS = [["billed", "Rechnungsbetrag"], ["eligible", "erstattungsfähig"], ["refund", "Erstattung"]] as const;
+
 const POSITIONS = [
     [0, "– nicht vorhanden –"], [1, "1. Betrag"], [2, "2. Betrag"], [3, "3. Betrag"], [4, "4. Betrag"], [-1, "letzter Betrag"],
 ] as const;
+
+/** Amount as a number, 0 if the text is not an amount. */
+const amount = (v: string) => parseAmount(v) || 0;
 
 /**
  * Review of a Beihilfebescheid or PKV-Leistungsabrechnung: the recognised
@@ -34,7 +68,7 @@ export default function RefundReview({inboxName, initial, payers, onDone, onDisc
     onDiscard: () => void;
 }) {
     const toast = useToast();
-    const [r, setR] = useState<RefundReviewDTO>(initial);
+    const [r, setR] = useState<RefundReviewDTO>(() => forForm(initial));
     const [error, setError] = useState("");
     const [saveLayout, setSaveLayout] = useState(true);
     const [busy, setBusy] = useState(false);
@@ -52,7 +86,7 @@ export default function RefundReview({inboxName, initial, payers, onDone, onDisc
             Svc.ReviewRefund(next).then(
                 res => {
                     if (n !== seq.current) return;
-                    setR(res);
+                    setR(forForm(res, next));
                     setError("");
                 },
                 e => n === seq.current && setError(errMsg(e)),
@@ -63,7 +97,7 @@ export default function RefundReview({inboxName, initial, payers, onDone, onDisc
     const lines = r.lines ?? [];
     const setLine = (i: number, patch: Partial<RefundLineDTO>, now = false) =>
         update({...r, lines: lines.map((l, j) => (j === i ? {...l, ...patch} : l))}, now);
-    const addLine = () => update({...r, lines: [...lines, {id: "", date: r.date, provider: "", amounts: [], billed: "", eligible: "",
+    const addLine = () => update({...r, lines: [...lines, {id: newLineId(), date: r.date, provider: "", amounts: [], billed: "", eligible: "",
         refund: "", edited: true, invoiceIds: [], match: "none", score: 0, candidates: []}]});
     const removeLine = (i: number) => update({...r, lines: lines.filter((_, j) => j !== i)}, true);
     const deductions = r.deductions ?? [];
@@ -73,7 +107,10 @@ export default function RefundReview({inboxName, initial, payers, onDone, onDisc
         try {
             const res = await Svc.ConfirmRefund(inboxName, r, saveLayout);
             toast.show(`Erstattungen für ${plural(res.invoices, "Rechnung", "Rechnungen")} übernommen` +
-                (res.aliases ? ` – ${plural(res.aliases, "Namensvariante", "Namensvarianten")} gelernt` : ""));
+                (res.aliases ? ` – ${plural(res.aliases, "Namensvariante", "Namensvarianten")} gelernt` : "") +
+                (res.rebooked ? ". Dieser Bescheid war bereits gebucht – die frühere Buchung wurde ersetzt." : ""));
+            // Booked anyway; these are side effects that did not work.
+            for (const w of res.warnings ?? []) toast.warn(w);
             onDone();
         } catch (e) {
             setError(errMsg(e));
@@ -84,7 +121,8 @@ export default function RefundReview({inboxName, initial, payers, onDone, onDisc
 
     const assigned = lines.filter(l => (l.invoiceIds ?? []).length > 0).length;
     const unsure = lines.filter(l => l.match === "suggest").length;
-    const dedTotal = deductions.reduce((s, d) => s + Math.abs(num(d.amount.replace(",", "."))), 0);
+    const dedTotal = deductions.reduce((s, d) => s + Math.abs(amount(d.amount)), 0);
+    const paidOut = amount(r.paidOut);
     return (
         <div className="refund-review">
             {error && <Notice kind="bad"><span style={{whiteSpace: "pre-line"}}>{error}</span></Notice>}
@@ -102,7 +140,7 @@ export default function RefundReview({inboxName, initial, payers, onDone, onDisc
                     <input id="rr-app" type="date" value={r.applicationDate} onChange={e => update({...r, applicationDate: e.target.value})}/>
                 </Field>
                 <Field label="Auszahlung (€)" htmlFor="rr-paid">
-                    <input id="rr-paid" inputMode="decimal" value={shown(r.paidOut)} onChange={e => update({...r, paidOut: e.target.value})}/>
+                    <input id="rr-paid" inputMode="decimal" value={r.paidOut} onChange={e => update({...r, paidOut: e.target.value})}/>
                 </Field>
                 <Field label="Ausgezahlt am" htmlFor="rr-paydate" hint="Leer = Datum des Bescheids">
                     <input id="rr-paydate" type="date" value={r.payoutDate} onChange={e => update({...r, payoutDate: e.target.value})}/>
@@ -112,10 +150,10 @@ export default function RefundReview({inboxName, initial, payers, onDone, onDisc
             <h3>Positionen</h3>
             <div className="row small" style={{marginBottom: 8}}>
                 <span className="muted">Spalten:</span>
-                {(["billed", "eligible", "refund"] as const).map(k => (
+                {COLUMNS.map(([k, label]) => (
                     <label key={k} className="inline">
-                        {k === "billed" ? "Rechnungsbetrag" : k === "eligible" ? "erstattungsfähig" : "Erstattung"} =
-                        <select aria-label={`Spalte ${k}`} style={{width: "auto"}} value={r.layout[k]}
+                        {label} =
+                        <select aria-label={`Spalte ${label}`} style={{width: "auto"}} value={r.layout[k]}
                                 onChange={e => update({...r, layout: {...r.layout, [k]: Number(e.target.value)},
                                     lines: lines.map(l => ({...l, edited: l.amounts?.length ? false : l.edited}))}, true)}>
                             {POSITIONS.filter(([v]) => k !== "refund" || v !== 0).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
@@ -135,12 +173,12 @@ export default function RefundReview({inboxName, initial, payers, onDone, onDisc
                         const candidates = l.candidates ?? [];
                         const others = (r.invoices ?? []).filter(o => !candidates.some(c => c.invoiceId === o.invoiceId));
                         return (
-                            <tr key={l.id || `n${i}`}>
+                            <tr key={l.id}>
                                 <td><input type="date" aria-label={`Zeile ${i + 1}: Datum`} value={l.date} onChange={e => setLine(i, {date: e.target.value})}/></td>
                                 <td><input aria-label={`Zeile ${i + 1}: Leistungserbringer`} value={l.provider} onChange={e => setLine(i, {provider: e.target.value})}/></td>
-                                <td><input aria-label={`Zeile ${i + 1}: Rechnungsbetrag`} className="num" value={shown(l.billed)}
+                                <td><input aria-label={`Zeile ${i + 1}: Rechnungsbetrag`} className="num" value={l.billed}
                                            onChange={e => setLine(i, {billed: e.target.value, edited: true})}/></td>
-                                <td><input aria-label={`Zeile ${i + 1}: Erstattung`} className="num" value={shown(l.refund)}
+                                <td><input aria-label={`Zeile ${i + 1}: Erstattung`} className="num" value={l.refund}
                                            onChange={e => setLine(i, {refund: e.target.value, edited: true})}/></td>
                                 <td>
                                     <div className="row" style={{flexWrap: "nowrap", gap: 6}}>
@@ -174,14 +212,14 @@ export default function RefundReview({inboxName, initial, payers, onDone, onDisc
             <div className="row" style={{marginTop: 8}}>
                 <button className="link" onClick={addLine}>+ Zeile</button>
                 {deductions.map((d, i) => (
-                    <span key={i} className="small muted">{d.label}: {eur(Math.abs(num(d.amount.replace(",", "."))))}
+                    <span key={i} className="small muted">{d.label}: {eur(Math.abs(amount(d.amount)))}
                         <button className="link" aria-label={`Abzug ${d.label} entfernen`} onClick={() => update({...r, deductions: deductions.filter((_, j) => j !== i)}, true)}> ✕</button>
                     </span>
                 ))}
             </div>
-            <Notice kind={r.checksumOk ? "good" : num(r.paidOut) ? "warn" : undefined}>
+            <Notice kind={r.checksumOk ? "good" : paidOut ? "warn" : undefined}>
                 Positionen {eur(r.linesTotal)}{dedTotal ? ` − Abzüge ${eur(dedTotal)}` : ""} = {eur(num(r.linesTotal) - dedTotal)}
-                {num(r.paidOut) ? (r.checksumOk ? ` ✓ entspricht der Auszahlung` : ` – Auszahlung laut Beleg ${eur(shown(r.paidOut).replace(",", "."))}, Differenz ${eur(r.checksumDiff)}: fehlt eine Zeile oder wurde ein Betrag falsch gelesen?`) : " (Auszahlungsbetrag nicht erkannt)"}
+                {paidOut ? (r.checksumOk ? ` ✓ entspricht der Auszahlung` : ` – Auszahlung laut Beleg ${eur(paidOut)}, Differenz ${eur(r.checksumDiff)}: fehlt eine Zeile oder wurde ein Betrag falsch gelesen?`) : " (Auszahlungsbetrag nicht erkannt)"}
             </Notice>
             <label className="inline" style={{marginTop: 8}}>
                 <input type="checkbox" checked={saveLayout} onChange={e => setSaveLayout(e.target.checked)}/>

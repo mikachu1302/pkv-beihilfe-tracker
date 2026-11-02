@@ -34,6 +34,13 @@ export function useApp(): AppState {
     return ctx;
 }
 
+const InboxChangedContext = createContext<() => void>(() => {});
+
+/** Refreshes the Posteingang count in the navigation after own changes to the inbox. */
+export function useInboxChanged(): () => void {
+    return useContext(InboxChangedContext);
+}
+
 const NAV = [
     ["/dashboard", "Dashboard"],
     ["/posteingang", "Posteingang"],
@@ -64,7 +71,7 @@ function Layout({status, children}: {status: StatusDTO; children: ReactNode}) {
             </nav>
             <main className="content">
                 <StatusNotices status={status}/>
-                {children}
+                <InboxChangedContext.Provider value={inbox.reload}>{children}</InboxChangedContext.Provider>
             </main>
         </div>
     );

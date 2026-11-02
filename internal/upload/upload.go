@@ -1,13 +1,22 @@
 // Package upload lets a phone in the same network send photos and scans
-// into the inbox folder: the desktop shows a QR code with a one-time link,
+// into the inbox folder: the desktop shows a QR code with a secret link,
 // the phone's browser opens a small page and uploads – no app, no cloud.
 //
-// The server only runs while the dialog is open (and at most TTL), accepts
-// only the random token path, images and PDFs, and writes files atomically
-// (hidden temp file + rename) so the folder watcher never sees half files.
+// The server only runs while the dialog is open (and at most TTL) and only
+// listens on the network address in the link. It accepts only the random
+// token path (the link can be used for several photos until it expires),
+// images and PDFs recognised by their content, at most MaxFiles files and
+// MaxTotalSize bytes, and writes files atomically (hidden temp file +
+// rename) so the folder watcher never sees half files.
+//
+// The connection is plain HTTP inside the local network: a self-signed
+// certificate would make the phone's browser show a frightening warning.
+// Whoever can read the Wi-Fi traffic could read the uploads; on a home
+// network with WPA2/WPA3 that is the people already in it.
 package upload
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/subtle"
 	_ "embed"
@@ -28,8 +37,12 @@ import (
 //go:embed page.html
 var page []byte
 
-// MaxFileSize is the largest accepted file.
-const MaxFileSize = 40 << 20
+// Limits per upload session.
+const (
+	MaxFileSize  = 40 << 20  // largest accepted file
+	MaxFiles     = 100       // files per session
+	MaxTotalSize = 500 << 20 // bytes per session
+)
 
 var allowed = map[string]string{
 	"image/jpeg":      ".jpg",
@@ -53,26 +66,28 @@ type Server struct {
 	timer *time.Timer
 
 	mu    sync.Mutex
-	count int
+	count int   // files received
+	bytes int64 // bytes received or being received
 	once  sync.Once
 }
 
-// Start listens on all interfaces (a free port) and writes uploads into dir.
+// Start listens on the LAN address (or only locally if there is none) on a
+// free port and writes uploads into dir.
 func Start(dir string, ttl time.Duration, now func() time.Time) (*Server, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
 	var b [16]byte
 	_, _ = rand.Read(b[:])
-	ln, err := net.Listen("tcp", ":0")
+	host := LANAddress()
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	ln, err := net.Listen("tcp", net.JoinHostPort(host, "0"))
 	if err != nil {
 		return nil, err
 	}
 	s := &Server{token: hex.EncodeToString(b[:]), dir: dir, now: now, ln: ln, Expires: now().Add(ttl)}
-	host := LANAddress()
-	if host == "" {
-		host = "localhost"
-	}
 	s.URL = fmt.Sprintf("http://%s:%d/u/%s", host, ln.Addr().(*net.TCPAddr).Port, s.token)
 	s.srv = &http.Server{Handler: s, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 5 * time.Minute}
 	go func() { _ = s.srv.Serve(ln) }()
@@ -131,17 +146,42 @@ func (s *Server) receive(r *http.Request) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("Dateityp %q wird nicht angenommen (nur Fotos und PDF)", ctype)
 	}
+	// Reserve the largest possible size up front, so parallel uploads
+	// cannot exceed the limits together; the rest is given back below.
+	s.mu.Lock()
+	if s.count >= MaxFiles || s.bytes+MaxFileSize > MaxTotalSize {
+		s.mu.Unlock()
+		return "", errors.New("Für diese Verbindung wurden genug Dateien empfangen – bitte am Computer neu starten")
+	}
+	s.bytes += MaxFileSize
+	s.mu.Unlock()
+	var written int64
+	defer func() {
+		s.mu.Lock()
+		s.bytes += written - MaxFileSize
+		s.mu.Unlock()
+	}()
+
 	body := http.MaxBytesReader(nil, r.Body, MaxFileSize)
+	head := make([]byte, 16)
+	n, err := io.ReadFull(body, head)
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return "", errors.New("Datei ist leer oder unvollständig")
+	}
+	if !matchesType(head[:n], ctype) {
+		return "", fmt.Errorf("Inhalt passt nicht zum Dateityp %q", ctype)
+	}
 	tmp, err := os.CreateTemp(s.dir, ".upload-*")
 	if err != nil {
 		return "", err
 	}
-	_, err = io.Copy(tmp, body)
+	written, err = io.Copy(tmp, io.MultiReader(bytes.NewReader(head[:n]), body))
 	if cerr := tmp.Close(); err == nil {
 		err = cerr
 	}
 	if err != nil {
 		os.Remove(tmp.Name())
+		written = 0
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {
 			return "", fmt.Errorf("Datei größer als %d MB", MaxFileSize>>20)
@@ -150,14 +190,39 @@ func (s *Server) receive(r *http.Request) (string, error) {
 	}
 	s.mu.Lock()
 	s.count++
-	n := s.count
+	count := s.count
 	s.mu.Unlock()
-	name := fmt.Sprintf("Handy-%s-%d%s", s.now().Format("20060102-150405"), n, ext)
+	name := fmt.Sprintf("Handy-%s-%d%s", s.now().Format("20060102-150405"), count, ext)
 	if err := os.Rename(tmp.Name(), filepath.Join(s.dir, name)); err != nil {
 		os.Remove(tmp.Name())
 		return "", err
 	}
 	return name, nil
+}
+
+// matchesType checks the first bytes of a file against its MIME type, so
+// that only real images and PDFs end up in the inbox.
+func matchesType(head []byte, ctype string) bool {
+	switch ctype {
+	case "image/jpeg":
+		return bytes.HasPrefix(head, []byte{0xFF, 0xD8, 0xFF})
+	case "image/png":
+		return bytes.HasPrefix(head, []byte("\x89PNG\r\n\x1a\n"))
+	case "application/pdf":
+		return bytes.HasPrefix(head, []byte("%PDF-"))
+	case "image/webp":
+		return len(head) >= 12 && string(head[:4]) == "RIFF" && string(head[8:12]) == "WEBP"
+	case "image/heic", "image/heif":
+		// ISO base media file: size, "ftyp", brand.
+		if len(head) < 12 || string(head[4:8]) != "ftyp" {
+			return false
+		}
+		switch string(head[8:12]) {
+		case "heic", "heix", "heim", "heis", "hevc", "hevx", "mif1", "msf1", "avif":
+			return true
+		}
+	}
+	return false
 }
 
 // LANAddress returns a private IPv4 address of this machine (192.168.x.x

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -286,19 +287,133 @@ func TestTimestampsAreMonotonic(t *testing.T) {
 
 func TestAddDocument(t *testing.T) {
 	s := open(t, t.TempDir(), "a", "2026-11-02T10:00:00Z")
-	n1, err := s.AddDocument(strings.NewReader("%PDF-1.7 beispiel"), ".PDF")
+	n1, err := s.AddDocument([]byte("%PDF-1.7 beispiel"), ".PDF")
 	if err != nil {
 		t.Fatal(err)
 	}
-	n2, _ := s.AddDocument(strings.NewReader("%PDF-1.7 beispiel"), ".pdf")
+	n2, _ := s.AddDocument([]byte("%PDF-1.7 beispiel"), ".pdf")
 	if n1 != n2 || !strings.HasSuffix(n1, ".pdf") || len(n1) != 64+4 {
 		t.Errorf("names %q %q", n1, n2)
 	}
-	if b, err := os.ReadFile(s.DocumentPath(n1)); err != nil || string(b) != "%PDF-1.7 beispiel" {
+	path, err := s.DocumentPath(n1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(path); err != nil || string(b) != "%PDF-1.7 beispiel" {
 		t.Errorf("content %q, %v", b, err)
 	}
-	if _, err := s.AddDocument(strings.NewReader("x"), "../evil"); err == nil {
-		t.Error("bad extension accepted")
+	// Documents are opened with the default app: no executables or scripts.
+	for _, ext := range []string{"../evil", ".exe", ".bat", ".hta", ".sh", ""} {
+		if _, err := s.AddDocument([]byte("x"), ext); err == nil {
+			t.Errorf("extension %q accepted", ext)
+		}
+	}
+}
+
+func TestFileNamesAreChecked(t *testing.T) {
+	s := open(t, t.TempDir(), "a", "2026-11-02T10:00:00Z")
+	for _, name := range []string{"", ".", "..", ".hidden", "a/b.pdf", `a\b.pdf`, "../x.pdf"} {
+		if _, err := s.InboxPath(name); err == nil {
+			t.Errorf("InboxPath(%q) accepted", name)
+		}
+		if _, err := s.DocumentPath(name); err == nil {
+			t.Errorf("DocumentPath(%q) accepted", name)
+		}
+	}
+	if err := s.RemoveFromInbox(""); err == nil {
+		t.Error("RemoveFromInbox(\"\") accepted")
+	}
+	if _, err := os.Stat(s.InboxDirPath()); err != nil {
+		t.Error("inbox folder removed")
+	}
+}
+
+func TestUnreadableFileIsNeverOverwritten(t *testing.T) {
+	root := t.TempDir()
+	s := open(t, root, "a", "2026-11-02T10:00:00Z")
+	inv := sampleInvoice()
+	s.SaveInvoice(inv)
+	dir := filepath.Join(root, "2026/rechnungen")
+	canon := filepath.Join(dir, inv.ID+".json")
+	good, _ := os.ReadFile(canon)
+	// A typo made by hand in the file, and a readable conflict copy.
+	os.WriteFile(canon, []byte("{kaputt"), 0o644)
+	copyPath := filepath.Join(dir, inv.ID+" (1).json")
+	os.WriteFile(copyPath, good, 0o644)
+
+	s2 := open(t, root, "a", "2026-11-02T11:00:00Z")
+	data, issues := load(t, s2)
+	if len(data.Invoices) != 0 {
+		t.Errorf("record loaded from the copy although its file is unreadable: %+v", data.Invoices)
+	}
+	if len(issues) != 2 {
+		t.Errorf("issues %v", issues)
+	}
+	if b, _ := os.ReadFile(canon); string(b) != "{kaputt" {
+		t.Error("unreadable file was overwritten")
+	}
+	if _, err := os.Stat(copyPath); err != nil {
+		t.Error("conflict copy removed")
+	}
+	if _, err := s2.SaveInvoice(inv); err == nil || !strings.Contains(err.Error(), "nicht überschrieben") {
+		t.Errorf("save over unreadable file: %v", err)
+	}
+}
+
+func TestSettingsOfNewerVersionAreKept(t *testing.T) {
+	root := t.TempDir()
+	newer := `{"schema":99,"type":"settings","data":{"payers":[]}}`
+	os.WriteFile(filepath.Join(root, SettingsFile), []byte(newer), 0o644)
+	s := open(t, root, "a", "2026-11-02T10:00:00Z")
+	_, issues := load(t, s)
+	if len(issues) != 1 || !strings.Contains(issues[0].Text, "neueren") {
+		t.Errorf("issues %v", issues)
+	}
+	if _, err := s.SaveSettings(model.Settings{ClarifyTolerance: 100}); err == nil {
+		t.Error("settings of a newer version overwritten")
+	}
+	if b, _ := os.ReadFile(filepath.Join(root, SettingsFile)); string(b) != newer {
+		t.Error("file changed")
+	}
+}
+
+func TestFailedMergeKeepsState(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a read-only folder")
+	}
+	root := t.TempDir()
+	s := open(t, root, "a", "2026-11-02T10:00:00Z")
+	inv := sampleInvoice()
+	s.SaveInvoice(inv)
+	dir := filepath.Join(root, "2026/rechnungen")
+	canon := filepath.Join(dir, inv.ID+".json")
+
+	other := open(t, t.TempDir(), "b", "2026-11-02T12:00:00Z")
+	other.base[key(KindInvoice, inv.ID)] = readEnv(t, canon)
+	inv2 := inv
+	inv2.Note = "von Gerät b"
+	other.SaveInvoice(inv2)
+	b, _ := os.ReadFile(filepath.Join(other.root, "2026/rechnungen", inv.ID+".json"))
+	copyPath := filepath.Join(dir, inv.ID+" (1).json")
+	os.WriteFile(copyPath, b, 0o644)
+
+	// The merge cannot be written (a file locked by another program).
+	os.Chmod(dir, 0o555)
+	s2 := open(t, root, "a", "2026-11-02T13:00:00Z")
+	data, issues := load(t, s2)
+	os.Chmod(dir, 0o755)
+	if len(data.Invoices) != 1 || data.Invoices[0].Note != "von Gerät b" {
+		t.Fatalf("merged state not used: %+v", data.Invoices)
+	}
+	if len(issues) != 1 || !strings.Contains(issues[0].Text, "nicht zusammengeführt") {
+		t.Errorf("issues %v", issues)
+	}
+	// A later save still knows the record's file and keeps the other device's note.
+	inv3 := data.Invoices[0]
+	inv3.Reference = "R-1"
+	saved, err := s2.SaveInvoice(inv3)
+	if err != nil || saved.Note != "von Gerät b" || saved.Reference != "R-1" {
+		t.Errorf("save after failed merge: %+v, %v", saved, err)
 	}
 }
 
@@ -342,11 +457,12 @@ func TestInbox(t *testing.T) {
 	if err != nil || n1 != "scan.pdf" {
 		t.Fatalf("add: %q %v", n1, err)
 	}
-	n2, _ := s.AddToInbox("../scan.pdf", []byte("%PDF zwei"))
+	n2, _ := s.AddToInbox(`C:\Users\x\scan.pdf`, []byte("%PDF zwei"))
 	if n2 != "scan (2).pdf" {
 		t.Errorf("second name %q", n2)
 	}
-	if !s.IsOwnChange(s.InboxPath(n1)) {
+	p1, _ := s.InboxPath(n1)
+	if !s.IsOwnChange(p1) {
 		t.Error("own inbox file not recognised")
 	}
 	os.WriteFile(filepath.Join(root, InboxDir, ".tmp-x"), []byte("x"), 0o644)
@@ -354,7 +470,7 @@ func TestInbox(t *testing.T) {
 	if err != nil || len(list) != 2 {
 		t.Fatalf("list %+v %v", list, err)
 	}
-	if err := s.RemoveFromInbox(n1); err != nil || !s.IsOwnChange(s.InboxPath(n1)) {
+	if err := s.RemoveFromInbox(n1); err != nil || !s.IsOwnChange(p1) {
 		t.Errorf("remove: %v", err)
 	}
 	if list, _ := s.ListInbox(); len(list) != 1 || list[0].Name != n2 {

@@ -97,11 +97,19 @@ func (d Date) Equal(o Date) bool { return d.t.Equal(o.t) }
 // AddDays returns d plus n days.
 func (d Date) AddDays(n int) Date { return Date{d.t.AddDate(0, 0, n)} }
 
-// AddYears returns d plus n years (29 February becomes 1 March in non-leap years).
-func (d Date) AddYears(n int) Date { return Date{d.t.AddDate(n, 0, 0)} }
+// AddYears returns d plus n years. 29 February becomes 28 February in
+// non-leap years, as for deadlines under § 188 Abs. 3 BGB.
+func (d Date) AddYears(n int) Date {
+	t := d.t.AddDate(n, 0, 0)
+	if t.Day() != d.t.Day() { // overflowed into the next month
+		t = t.AddDate(0, 0, -t.Day())
+	}
+	return Date{t}
+}
 
 // DaysUntil returns the number of days from d to o (negative if o is earlier).
-func (d Date) DaysUntil(o Date) int { return int(o.t.Sub(d.t).Hours() / 24) }
+// Unlike time.Duration it does not saturate for dates centuries apart.
+func (d Date) DaysUntil(o Date) int { return int((o.t.Unix() - d.t.Unix()) / 86400) }
 
 // Between reports whether d lies in [from, to] (inclusive).
 func (d Date) Between(from, to Date) bool { return !d.Before(from) && !d.After(to) }

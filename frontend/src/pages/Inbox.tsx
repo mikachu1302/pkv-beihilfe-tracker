@@ -1,14 +1,18 @@
-import {useEffect, useRef, useState} from "react";
+import {useEffect, useId, useRef, useState} from "react";
 import type {DragEvent} from "react";
 import {Desktop, Svc} from "../api";
 import type {AnalysisDTO, AnalyzeInputDTO, InboxItemDTO, InvoiceDTO, PayerDTO, PhoneUploadDTO, RefundReviewDTO} from "../api";
-import {useApp} from "../App";
+import {useApp, useInboxChanged} from "../App";
 import {useConfirm, useToast} from "../components/feedback";
 import {Badge, Empty, ErrorNotice, Field, Notice} from "../components/ui";
 import {recognize, renderPdfPreview} from "../lib/capture";
 import {CATEGORY_LABELS, errMsg, eur, plural, toInput} from "../lib/format";
 import {useBackend} from "../lib/useBackend";
+import {useDialog} from "../lib/useDialog";
 import RefundReview from "./RefundReview";
+
+/** Largest file accepted by drag & drop – the same limit as the phone upload. */
+export const MAX_FILE_MB = 40;
 
 const SOURCE: Record<string, [string, "good" | "warn" | undefined]> = {
     qr: ["aus GiroCode", "good"],
@@ -28,6 +32,7 @@ function readAsDataURL(file: File): Promise<string> {
 /** Posteingang: scans, photos and PDFs waiting to become invoices. */
 export default function Inbox() {
     const {dataVersion} = useApp();
+    const inboxChanged = useInboxChanged();
     const toast = useToast();
     const confirm = useConfirm();
     const list = useBackend(() => Svc.ListInbox(), [dataVersion]);
@@ -35,12 +40,21 @@ export default function Inbox() {
     const [selected, setSelected] = useState<string>("");
     const [phone, setPhone] = useState(false);
     const [dragging, setDragging] = useState(false);
+    // dragenter/dragleave also fire when moving between child elements: count them.
+    const dragDepth = useRef(0);
     const items = list.data ?? [];
     const current = items.find(i => i.name === selected) ?? items[0];
 
     useEffect(() => {
-        if (items.length && !items.some(i => i.name === selected)) setSelected(items[0].name);
-    }, [items, selected]);
+        const all = list.data ?? [];
+        if (all.length && !all.some(i => i.name === selected)) setSelected(all[0].name);
+    }, [list.data, selected]);
+
+    // After own changes: reload the list and the count in the navigation.
+    const reload = () => {
+        list.reload();
+        inboxChanged();
+    };
 
     async function addChosen() {
         try {
@@ -48,23 +62,47 @@ export default function Inbox() {
             if (!paths?.length) return;
             const names = await Svc.AddFilesToInbox(paths);
             toast.show(`${plural(names?.length ?? 0, "Datei", "Dateien")} hinzugefügt`);
-            list.reload();
+            reload();
         } catch (e) {
             toast.error(e);
         }
     }
 
+    function onDragEnter(e: DragEvent) {
+        if (!e.dataTransfer.types.includes("Files")) return;
+        dragDepth.current++;
+        setDragging(true);
+    }
+
+    function onDragLeave(e: DragEvent) {
+        if (!e.dataTransfer.types.includes("Files")) return;
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (dragDepth.current === 0) setDragging(false);
+    }
+
     async function onDrop(e: DragEvent) {
         e.preventDefault();
+        dragDepth.current = 0;
         setDragging(false);
         const files = [...e.dataTransfer.files];
         if (!files.length) return;
+        const limit = MAX_FILE_MB * 1024 * 1024;
+        const fitting = files.filter(f => f.size <= limit);
+        const tooBig = files.filter(f => f.size > limit);
         try {
-            for (const f of files) await Svc.AddToInbox(f.name, await readAsDataURL(f));
-            toast.show(`${plural(files.length, "Datei", "Dateien")} hinzugefügt`);
-            list.reload();
+            for (const f of fitting) await Svc.AddToInbox(f.name, await readAsDataURL(f));
+            const added = fitting.length ? `${plural(fitting.length, "Datei", "Dateien")} hinzugefügt` : "";
+            if (tooBig.length === 0) toast.show(added);
+            else {
+                const names = tooBig.map(f => `„${f.name}“`).join(", ");
+                const one = tooBig.length === 1;
+                toast.show(`${names} ${one ? "ist" : "sind"} größer als ${MAX_FILE_MB} MB und ${one ? "wurde" : "wurden"} nicht hinzugefügt.` +
+                    (added ? ` ${added}.` : ""), true);
+            }
         } catch (err) {
             toast.error(err);
+        } finally {
+            if (fitting.length) reload();
         }
     }
 
@@ -72,14 +110,14 @@ export default function Inbox() {
         if (!await confirm(`„${item.name}“ aus dem Posteingang löschen?`, "Löschen")) return;
         try {
             await Svc.DiscardInbox(item.name);
-            list.reload();
+            reload();
         } catch (e) {
             toast.error(e);
         }
     }
 
     return (
-        <div onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={onDrop}>
+        <div onDragEnter={onDragEnter} onDragOver={e => e.preventDefault()} onDragLeave={onDragLeave} onDrop={onDrop}>
             <div className="page-head">
                 <h1>Posteingang</h1>
                 <span className="muted small">Neue Belege aus dem Ordner „Eingang“, vom Handy oder per Drag &amp; Drop</span>
@@ -107,10 +145,13 @@ export default function Inbox() {
                         ))}
                     </ul>
                     {current && <InboxItem key={current.name} item={current} payers={settings.data?.payers ?? []}
-                                           onDone={list.reload} onDiscard={() => discard(current)}/>}
+                                           onDone={reload} onDiscard={() => discard(current)}/>}
                 </div>
             )}
-            {phone && <PhoneDialog onClose={() => setPhone(false)}/>}
+            {phone && <PhoneDialog onClose={() => {
+                setPhone(false);
+                reload();
+            }}/>}
         </div>
     );
 }
@@ -118,12 +159,24 @@ export default function Inbox() {
 function Preview({item}: {item: InboxItemDTO}) {
     const canvas = useRef<HTMLCanvasElement>(null);
     const [error, setError] = useState("");
+    const {url, type, modified} = item;
+    // Rendered again only when the file changed – list reloads hand in new item objects.
     useEffect(() => {
-        if (item.type !== "pdf" || !canvas.current) return;
-        renderPdfPreview(item.url, canvas.current, 520).catch(e => setError(errMsg(e)));
-    }, [item]);
-    if (item.type === "image") return <img className="preview" src={item.url} alt={item.name}/>;
-    if (item.type === "pdf") return error ? <Notice kind="warn">{error}</Notice> : <canvas className="preview" ref={canvas}/>;
+        if (type !== "pdf" || !canvas.current) return;
+        const run = new AbortController();
+        setError("");
+        renderPdfPreview(url, canvas.current, 520, run.signal).catch(e => !run.signal.aborted && setError(errMsg(e)));
+        return () => run.abort();
+    }, [url, type, modified]);
+    if (type === "image") return <img className="preview" src={url} alt={item.name}/>;
+    if (type === "pdf") {
+        return (
+            <>
+                {error && <Notice kind="warn">{error}</Notice>}
+                <canvas className="preview" ref={canvas} style={error ? {display: "none"} : undefined}/>
+            </>
+        );
+    }
     return <Notice kind="warn">Vorschau nicht möglich.</Notice>;
 }
 
@@ -137,8 +190,13 @@ function InboxItem({item, payers, onDone, onDiscard}: {item: InboxItemDTO; payer
     const [saving, setSaving] = useState(false);
     const [input, setInput] = useState<AnalyzeInputDTO | null>(null);
     const [review, setReview] = useState<RefundReviewDTO | null>(null);
+    // Set once the user edits the draft or switches between invoice and refund
+    // document: a later recognition run (the file changed) must not undo that.
+    const touched = useRef(false);
+    const {url, type, modified} = item;
 
     async function asRefund(inp: AnalyzeInputDTO) {
+        touched.current = true;
         try {
             setReview(await Svc.AnalyzeRefund(inp));
         } catch (e) {
@@ -146,31 +204,52 @@ function InboxItem({item, payers, onDone, onDiscard}: {item: InboxItemDTO; payer
         }
     }
 
+    function asInvoice() {
+        touched.current = true;
+        setReview(null);
+    }
+
+    // Recognition runs once per file version. List reloads (own actions, live
+    // updates from other devices) hand in a new item object for the same file;
+    // they must neither restart the recognition nor reset the form.
     useEffect(() => {
-        let stale = false;
+        const run = new AbortController();
+        const {signal} = run;
         (async () => {
+            let done = "";
+            setError("");
             try {
-                const rec = await recognize(item.url, item.type, msg => !stale && setStatus(msg));
-                if (stale) return;
+                const rec = await recognize(url, type, msg => !signal.aborted && setStatus(msg), signal);
+                if (signal.aborted) return;
                 setStatus("Felder werden zugeordnet …");
                 const inp = {lines: rec.lines, qr: rec.qr};
                 const a = await Svc.AnalyzeDocument(inp);
-                if (stale) return;
+                if (signal.aborted) return;
+                done = rec.ocr ? "Text per Texterkennung gelesen – bitte die Felder prüfen." : "";
                 setInput(inp);
                 setAnalysis(a);
-                if (a.kind === "refund") await asRefund(inp);
-                setDraft({...a.draft.invoice, amount: toInput(a.draft.invoice.amount === "0.00" ? "" : a.draft.invoice.amount)});
-                setStatus(rec.ocr ? "Text per Texterkennung gelesen – bitte die Felder prüfen." : "");
-            } catch (e) {
-                if (!stale) {
-                    setError(errMsg(e));
-                    setStatus("");
-                    setDraft(emptyDraft());
+                if (touched.current) return;
+                if (a.kind === "refund") {
+                    try {
+                        const r = await Svc.AnalyzeRefund(inp);
+                        if (signal.aborted) return;
+                        setReview(r);
+                    } catch (e) {
+                        if (signal.aborted) return;
+                        setError(errMsg(e));
+                    }
                 }
+                setDraft({...a.draft.invoice, amount: toInput(a.draft.invoice.amount === "0.00" ? "" : a.draft.invoice.amount)});
+            } catch (e) {
+                if (signal.aborted) return;
+                setError(errMsg(e));
+                if (!touched.current) setDraft(d => d ?? emptyDraft());
+            } finally {
+                if (!signal.aborted) setStatus(done);
             }
         })();
-        return () => { stale = true; };
-    }, [item]);
+        return () => run.abort();
+    }, [url, type, modified]);
 
     async function save() {
         if (!draft) return;
@@ -193,7 +272,10 @@ function InboxItem({item, payers, onDone, onDiscard}: {item: InboxItemDTO; payer
         const [label, kind] = SOURCE[s] ?? [s, undefined];
         return <Badge kind={kind}>{label}</Badge>;
     };
-    const set = (patch: Partial<InvoiceDTO>) => draft && setDraft({...draft, ...patch});
+    const set = (patch: Partial<InvoiceDTO>) => {
+        touched.current = true;
+        setDraft(d => d && {...d, ...patch});
+    };
 
     return (
         <section className={`inbox-detail ${review ? "review" : ""}`} aria-label={item.name}>
@@ -205,7 +287,7 @@ function InboxItem({item, payers, onDone, onDiscard}: {item: InboxItemDTO; payer
                     {analysis?.kind === "refund" && <Badge kind="good">Erstattungsbeleg erkannt</Badge>}
                     <span className="spacer"/>
                     {input && (review
-                        ? <button className="link" onClick={() => setReview(null)}>Als Rechnung behandeln</button>
+                        ? <button className="link" onClick={asInvoice}>Als Rechnung behandeln</button>
                         : <button className="link" onClick={() => asRefund(input)}>Als Erstattungsbeleg behandeln</button>)}
                 </div>
                 {status && <p className="muted small" role="status">{status}</p>}
@@ -267,6 +349,8 @@ function emptyDraft(): InvoiceDTO {
 function PhoneDialog({onClose}: {onClose: () => void}) {
     const [info, setInfo] = useState<PhoneUploadDTO | null>(null);
     const [error, setError] = useState("");
+    const ref = useDialog<HTMLDivElement>(onClose);
+    const titleId = useId();
     useEffect(() => {
         let alive = true;
         const load = () => Svc.StartPhoneUpload().then(i => alive && setInfo(i), e => alive && setError(errMsg(e)));
@@ -280,8 +364,8 @@ function PhoneDialog({onClose}: {onClose: () => void}) {
     }, []);
     return (
         <div className="modal-back" onClick={e => e.target === e.currentTarget && onClose()}>
-            <div className="modal" role="dialog" aria-modal="true" aria-label="Mit Handy fotografieren" style={{maxWidth: 460}}>
-                <h2 style={{marginTop: 0}}>Mit Handy fotografieren</h2>
+            <div ref={ref} className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} style={{maxWidth: 460}}>
+                <h2 id={titleId} style={{marginTop: 0}}>Mit Handy fotografieren</h2>
                 {error && <ErrorNotice error={error}/>}
                 {info && (
                     <>
