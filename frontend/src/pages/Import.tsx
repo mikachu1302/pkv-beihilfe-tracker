@@ -36,9 +36,11 @@ export default function Import() {
             setBusy(true);
             const pv = await Svc.PreviewSpreadsheet(path, bh, pkv);
             setPreview(pv);
-            // New rows and certain changes are taken over; matches by similarity
-            // only and deletions wait for the user.
-            setInclude(new Set((pv.rows ?? []).filter(r => r.state === "new" || r.state === "changed" && !r.uncertain).map(r => r.key)));
+            // New rows and certain changes are taken over. Matches by similarity
+            // only, changes that overwrite something from the app and deletions
+            // wait for the user.
+            setInclude(new Set((pv.rows ?? []).filter(r => r.state === "new" ||
+                r.state === "changed" && !r.uncertain && !(r.changes ?? []).some(c => c.conflict)).map(r => r.key)));
         } catch (e) {
             setError(errMsg(e));
         } finally {
@@ -75,8 +77,9 @@ export default function Import() {
     if (settings.error) return <ErrorNotice error={settings.error}/>;
     if (!settings.data) return <Loading/>;
     const allRows = preview?.rows ?? [];
-    const rows = showUnchanged ? allRows : allRows.filter(r => r.state !== "unchanged");
-    const selectable = rows.filter(r => r.state !== "unchanged");
+    const quiet = (r: ImportRowDTO) => r.state === "unchanged" || r.state === "deleted";
+    const rows = showUnchanged ? allRows : allRows.filter(r => !quiet(r));
+    const selectable = rows.filter(r => !quiet(r));
     const removed = preview?.removed ?? [];
     const chosen = (state: string) => allRows.filter(r => r.state === state && include.has(r.key)).length;
     const chosenRemoved = removed.filter(r => include.has(r.key)).length;
@@ -122,18 +125,20 @@ export default function Import() {
                             <Badge kind="good">{preview.new} neu</Badge>
                             <Badge kind="warn">{preview.changed} geändert</Badge>
                             <Badge>{preview.unchanged} unverändert</Badge>
+                            {preview.deletedInApp > 0 && <Badge>{preview.deletedInApp} in der App gelöscht</Badge>}
                             {removed.length > 0 && <Badge kind="bad">{removed.length} nicht mehr in der Excel</Badge>}
                         </div>
                         {preview.changed > 0 && <p className="muted small" style={{marginBottom: 0}}>
-                            Geänderte Zeilen aktualisieren die vorhandene Rechnung – nur die aufgeführten Felder. Erstattungen aus Bescheiden,
-                            Belege, Notizen aus der App und Klärungsbedarf bleiben erhalten.
+                            Geänderte Zeilen aktualisieren die vorhandene Rechnung – nur die aufgeführten Felder. Erstattungen aus der App
+                            und aus Bescheiden, Belege und Klärungsbedarf bleiben erhalten. Zeilen, die einen Wert aus der App
+                            überschreiben würden („in der App geändert“), sind nicht vorausgewählt.
                         </p>}
                         {preview.warnings > 0 && <Notice kind="warn">{plural(preview.warnings, "Hinweis", "Hinweise")} zu einzelnen Zeilen – bitte prüfen (Tippfehler bei Daten, Erstattungen über dem Rechnungsbetrag). Korrigieren lässt sich alles auch nach dem Import.</Notice>}
                     </div>
-                    {preview.unchanged > 0 && (
+                    {preview.unchanged + preview.deletedInApp > 0 && (
                         <label className="inline" style={{margin: "0 0 8px"}}>
                             <input type="checkbox" checked={showUnchanged} onChange={e => setShowUnchanged(e.target.checked)}/>
-                            Unveränderte Zeilen zeigen ({preview.unchanged})
+                            Unveränderte Zeilen zeigen ({preview.unchanged + preview.deletedInApp})
                         </label>
                     )}
                     {rows.length > 0 && (
@@ -157,9 +162,9 @@ export default function Import() {
                                 </thead>
                                 <tbody>
                                 {rows.map(r => (
-                                    <tr key={r.key} className={r.state === "unchanged" ? "muted" : ""}>
+                                    <tr key={r.key} className={quiet(r) ? "muted" : ""}>
                                         <td>
-                                            <input type="checkbox" aria-label={`${where(r)} übernehmen`} disabled={r.state === "unchanged"}
+                                            <input type="checkbox" aria-label={`${where(r)} übernehmen`} disabled={quiet(r)}
                                                    checked={include.has(r.key)} onChange={() => toggle(r.key)}/>
                                         </td>
                                         <td className="muted">{sheets ? `${r.sheet} · ${r.row}` : r.row}</td>
@@ -215,6 +220,8 @@ function StateBadge({state}: {state: string}) {
             return <Badge kind="good">neu</Badge>;
         case "changed":
             return <Badge kind="warn">geändert</Badge>;
+        case "deleted":
+            return <Badge>in der App gelöscht</Badge>;
         default:
             return <Badge>unverändert</Badge>;
     }

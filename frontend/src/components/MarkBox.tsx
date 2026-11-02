@@ -17,9 +17,11 @@ export function MarkBox({label, mark, onToggle, onDate, disabled}: {
     const done = mark.done;
     return (
         <span className="markbox">
-            <input type="checkbox" aria-label={label} checked={done} disabled={disabled}
-                   onChange={e => onToggle(e.target.checked)}/>
-            <span className="mark-label">{label}</span>
+            <label className="mark-check">
+                <input type="checkbox" aria-label={label} checked={done} disabled={disabled}
+                       onChange={e => onToggle(e.target.checked)}/>
+                <span className="mark-label">{label}</span>
+            </label>
             {done && !editing && (
                 onDate
                     ? <button type="button" className="mark-date" title={`${label} am ${date(mark.date)} – Datum ändern`}

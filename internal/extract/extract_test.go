@@ -294,3 +294,27 @@ func TestCleanName(t *testing.T) {
 		}
 	}
 }
+
+func TestProviderAndNumberEdgeCasesFromReview(t *testing.T) {
+	// Words of the noise list inside names, a bank line with a legal form,
+	// and "e. K." at the end of a line.
+	for _, c := range []struct{ text, want string }{
+		{"Endoskopie-Zentrum Musterstadt\nRechnung Nr. E-1\nRechnungsbetrag 50,00", "Endoskopie-Zentrum Musterstadt"},
+		{"Brillen & Kontaktlinsen Beispiel\nRechnung Nr. B-2\nRechnungsbetrag 50,00", "Brillen & Kontaktlinsen Beispiel"},
+		{"Dres. Muster & Kollegen\nDeutsche Apotheker- und Ärztebank eG IBAN DE89 3704 0044 0532 0130 00\nRechnungsbetrag 50,00", "Dres. Muster & Kollegen"},
+		{"Apotheke am Markt e.K.\nKassenbeleg\nSumme 12,00", "Apotheke am Markt e.K."},
+	} {
+		if d := Analyze(lines(c.text), nil, now); d.Provider != c.want {
+			t.Errorf("provider %q, want %q", d.Provider, c.want)
+		}
+	}
+	// A table header with a pipe, and a sentence that only mentions the number.
+	d := Analyze(lines("Praxis Beispiel\nRechnungsnummer | Datum\n2026-0815 | 01.10.2026\nRechnungsbetrag 50,00"), nil, now)
+	if d.Reference != "2026-0815" {
+		t.Errorf("reference below header %q", d.Reference)
+	}
+	d = Analyze(lines("Praxis Beispiel\nBitte geben Sie die Rechnungsnummer als Verwendungszweck an.\nIBAN DE89 3704 0044 0532 0130 00\nRechnungsbetrag 50,00"), nil, now)
+	if d.Reference != "" {
+		t.Errorf("reference taken from a sentence: %q", d.Reference)
+	}
+}

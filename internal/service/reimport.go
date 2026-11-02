@@ -22,6 +22,7 @@ const (
 	rowNew       = "new"
 	rowChanged   = "changed"
 	rowUnchanged = "unchanged"
+	rowDeleted   = "deleted" // the invoice was deleted in the app
 )
 
 // excelFields returns the spreadsheet fields of an invoice as comparable
@@ -77,28 +78,64 @@ func fieldKeys(payers []string) []string {
 // change is one field the import would set.
 type change struct {
 	key, from, to string
-	conflict      bool // also changed in the app since the last import
+	// conflict: the app has its own value (changed since the last import,
+	// or unknown because there is no record of it): the row needs a look.
+	conflict bool
 }
 
 // changes returns what importing row (spreadsheet values) into an invoice
 // with the current values cur would change. base are the values of the last
 // import (nil if unknown): fields equal to base were not corrected in the
-// file and keep their value from the app.
-func changes(row, cur, base map[string]string, keys []string) []change {
+// file and keep their value from the app. Without a base the file can only
+// fill empty fields – it never clears a value set in the app – and other
+// differences are conflicts. ownRefund names payers with refunds booked in
+// the app (by hand or from a Bescheid): a refund from the file would count
+// twice, so it is not taken over.
+func changes(row, cur, base map[string]string, keys []string, ownRefund map[string]bool) []change {
 	var out []change
 	for _, k := range keys {
 		to, from := row[k], cur[k]
 		if to == from {
 			continue
 		}
-		if base != nil {
-			if b, ok := base[k]; ok && to == b {
-				continue // changed only in the app
-			}
+		if p, ok := strings.CutPrefix(k, "refund:"); ok && ownRefund[p] {
+			continue
 		}
-		out = append(out, change{key: k, from: from, to: to, conflict: base != nil && cur[k] != base[k]})
+		if base == nil {
+			if to == "" {
+				continue // an empty cell does not undo what was entered in the app
+			}
+			out = append(out, change{key: k, from: from, to: to, conflict: from != ""})
+			continue
+		}
+		if to == base[k] { // a missing key (payer not mapped last time) counts as empty
+			continue // changed only in the app
+		}
+		out = append(out, change{key: k, from: from, to: to, conflict: cur[k] != base[k]})
 	}
 	return out
+}
+
+// ownRefunds returns the payers with refunds that did not come from the spreadsheet.
+func ownRefunds(inv *model.Invoice) map[string]bool {
+	own := map[string]bool{}
+	for p, c := range inv.Claims {
+		for _, r := range c.Refunds {
+			if !fromSpreadsheet(r) {
+				own[p] = true
+			}
+		}
+	}
+	return own
+}
+
+// rowChanges is changes for a spreadsheet row and its matched invoice.
+func rowChanges(row map[string]string, inv *model.Invoice, payers []string) []change {
+	var base map[string]string
+	if inv.Source != nil {
+		base = inv.Source.Values
+	}
+	return changes(row, excelFields(inv, payers), base, fieldKeys(payers), ownRefunds(inv))
 }
 
 // applyField sets one spreadsheet field of inv.
@@ -159,10 +196,16 @@ type rowMatch struct {
 
 // matchRows assigns spreadsheet rows to existing invoices. file is the
 // spreadsheet's file name, sheets and rows give each row's origin.
+//
+// What the row says counts first (provider 30, invoice date 25, amount 30,
+// treatment date 5); the recorded origin only breaks ties, so a series of
+// equal invoices (weekly physiotherapy) stays matched by date when rows are
+// inserted or sorted. Invoices deleted in the app take part when they came
+// from this file, so that their row is not offered as new again.
 func matchRows(rows []map[string]string, sheets []string, rowNums []int, file string, invoices []model.Invoice, payers []string) []rowMatch {
 	type cand struct {
-		row, inv, score int
-		certain         bool
+		row, inv, content, origin int
+		certain                   bool
 	}
 	var cands []cand
 	norm := func(s string) string {
@@ -190,38 +233,47 @@ func matchRows(rows []map[string]string, sheets []string, rowNums []int, file st
 	for i, row := range rows {
 		prov := norm(row["provider"])
 		for j, k := range ks {
-			if invoices[j].Deleted {
+			origin := k.src != nil && strings.EqualFold(k.src.File, file) && k.src.Sheet == sheets[i]
+			if invoices[j].Deleted && !origin {
 				continue
 			}
-			score := 0
+			content := 0
 			if prov != "" && slices.Contains(k.provider, prov) {
-				score += 30
+				content += 30
 			}
-			if same(k, "invoiceDate", row["invoiceDate"]) {
-				score += 25
+			dateSame := same(k, "invoiceDate", row["invoiceDate"])
+			if dateSame {
+				content += 25
 			}
 			if same(k, "amount", row["amount"]) {
-				score += 30
+				content += 30
 			}
 			if same(k, "serviceFrom", row["serviceFrom"]) {
-				score += 5
+				content += 5
 			}
-			origin := k.src != nil && strings.EqualFold(k.src.File, file) && k.src.Sheet == sheets[i]
 			exact, near := origin && k.src.Row == rowNums[i], origin && abs(k.src.Row-rowNums[i]) <= 5
+			bonus := 0
 			switch {
 			case exact:
-				score += 30
+				bonus = 2
 			case near:
-				score += 10 // rows inserted or deleted above it
+				bonus = 1
 			}
-			if score >= 55 {
-				// Certain: the recorded row, a row close to it with two
-				// matching fields, or provider, date and amount all agree.
-				cands = append(cands, cand{row: i, inv: j, score: score, certain: exact || near && score >= 65 || score >= 85})
+			// Two fields agree; or one, in the row the invoice came from.
+			if content >= 55 || exact && content >= 30 {
+				// Certain: provider, date and amount agree, or the invoice
+				// date agrees in (or next to) the row it came from.
+				cands = append(cands, cand{row: i, inv: j, content: content, origin: bonus,
+					certain: content >= 85 || (exact || near) && content >= 55 && dateSame})
 			}
 		}
 	}
-	slices.SortStableFunc(cands, func(a, b cand) int { return b.score - a.score })
+	slices.SortStableFunc(cands, func(a, b cand) int {
+		if a.content != b.content {
+			return b.content - a.content
+		}
+		return b.origin - a.origin
+	})
 	out := make([]rowMatch, len(rows))
 	usedRow := make([]bool, len(rows))
 	usedInv := make([]bool, len(invoices))

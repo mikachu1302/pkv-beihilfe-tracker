@@ -329,8 +329,10 @@ type Invoice struct {
 // again compares with them: a value that changed in the file is taken
 // over, one that was only changed in the app is kept.
 //
-// Losing it is harmless (an older app version drops unknown fields): the
-// next import then matches the invoice by provider, dates and amount.
+// Losing it (an older app version drops unknown fields) costs precision, not
+// data: the next import then matches the invoice by provider, dates and
+// amount, only fills fields that are empty in the app and shows any other
+// difference for review.
 type ImportSource struct {
 	File  string `json:"file"` // file name without folder
 	Sheet string `json:"sheet"`

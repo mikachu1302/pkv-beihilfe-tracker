@@ -1,4 +1,4 @@
-import {useEffect, useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {Desktop, Svc} from "../api";
 import type {BackupStatusDTO, CoverageDTO, PayerDTO, ProblemDTO, SettingsDTO, YearSettingDTO} from "../api";
 import {useApp} from "../App";
@@ -40,6 +40,7 @@ export default function Settings() {
     const [s, setS] = useState<SettingsDTO | null>(null);
     const [error, setError] = useState("");
     const [warnings, setWarnings] = useState<ProblemDTO[]>([]);
+    const savingRef = useRef(false);
 
     const edited = s !== null && base !== null && JSON.stringify(s) !== JSON.stringify(forForm(base));
     const apply = (d: SettingsDTO) => {
@@ -90,7 +91,8 @@ export default function Settings() {
     const removeYearRow = (i: number) => setS({...s, years: years.filter((_, j) => j !== i)});
 
     async function save() {
-        if (!s) return;
+        if (!s || savingRef.current) return;
+        savingRef.current = true;
         setError("");
         try {
             // The backend merges: values changed elsewhere since base was loaded are kept
@@ -102,6 +104,8 @@ export default function Settings() {
             reloadStatus();
         } catch (e) {
             setError(errMsg(e));
+        } finally {
+            savingRef.current = false;
         }
     }
 

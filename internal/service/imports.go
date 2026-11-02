@@ -71,17 +71,18 @@ type YearCountDTO struct {
 
 // ImportPreviewDTO is the result of reading a spreadsheet; nothing is saved yet.
 type ImportPreviewDTO struct {
-	Token      string             `json:"token"`
-	File       string             `json:"file"`
-	Sheet      string             `json:"sheet"`
-	Rows       []ImportRowDTO     `json:"rows"`
-	Years      []YearCountDTO     `json:"years"`
-	Allowances int                `json:"allowances"`
-	Warnings   int                `json:"warnings"`
-	New        int                `json:"new"`
-	Changed    int                `json:"changed"`
-	Unchanged  int                `json:"unchanged"`
-	Removed    []ImportRemovedDTO `json:"removed"`
+	Token        string             `json:"token"`
+	File         string             `json:"file"`
+	Sheet        string             `json:"sheet"`
+	Rows         []ImportRowDTO     `json:"rows"`
+	Years        []YearCountDTO     `json:"years"`
+	Allowances   int                `json:"allowances"`
+	Warnings     int                `json:"warnings"`
+	New          int                `json:"new"`
+	Changed      int                `json:"changed"`
+	Unchanged    int                `json:"unchanged"`
+	DeletedInApp int                `json:"deletedInApp"` // rows of invoices deleted in the app (not created again)
+	Removed      []ImportRemovedDTO `json:"removed"`
 }
 
 // ImportResultDTO reports what was imported.
@@ -142,7 +143,6 @@ func (s *Service) PreviewSpreadsheet(path, beihilfePayerID, pkvPayerID string) (
 		k := rowKey{w.Sheet, w.Row}
 		warnings[k] = append(warnings[k], w.Text)
 	}
-	keys := fieldKeys(payers)
 	years := map[int]int{}
 	matched := map[string]bool{}
 	for i := range res.Invoices {
@@ -156,16 +156,16 @@ func (s *Service) PreviewSpreadsheet(path, beihilfePayerID, pkvPayerID string) (
 			cur := byID[m.invoiceID]
 			matched[m.invoiceID] = true
 			row.InvoiceID, row.Uncertain, row.State = m.invoiceID, m.uncertain, rowUnchanged
-			var base map[string]string
-			if cur.Source != nil {
-				base = cur.Source.Values
-			}
-			for _, c := range changes(p.fields[i], excelFields(cur, payers), base, keys) {
-				row.Changes = append(row.Changes, ImportChangeDTO{Label: fieldLabel(&data.Settings, c.key),
-					From: fieldText(c.key, c.from), To: fieldText(c.key, c.to), Conflict: c.conflict})
-			}
-			if len(row.Changes) > 0 {
-				row.State = rowChanged
+			if cur.Deleted {
+				row.State = rowDeleted // deleted in the app: not created again
+			} else {
+				for _, c := range rowChanges(p.fields[i], cur, payers) {
+					row.Changes = append(row.Changes, ImportChangeDTO{Label: fieldLabel(&data.Settings, c.key),
+						From: fieldText(c.key, c.from), To: fieldText(c.key, c.to), Conflict: c.conflict})
+				}
+				if len(row.Changes) > 0 {
+					row.State = rowChanged
+				}
 			}
 		}
 		p.states = append(p.states, row.State)
@@ -174,6 +174,8 @@ func (s *Service) PreviewSpreadsheet(path, beihilfePayerID, pkvPayerID string) (
 			out.New++
 		case rowChanged:
 			out.Changed++
+		case rowDeleted:
+			out.DeletedInApp++
 		default:
 			out.Unchanged++
 		}
@@ -198,6 +200,12 @@ func (s *Service) PreviewSpreadsheet(path, beihilfePayerID, pkvPayerID string) (
 		out.Years = append(out.Years, YearCountDTO{Year: y, Count: n})
 	}
 	slices.SortFunc(out.Years, func(a, b YearCountDTO) int { return a.Year - b.Year })
+	out.Allowances = 0 // only those of new rows are imported
+	for _, row := range res.AllowanceOf {
+		if p.states[row] == rowNew {
+			out.Allowances++
+		}
+	}
 	return out, nil
 }
 
@@ -265,9 +273,18 @@ func (s *Service) CommitSpreadsheet(token string, keys []string) (ImportResultDT
 		}
 		chosen[i] = true
 	}
-	fieldKeys := fieldKeys(p.payers)
-	source := func(i int) *model.ImportSource {
-		return &model.ImportSource{File: p.file, Sheet: p.res.RowSheets[i], Row: p.res.Rows[i], Values: p.fields[i]}
+	// The origin with the values from the file; values of payers not mapped
+	// in this import are kept from before.
+	source := func(i int, prev *model.ImportSource) *model.ImportSource {
+		values := maps.Clone(p.fields[i])
+		if prev != nil {
+			for k, v := range prev.Values {
+				if _, ok := values[k]; !ok {
+					values[k] = v
+				}
+			}
+		}
+		return &model.ImportSource{File: p.file, Sheet: p.res.RowSheets[i], Row: p.res.Rows[i], Values: values}
 	}
 	save := func(inv model.Invoice) error {
 		saved, err := st.SaveInvoice(inv)
@@ -283,7 +300,7 @@ func (s *Service) CommitSpreadsheet(token string, keys []string) (ImportResultDT
 		switch {
 		case p.states[i] == rowNew && chosen[i]:
 			inv := p.res.Invoices[i]
-			inv.Source = source(i)
+			inv.Source = source(i, nil)
 			if err := save(inv); err != nil {
 				return out, err
 			}
@@ -292,20 +309,17 @@ func (s *Service) CommitSpreadsheet(token string, keys []string) (ImportResultDT
 			// Unchanged rows only remember their origin (rows may have moved).
 			cur, err := findInvoice(data, p.matches[i].invoiceID)
 			if err != nil {
-				return out, err
+				out.Skipped++ // deleted meanwhile (e.g. on another device)
+				continue
 			}
 			inv := cloneInvoice(cur)
 			if p.states[i] == rowChanged {
-				var base map[string]string
-				if cur.Source != nil {
-					base = cur.Source.Values
-				}
-				for _, c := range changes(p.fields[i], excelFields(cur, p.payers), base, fieldKeys) {
+				for _, c := range rowChanges(p.fields[i], cur, p.payers) {
 					applyField(&inv, c.key, c.to, s.newID)
 				}
 				out.Updated++
 			}
-			if src := source(i); p.states[i] == rowChanged || !sameSource(cur.Source, src) {
+			if src := source(i, cur.Source); p.states[i] == rowChanged || !sameSource(cur.Source, src) {
 				inv.Source = src
 				if err := save(inv); err != nil {
 					return out, err

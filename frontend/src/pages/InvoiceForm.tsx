@@ -23,6 +23,23 @@ function forForm(inv: InvoiceDTO): InvoiceDTO {
     };
 }
 
+/**
+ * The form as compared for unsaved changes: unticked marks forget their date
+ * and note, empty new refund rows do not count (ticking and unticking again
+ * is no change).
+ */
+function snapshot(inv: InvoiceDTO): string {
+    const mark = (m: MarkDTO): MarkDTO => (m.done ? m : {done: false, date: "", note: ""});
+    return JSON.stringify({
+        ...inv,
+        paid: mark(inv.paid),
+        claims: (inv.claims ?? []).map(c => ({
+            ...c, submitted: mark(c.submitted), refunded: mark(c.refunded), clarify: mark(c.clarify),
+            refunds: (c.refunds ?? []).filter(r => r.id !== "" || r.amount.trim() !== ""),
+        })),
+    });
+}
+
 function emptyClaim(payerId: string): ClaimDTO {
     const m = {done: false, date: "", note: ""};
     return {payerId, eligible: "", rate: "", expected: "", submitted: m, refunded: m, clarify: m, held: false, skip: false,
@@ -52,16 +69,23 @@ export default function InvoiceForm() {
     const timer = useRef<number>(undefined);
     const seq = useRef(0);
 
-    const dirty = inv !== null && initial !== "" && !saving && JSON.stringify(inv) !== initial;
+    const dirty = inv !== null && initial !== "" && snapshot(inv) !== initial;
     useUnsavedChanges(dirty);
     useSaveShortcut(() => void save("list"), inv !== null);
     useKeydown(e => {
         if (!mod(e) || e.key !== "Enter" || dialogOpen()) return false;
-        void save("new");
+        if (!e.repeat) void save("new");
         return true;
     }, inv !== null);
+    // A preview still pending must not land in another invoice's form.
+    const cancelPreview = () => {
+        window.clearTimeout(timer.current);
+        seq.current++;
+    };
+    useEffect(() => () => window.clearTimeout(timer.current), []);
 
     useEffect(() => {
+        cancelPreview();
         setInv(null);
         setView(null);
         setLoadError("");
@@ -69,7 +93,7 @@ export default function InvoiceForm() {
         (id ? Svc.GetInvoice(id) : Svc.NewInvoice()).then(
             d => {
                 setInv(forForm(d.invoice));
-                setInitial(JSON.stringify(forForm(d.invoice)));
+                setInitial(snapshot(forForm(d.invoice)));
                 setOriginal(id ? d.invoice : null);
                 setView(d.view);
             },
@@ -119,6 +143,7 @@ export default function InvoiceForm() {
 
     async function save(next: "list" | "new") {
         if (!inv || saving) return;
+        cancelPreview();
         setSaving(true);
         setSaveError("");
         try {
@@ -130,7 +155,7 @@ export default function InvoiceForm() {
                 else {
                     const blank = await Svc.NewInvoice();
                     setInv(forForm(blank.invoice));
-                    setInitial(JSON.stringify(forForm(blank.invoice)));
+                    setInitial(snapshot(forForm(blank.invoice)));
                     setOriginal(null);
                     setView(blank.view);
                 }
@@ -293,6 +318,7 @@ function MarkField({label, mark, onChange, withNote}: {
 
 function ClaimCard({claim: c, view: v, onChange}: {claim: ClaimDTO; view: ClaimViewDTO; onChange: (p: Partial<ClaimDTO>) => void}) {
     const toast = useToast();
+    const confirm = useConfirm();
     const id = useId();
     const refunds = c.refunds ?? [];
     const setRefund = (i: number, patch: Partial<RefundDTO>) =>
@@ -307,16 +333,20 @@ function ClaimCard({claim: c, view: v, onChange}: {claim: ClaimDTO; view: ClaimV
     // "erstattet" and the refunds belong together (as in the invoice list): a
     // claim with refunds counts as refunded, and ticking it without an amount
     // adds a refund prefilled with the open SOLL.
+    const withAmount = refunds.filter(r => r.amount.trim() !== "" && num(r.amount) !== 0);
     const refundedMark: MarkDTO = refunds.length > 0 && !c.refunded.done
         ? {...c.refunded, done: true, date: c.refunded.date || latestDate(refunds)}
         : c.refunded;
-    const setRefunded = (m: MarkDTO) => {
+    const setRefunded = async (m: MarkDTO) => {
         if (m.done && !refundedMark.done) {
-            if (refunds.length === 0) addRefund(m.date);
+            // Without a known SOLL only the tick is set; the hint below asks for the amount.
+            if (refunds.length === 0 && num(v.expected) - num(v.actual) > 0) addRefund(m.date);
             else onChange({refunded: m});
             return;
         }
         if (!m.done) {
+            const manual = withAmount.filter(r => r.docId === "");
+            if (manual.length > 0 && !await confirm(`Von Hand erfasste Erstattungen (${manual.map(r => `${r.amount} €`).join(", ")}) entfernen?`, "Entfernen")) return;
             const fromDocs = refunds.filter(r => r.docId !== "");
             onChange({refunds: fromDocs, refunded: {...c.refunded, done: false}});
             if (fromDocs.length > 0) toast.show("Erstattungen aus einem Bescheid bleiben – zum Entfernen in der Tabelle auf ✕ klicken");
@@ -354,7 +384,7 @@ function ClaimCard({claim: c, view: v, onChange}: {claim: ClaimDTO; view: ClaimV
 
             <div className="checks">
                 <MarkField label="eingereicht" mark={c.submitted} onChange={submitted => onChange({submitted})}/>
-                <MarkField label="erstattet" mark={refundedMark} onChange={setRefunded}/>
+                <MarkField label="erstattet" mark={refundedMark} onChange={m => void setRefunded(m)}/>
                 <MarkField label="Klärungsbedarf" mark={c.clarify} withNote onChange={clarify => onChange({clarify})}/>
                 <label className="inline"><input type="checkbox" checked={c.held} onChange={e => onChange({held: e.target.checked})}/>zurückgehalten</label>
                 <label className="inline"><input type="checkbox" checked={c.skip} onChange={e => onChange({skip: e.target.checked})}/>wird nicht eingereicht</label>
@@ -366,7 +396,7 @@ function ClaimCard({claim: c, view: v, onChange}: {claim: ClaimDTO; view: ClaimV
                 )}
             </div>
 
-            {c.refunded.done && refunds.length === 0 && (
+            {refundedMark.done && withAmount.length === 0 && (
                 <Notice kind="warn">
                     Als erstattet markiert, aber kein Betrag erfasst.{" "}
                     <button className="link" onClick={() => addRefund(c.refunded.date || today())}>Offenes SOLL als Erstattung eintragen</button>

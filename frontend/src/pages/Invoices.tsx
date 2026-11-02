@@ -62,6 +62,7 @@ export default function Invoices() {
     const [rows, setRows] = useState<InvoiceRowDTO[]>([]);
     const [filter, setFilter] = useState<Filter>("all");
     const [query, setQuery] = useState("");
+    const [figures, setFigures] = useState(0); // bumped after own changes: the Ausstand cards reload
     const search = useRef<HTMLInputElement>(null);
     useKeydown(e => {
         if (dialogOpen() || !(mod(e) && e.key.toLowerCase() === "f" || e.key === "/" && !isTyping(e.target))) return false;
@@ -94,7 +95,7 @@ export default function Invoices() {
     /** Opens the invoice when a row is clicked anywhere but on its checkboxes, buttons or links. */
     function openFromRow(e: React.MouseEvent, id: string) {
         const target = e.target as HTMLElement;
-        if (target.closest("input, button, a, label, select, textarea, .popover, [role=dialog]")) return;
+        if (target.closest("input, button, a, label, select, textarea, .popover, [role=dialog], td:first-child, .markbox")) return;
         if (window.getSelection()?.toString()) return; // the user is selecting text
         navigate(`/rechnung/${encodeURIComponent(id)}`);
     }
@@ -103,6 +104,7 @@ export default function Invoices() {
         try {
             const row = await Svc.SetMark(ch);
             setRows(rs => rs.map(r => (r.id === row.id ? row : r)));
+            setFigures(n => n + 1);
             setPop(null);
         } catch (e) {
             toast.error(e);
@@ -151,7 +153,7 @@ export default function Invoices() {
                 <button onClick={() => exportExcel(toast, year)}>Excel</button>
                 <button className="primary" onClick={() => navigate("/rechnung/neu")}>Neue Rechnung</button>
             </div>
-            <OutstandingForYear year={year}/>
+            <OutstandingForYear year={year} version={figures}/>
             <div className="chips" style={{marginBottom: 12}}>
                 {FILTERS.map(([f, label]) => {
                     const count = f === "warnings" ? rows.filter(r => matchesFilter(r, f)).length : 0;
@@ -163,7 +165,10 @@ export default function Invoices() {
             </div>
             {list.error && <ErrorNotice error={list.error}/>}
             {selected.size > 0 && (
-                <BulkBar ids={[...selected]} payers={payers} onDone={() => list.reload()}/>
+                <BulkBar ids={[...selected]} payers={payers} onDone={() => {
+                    list.reload();
+                    setFigures(n => n + 1);
+                }}/>
             )}
             {list.loading && !list.data ? <Loading/> : visible.length === 0 ? (
                 <Empty>
@@ -402,8 +407,8 @@ function BulkBar({ids, payers, onDone}: {ids: string[]; payers: PayerDTO[]; onDo
 }
 
 /** Outstanding amounts for the chosen year or all years, above the list. */
-function OutstandingForYear({year}: {year: number}) {
+function OutstandingForYear({year, version}: {year: number; version: number}) {
     const {dataVersion} = useApp();
-    const figures = useBackend<YearDTO>(() => (year === 0 ? Svc.Overview().then(o => o.total) : Svc.Dashboard(year)), [year, dataVersion]);
+    const figures = useBackend<YearDTO>(() => (year === 0 ? Svc.Overview().then(o => o.total) : Svc.Dashboard(year)), [year, dataVersion, version]);
     return <OutstandingCards payers={figures.data?.payers ?? []} period={year === 0 ? "alle Jahre" : String(year)}/>;
 }

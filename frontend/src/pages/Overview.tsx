@@ -79,7 +79,7 @@ export default function Overview() {
                                 <th rowSpan={2}>Jahr</th>
                                 <th rowSpan={2} className="num">Rechnungen</th>
                                 <th rowSpan={2} className="num">Rechnungs&shy;beträge</th>
-                                {payers.map(p => <th key={p.id} colSpan={3} className="payer-group">{p.name}</th>)}
+                                {payers.map(p => <th key={p.id} colSpan={3} scope="colgroup" className="payer-group">{p.name}</th>)}
                                 <th rowSpan={2} className="num" title="Rechnungsbeträge minus Erstattungen">Nicht erstattet</th>
                                 <th rowSpan={2} className="num" title="Krankenhaustagegeld und andere Leistungen ohne Rechnung">Tagegeld u. Ä.</th>
                             </tr>

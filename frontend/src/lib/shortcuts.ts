@@ -25,9 +25,9 @@ export function isTyping(target: EventTarget | null): boolean {
     return false;
 }
 
-/** A dialog is open: page shortcuts stay quiet while it has the keyboard. */
+/** A modal dialog is open: page shortcuts stay quiet while it has the keyboard (popovers do not count). */
 export function dialogOpen(): boolean {
-    return document.querySelector("[role=dialog], [role=alertdialog]") !== null;
+    return document.querySelector("[aria-modal=true]") !== null;
 }
 
 /**
@@ -54,7 +54,7 @@ export function useKeydown(handler: (e: KeyboardEvent) => boolean | void, enable
 export function useSaveShortcut(save: () => void, enabled = true) {
     useKeydown(e => {
         if (!mod(e) || e.shiftKey || e.key.toLowerCase() !== "s" || dialogOpen()) return false;
-        save();
+        if (!e.repeat) save(); // holding the keys must not save again and again
         return true;
     }, enabled);
 }
@@ -77,4 +77,9 @@ export function useUnsavedChanges(isDirty: boolean) {
 /** Some page has unsaved changes. */
 export function hasUnsavedChanges(): boolean {
     return dirty.size > 0;
+}
+
+/** Forgets all unsaved changes (the user chose to leave them). */
+export function clearUnsavedChanges() {
+    dirty.clear();
 }

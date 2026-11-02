@@ -107,6 +107,16 @@ describe("InvoiceForm", () => {
         expect(within(pkv).getByLabelText("Erstattungsbetrag")).toBeInTheDocument();
     });
 
+    it("does not ask before leaving after ticking and unticking a box", async () => {
+        const user = userEvent.setup();
+        renderAt("/rechnung/neu", "/rechnung/neu", <InvoiceForm/>);
+        const bh = await screen.findByRole("region", {name: "Beihilfe"});
+        await user.click(within(bh).getByLabelText("eingereicht"));
+        await user.click(within(bh).getByLabelText("eingereicht"));
+        await user.click(screen.getByRole("button", {name: "Abbrechen"}));
+        expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    });
+
     it("shows backend validation errors", async () => {
         const user = userEvent.setup();
         svc.SaveInvoice.mockRejectedValue(new Error("Behandler fehlt\nBetrag fehlt"));

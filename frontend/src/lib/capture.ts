@@ -105,9 +105,12 @@ async function ocr(canvas: HTMLCanvasElement, page: number, progress?: Progress,
 }
 
 // Below this confidence the page may lie sideways or upside down (a photo
-// without orientation data): the other orientations are tried as well.
+// without orientation data). The orientation is then looked for on small
+// copies – a full-size OCR pass takes seconds – and only the best one is
+// read again in full size.
 const OCR_RETRY_BELOW = 65;
-const OCR_GOOD = 80;
+const PROBE_SIDE = 1100;
+const PROBE_MARGIN = 10; // a turned copy must read clearly better
 
 function rotated(src: HTMLCanvasElement, degrees: 90 | 180 | 270): HTMLCanvasElement {
     const swap = degrees !== 180;
@@ -119,18 +122,34 @@ function rotated(src: HTMLCanvasElement, degrees: 90 | 180 | 270): HTMLCanvasEle
     return c;
 }
 
+function scaled(src: HTMLCanvasElement, maxSide: number): HTMLCanvasElement {
+    const f = Math.min(1, maxSide / Math.max(src.width, src.height));
+    const c = canvasFor(src.width * f, src.height * f);
+    c.getContext("2d")!.drawImage(src, 0, 0, c.width, c.height);
+    return c;
+}
+
 /** OCR in the orientation that reads best. */
 async function ocrUpright(canvas: HTMLCanvasElement, page: number, progress?: Progress, signal?: AbortSignal): Promise<TextLine[]> {
-    let best = await ocr(canvas, page, progress, signal);
-    if (best.confidence >= OCR_RETRY_BELOW) return best.lines;
+    const full = await ocr(canvas, page, progress, signal);
+    const chars = full.lines.reduce((n, l) => n + l.text.length, 0);
+    if (full.confidence >= OCR_RETRY_BELOW || chars < 20) return full.lines; // fine, or an empty page
+    const small = scaled(canvas, PROBE_SIDE);
+    progress?.("Bild liegt vermutlich quer – Ausrichtung wird gesucht …");
+    let best = {degrees: 0, confidence: (await ocr(small, page, undefined, signal)).confidence};
     for (const degrees of [90, 270, 180] as const) {
         signal?.throwIfAborted();
-        progress?.("Bild liegt vermutlich quer – wird gedreht …");
-        const r = await ocr(rotated(canvas, degrees), page, progress, signal);
-        if (r.confidence > best.confidence) best = r;
-        if (best.confidence >= OCR_GOOD) break;
+        const turned = rotated(small, degrees);
+        const r = await ocr(turned, page, undefined, signal);
+        turned.width = 0; // free the pixels now, not at the next GC
+        if (r.confidence > best.confidence + PROBE_MARGIN) best = {degrees, confidence: r.confidence};
     }
-    return best.lines;
+    small.width = 0;
+    if (best.degrees === 0) return full.lines;
+    const turned = rotated(canvas, best.degrees as 90 | 180 | 270);
+    const r = await ocr(turned, page, progress, signal);
+    turned.width = 0;
+    return r.confidence > full.confidence ? r.lines : full.lines;
 }
 
 async function qrCodes(canvas: HTMLCanvasElement): Promise<string[]> {

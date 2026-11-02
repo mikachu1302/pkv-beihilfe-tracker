@@ -39,8 +39,9 @@ type PremiumRefund struct {
 }
 
 // Outstanding is SOLL − IST of a payer's claims that are submitted or still
-// to be submitted. Claims held back or marked "wird nicht eingereicht" are
-// not owed and left out.
+// to be submitted, plus the deviations of refunded claims (until they are
+// accepted). Claims held back or marked "wird nicht eingereicht" are not
+// owed and left out.
 type Outstanding struct {
 	Expected  money.Cents // SOLL of those claims
 	Actual    money.Cents // IST of those claims

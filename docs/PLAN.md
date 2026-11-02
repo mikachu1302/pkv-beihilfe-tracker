@@ -205,7 +205,8 @@ ServiceYear = Leistungsjahr · PremiumRefund = Beitragsrückerstattung.
 - **Rechnungen**: table per year or all years with checkboxes per payer; filters (open,
   submitted, Klärungsbedarf, deadline, unpaid, with hints); bulk "eingereicht heute" creates a
   submission. Above the table one card per payer shows the Ausstand (SOLL − IST of claims
-  submitted or still to be submitted; held-back and skipped claims are not owed). A row opens
+  submitted or still to be submitted, plus deviations of refunded claims until accepted;
+  held-back and skipped claims are not owed). A row opens
   the invoice when clicked anywhere outside its controls (also ✎ next to the name); notes show
   as a "Notiz" badge with the text on hover.
 - **Rechnung**: detail form with SOLL/IST per payer, documents, refunds.
@@ -228,16 +229,20 @@ table); a refund of 0 counts as empty. Dates come from raw cell values. Each row
 warnings (dates before the invoice, implausible years, refunds above the amount). The UI
 shows a preview before saving (M2); the records keep their IDs from the preview, so saving
 again after an error does not duplicate them. Importing the corrected file again compares instead of duplicating: each
-row is matched to an existing invoice (recorded origin file/sheet/row, else provider, dates and
-amount; matches by similarity only are marked for checking) and is shown as new, changed (with
-the fields that change) or unchanged; invoices imported from the file before whose row is gone
-are offered for deletion (not preselected). A changed row only sets the spreadsheet fields
-(provider, dates, amount, paid, note, submitted, refunds from the spreadsheet); refunds from
-Bescheide, documents and app-only marks stay. Every imported invoice keeps its origin and the
-values it had in the file (model.ImportSource), so the next import takes over only what was
-corrected in the file and keeps what was changed in the app (three-way; a value changed on both
-sides is shown as a conflict). This optional field needs no schema bump: an older app version
-drops it, and the next import falls back to matching by similarity. Cells that cannot be read
+row is matched to an existing invoice – by what the row says (provider, invoice date, amount,
+treatment date), the recorded origin file/sheet/row only breaking ties, so series of equal
+invoices stay matched by date when rows move – and is shown as new, changed (with the fields
+that change), unchanged or "in der App gelöscht" (not created again). Invoices imported from the
+file before whose row is gone are offered for deletion. A changed row only sets the spreadsheet
+fields (provider, dates, amount, paid, note, submitted, refunds from the spreadsheet); refunds
+entered in the app or from Bescheide, documents and Klärungsbedarf stay, and a refund from the
+file is not added when the app already has refunds for that payer. Every imported invoice keeps
+its origin and the values it had in the file (model.ImportSource), so the next import takes over
+only what was corrected in the file and keeps what was changed in the app (three-way; a value
+changed on both sides is a conflict). Without that record (invoices imported by v0.1.0, or the
+field dropped by an older app version) the file only fills empty fields and never clears a value;
+other differences are conflicts. Uncertain matches, conflicts and deletions are not preselected.
+The field needs no schema bump: losing it costs precision, not data. Cells that cannot be read
 are kept in the invoice note ("In Excel nicht lesbar: …"); the other findings are plausibility rules the app
 checks all the time (section 7), shown as ⚠ in the list (filter "Mit Hinweisen") and in the
 invoice form until they are fixed.

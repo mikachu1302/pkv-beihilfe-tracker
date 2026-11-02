@@ -19,7 +19,7 @@ function preview(rows: ImportRowDTO[], patch: Partial<ImportPreviewDTO> = {}): I
     const count = (state: string) => rows.filter(r => r.state === state).length;
     return {token: "t1", file: "abrechnung.xlsx", sheet: [...new Set(rows.map(r => r.sheet))].join(", "), rows,
         years: [{year: 2024, count: rows.length}], allowances: 0, warnings: 0,
-        new: count("new"), changed: count("changed"), unchanged: count("unchanged"), removed: [], ...patch};
+        new: count("new"), changed: count("changed"), unchanged: count("unchanged"), deletedInApp: count("deleted"), removed: [], ...patch};
 }
 
 beforeEach(() => {
@@ -59,21 +59,24 @@ describe("Import", () => {
             row("2", "Tabelle1", 4, {provider: "Optik Ost", state: "changed", invoiceId: "b", uncertain: true,
                 changes: [{label: "Betrag", from: "310,00 €", to: "320,00 €", conflict: true}]}),
             row("3", "Tabelle1", 5, {provider: "Praxis Süd", state: "unchanged", invoiceId: "c"}),
+            row("4", "Tabelle1", 6, {provider: "Zahnarzt Nord", state: "changed", invoiceId: "e",
+                changes: [{label: "Bemerkung", from: "aus der App", to: "aus der Excel", conflict: true}]}),
         ], {removed: [{key: "del:d", invoiceId: "d", label: "Apotheke West · 12.02.2026 · 20,00 €", sheet: "Tabelle1", row: 4}]}));
         svc.CommitSpreadsheet.mockResolvedValue({invoices: 1, updated: 1, deleted: 1, allowances: 0, skipped: 1});
         renderAt("/", "/", <Import/>);
         await user.click(await screen.findByRole("button", {name: "Excel-Datei wählen …"}));
 
         expect(await screen.findByText("1 neu")).toBeInTheDocument();
-        expect(screen.getByText("2 geändert")).toBeInTheDocument();
+        expect(screen.getByText("3 geändert")).toBeInTheDocument();
         expect(screen.getByText("1 nicht mehr in der Excel")).toBeInTheDocument();
         expect(screen.getByText("137,25 €")).toBeInTheDocument();
-        expect(screen.getByText("(in der App geändert)")).toBeInTheDocument();
+        expect(screen.getAllByText("(in der App geändert)")).toHaveLength(2);
         expect(screen.getByText("Zuordnung bitte prüfen")).toBeInTheDocument();
         expect(screen.queryByText("Praxis Süd")).not.toBeInTheDocument(); // unchanged rows hidden
         // Preselected: new rows and certain changes; not uncertain ones or deletions.
         expect(screen.getByRole("checkbox", {name: "Zeile 3 übernehmen"})).toBeChecked();
         expect(screen.getByRole("checkbox", {name: "Zeile 4 übernehmen"})).not.toBeChecked();
+        expect(screen.getByRole("checkbox", {name: "Zeile 6 übernehmen"})).not.toBeChecked(); // would overwrite the app's value
         expect(screen.getByRole("checkbox", {name: /löschen: Apotheke West/})).not.toBeChecked();
 
         await user.click(screen.getByRole("checkbox", {name: /löschen: Apotheke West/}));

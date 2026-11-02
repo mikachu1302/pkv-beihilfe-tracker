@@ -62,7 +62,7 @@ var (
 	dateRe      = regexp.MustCompile(`\b(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4}|\d{2})\b`)
 	amountRe    = regexp.MustCompile(`\d{1,3}(?:\.\d{3})+,\d{2}|\d+,\d{2}`)
 	ibanRe      = regexp.MustCompile(`\b([A-Z]{2}\d{2}(?:\s?[0-9A-Z]{4}){3,7}(?:\s?[0-9A-Z]{1,3})?)\b`)
-	numberRe    = regexp.MustCompile(`(?i)(?:rechnungs?\s*-?\s*(?:nr|nummer)|re\.?\s*-?\s*nr|rechnung\s+nr|beleg\s*-?\s*nr|belegnummer)\.?\s*:?\s*([A-Z0-9][A-Z0-9/\-.]{2,24})`)
+	numberRe    = regexp.MustCompile(`(?i)(?:rechnungs?\s*-?\s*(?:nr|nummer)|re\.?\s*-?\s*nr|rechnung\s+nr|beleg\s*-?\s*nr|belegnummer)\.?[\s|:]*([A-Z0-9][A-Z0-9/\-.]{2,24})`)
 	treatedByRe = regexp.MustCompile(`(?i)(?:behandlung\s+durch|behandelnde[rn]?\s+(?:arzt|ärztin|zahnarzt|zahnärztin)\s*:?|leistungserbringer\s*:)\s+(.+?)(?:[,;:(]|$)`)
 	// GebüH (Gebührenverzeichnis für Heilpraktiker), not "Gebühr" or "Gebührenordnung für Ärzte".
 	gebuehRe = regexp.MustCompile(`gebüh(?:[^a-zäöüß]|$)`)
@@ -275,7 +275,7 @@ func Analyze(lines []Line, qr []string, now time.Time) Draft {
 			ref := strings.TrimRight(m[1], ".")
 			if !strings.ContainsAny(ref, "0123456789") { // "Rechnungsnummer Datum"
 				ref = ""
-				if i+1 < len(text) {
+				if i+1 < len(text) && headerOnly(t) {
 					ref = numberBelow(text[i+1])
 				}
 			}
@@ -418,12 +418,15 @@ func provider(lines []Line, text, lower []string) string {
 		}
 		base := 1.0 - float64(i)*0.03 + size
 		// A company with its legal form names the provider exactly, even
-		// inside a long line ("SYNLAB MVZ Augsburg GmbH ; Postfach …").
-		for _, m := range companyRe.FindAllString(t, -1) {
-			cands = append(cands, cand{strings.TrimSpace(m), base + 3})
+		// inside a long line ("SYNLAB MVZ Augsburg GmbH ; Postfach …") –
+		// but not the bank in the payment details.
+		if !bankLine(l) {
+			for _, m := range companyRe.FindAllString(t, -1) {
+				cands = append(cands, cand{strings.TrimSpace(m), base + 3})
+			}
 		}
 		if len(t) < 3 || len(t) > 70 || dateRe.MatchString(t) || streetRe.MatchString(t) || strings.ContainsAny(t, "@") ||
-			strings.HasSuffix(t, ":") || hasAny(l, headerNoise) || salutation(l) || (i > 0 && salutation(lower[i-1])) {
+			strings.HasSuffix(t, ":") || noise(l) || bankLine(l) || salutation(l) || (i > 0 && salutation(lower[i-1])) {
 			continue // header noise, labels, or the patient's name after "Herrn"/"Frau"
 		}
 		score := base
@@ -452,13 +455,62 @@ func provider(lines []Line, text, lower []string) string {
 
 var (
 	// companyRe finds a name ending in a legal form.
-	companyRe = regexp.MustCompile(`[\p{Lu}0-9][\p{L}0-9&.\- ]{1,50}\s(?:GmbH|gGmbH|mbH|AG|eG|e\.\s?K\.|KG|OHG|GbR|PartG|PartGmbB)\b`)
-	// headerNoise are words of letterhead lines that never name the provider.
-	headerNoise = []string{"rechnung", "tel.", "telefon", "fax", "www.", "iban", "seite", "leitung", "geschäftsführ", "fragen zur",
-		"servicezeit", "rufnummer", "internet", "kontakt", "postfach", "steuer", "ust-id", "bankverbindung", "kopie", "sprechzeit"}
+	companyRe = regexp.MustCompile(`[\p{Lu}0-9][\p{L}0-9&.\- ]{1,50}\s(?:(?:GmbH|gGmbH|mbH|AG|eG|KG|OHG|GbR|PartG|PartGmbB)\b|e\.\s?K\.)`)
+	// Letterhead lines that never name the provider: these words at the
+	// start of a word (noisePrefix) or as whole words (noiseWord); "Rechnung"
+	// only at the start of the line ("Verrechnungsstelle" names a provider).
+	noisePrefix = []string{"tel.", "telefon", "fax", "www.", "iban", "geschäftsführ", "fragen zur", "servicezeit", "rufnummer",
+		"internet", "postfach", "steuer", "ust-id", "bankverbindung", "sprechzeit"}
+	noiseWord = []string{"seite", "leitung", "kontakt", "kopie"}
 	// nameJunk are characters OCR makes of logos, lines and punch holes.
 	nameJunk = `\/|"“”„‚‘’'*°^~#<>{}[]©®™»«_=;`
 )
+
+func noise(l string) bool {
+	if strings.HasPrefix(l, "rechnung") {
+		return true
+	}
+	for _, w := range noisePrefix {
+		if labelIndex(l, w) >= 0 {
+			return true
+		}
+	}
+	for _, w := range noiseWord {
+		if i := labelIndex(l, w); i >= 0 {
+			if r, _ := utf8.DecodeRuneInString(l[i+len(w):]); i+len(w) == len(l) || !unicode.IsLetter(r) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// bankLine: payment details, whose bank ("… Ärztebank eG") is no provider.
+func bankLine(l string) bool {
+	return strings.Contains(l, "bank") || strings.Contains(l, "sparkasse") || labelIndex(l, "iban") >= 0 || labelIndex(l, "bic") >= 0
+}
+
+// headerWords may stand next to "Rechnungsnummer" in a table header.
+var headerWords = map[string]bool{"datum": true, "rechnungsdatum": true, "seite": true, "kundennummer": true, "kundennr": true,
+	"patient": true, "patientennummer": true, "betrag": true, "leistungsdatum": true, "nr": true, "fallnummer": true}
+
+// headerOnly reports whether a line with an invoice number label is a table
+// header ("Rechnungsnummer | Datum"), whose values are in the line below –
+// and not a sentence ("Bitte geben Sie die Rechnungsnummer … an").
+func headerOnly(line string) bool {
+	m := numberRe.FindStringSubmatchIndex(line)
+	if m == nil {
+		return false
+	}
+	rest := line[:m[0]] + " " + line[m[2]:] // everything but the label itself
+	for _, w := range strings.Fields(strings.ToLower(rest)) {
+		w = strings.TrimFunc(w, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+		if utf8.RuneCountInString(w) > 1 && !headerWords[w] { // single characters are OCR noise
+			return false
+		}
+	}
+	return true
+}
 
 // cleanName removes what OCR adds around a name: tokens without letters or
 // digits ("|", "©", "\/") and junk characters stuck to words ("SYNLAB\/").

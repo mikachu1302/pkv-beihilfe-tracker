@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -12,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -982,5 +984,117 @@ func TestSpreadsheetImportAgain(t *testing.T) {
 	pv, _ = s.PreviewSpreadsheet(path, "beihilfe-bund", "muster-pkv")
 	if pv.New != 0 || pv.Changed != 0 || pv.Unchanged != 4 || len(pv.Removed) != 0 {
 		t.Errorf("third preview: %+v", pv)
+	}
+}
+
+// importAll previews path and commits every row the UI preselects
+// (new rows and certain changes without conflicts).
+func importAll(t *testing.T, s *Service, path, bh string) ImportPreviewDTO {
+	t.Helper()
+	pv, err := s.PreviewSpreadsheet(path, bh, "muster-pkv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys []string
+	for _, r := range pv.Rows {
+		conflict := slices.ContainsFunc(r.Changes, func(c ImportChangeDTO) bool { return c.Conflict })
+		if r.State == "new" || r.State == "changed" && !r.Uncertain && !conflict {
+			keys = append(keys, r.Key)
+		}
+	}
+	if _, err := s.CommitSpreadsheet(pv.Token, keys); err != nil {
+		t.Fatal(err)
+	}
+	return pv
+}
+
+func TestReimportWithoutSourceKeepsAppWork(t *testing.T) {
+	s := newTestService(t)
+	path := filepath.Join(t.TempDir(), "alt.xlsx")
+	writeSheet(t, path, [][]any{{"Rechnungsdatum", "Behandler", "Gesamtbetrag", "Eingereicht Krankenkasse"},
+		{"10.03.2026", "Praxis Süd", 80, nil}})
+	importAll(t, s, path, "")
+	list, _ := s.ListInvoices(2026)
+	id := list[0].ID
+	// As if imported by v0.1.0: no recorded source.
+	inv := cloneInvoice(&s.data.Invoices[0])
+	inv.Source = nil
+	saved, _ := s.st.SaveInvoice(inv)
+	replaceInvoice(s.data, saved)
+	// Work done in the app afterwards.
+	s.SetMark(MarkChangeDTO{InvoiceID: id, Mark: MarkPaid, On: true, Date: "2026-03-20"})
+	s.SetMark(MarkChangeDTO{InvoiceID: id, PayerID: "muster-pkv", Mark: MarkSubmitted, On: true, Date: "2026-04-01"})
+	s.SetMark(MarkChangeDTO{InvoiceID: id, PayerID: "muster-pkv", Mark: MarkRefunded, On: true, Amount: "24,00", Date: "2026-05-01"})
+
+	// The file is unchanged, then gets the refund the app knows already.
+	writeSheet(t, path, [][]any{{"Rechnungsdatum", "Behandler", "Gesamtbetrag", "Eingereicht Krankenkasse", "Betrag Erstattet Krankenkasse"},
+		{"10.03.2026", "Praxis Süd", 80, nil, 24}})
+	pv := importAll(t, s, path, "")
+	if pv.Rows[0].State != "unchanged" {
+		t.Errorf("empty cells or a known refund proposed as changes: %+v", pv.Rows[0])
+	}
+	det, _ := s.GetInvoice(id)
+	if c := claim(det.View, "muster-pkv"); !det.Invoice.Paid.Done || c.Submitted.Date != "2026-04-01" || c.Actual != "24.00" {
+		t.Errorf("app work lost or refund doubled: paid %+v, claim %+v", det.Invoice.Paid, c)
+	}
+}
+
+func TestReimportSeriesStaysMatchedByDate(t *testing.T) {
+	s := newTestService(t)
+	path := filepath.Join(t.TempDir(), "physio.xlsx")
+	header := []any{"Rechnungsdatum", "Behandler", "Gesamtbetrag"}
+	rows := [][]any{header}
+	for i := 0; i < 8; i++ {
+		rows = append(rows, []any{fmt.Sprintf("%02d.03.2026", 2+i), "Physio Mitte", 45})
+	}
+	writeSheet(t, path, rows)
+	importAll(t, s, path, "")
+	// Six forgotten invoices inserted on top: every row moves by six.
+	shifted := [][]any{header}
+	for i := 0; i < 6; i++ {
+		shifted = append(shifted, []any{fmt.Sprintf("%02d.02.2026", 2+i), "Physio Mitte", 45})
+	}
+	shifted = append(shifted, rows[1:]...)
+	writeSheet(t, path, shifted)
+	pv, err := s.PreviewSpreadsheet(path, "", "muster-pkv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pv.New != 6 || pv.Unchanged != 8 || pv.Changed != 0 {
+		t.Errorf("series matched wrongly: new %d unchanged %d changed %d", pv.New, pv.Unchanged, pv.Changed)
+	}
+}
+
+func TestReimportDeletedAndLaterMappedPayer(t *testing.T) {
+	s := newTestService(t)
+	path := filepath.Join(t.TempDir(), "alt.xlsx")
+	writeSheet(t, path, [][]any{{"Rechnungsdatum", "Behandler", "Gesamtbetrag", "Eingereicht Beihilfe"},
+		{"10.03.2026", "Praxis Süd", 80, nil},
+		{"11.03.2026", "Labor Nord", 50, nil}})
+	importAll(t, s, path, "") // Beihilfe columns not mapped
+	list, _ := s.ListInvoices(2026)
+	id := map[string]string{}
+	for _, r := range list {
+		id[r.Provider] = r.ID
+	}
+	if err := s.DeleteInvoice(id["Labor Nord"]); err != nil {
+		t.Fatal(err)
+	}
+	s.SetMark(MarkChangeDTO{InvoiceID: id["Praxis Süd"], PayerID: "beihilfe-bund", Mark: MarkSubmitted, On: true, Date: "2026-04-01"})
+
+	pv := importAll(t, s, path, "beihilfe-bund") // now mapped, the cell is empty
+	state := map[string]string{}
+	for _, r := range pv.Rows {
+		state[r.Provider] = r.State
+	}
+	if state["Labor Nord"] != "deleted" || pv.New != 0 || pv.DeletedInApp != 1 {
+		t.Errorf("deleted invoice offered again: %+v", pv.Rows)
+	}
+	if state["Praxis Süd"] != "unchanged" {
+		t.Errorf("empty cell of a newly mapped column proposed: %+v", pv.Rows)
+	}
+	det, _ := s.GetInvoice(id["Praxis Süd"])
+	if c := claim(det.View, "beihilfe-bund"); c.Submitted.Date != "2026-04-01" {
+		t.Errorf("submission entered in the app lost: %+v", c)
 	}
 }

@@ -1,13 +1,13 @@
 import {createContext, useContext, useEffect, useState} from "react";
 import {Events} from "@wailsio/runtime";
 import type {ReactNode} from "react";
-import {HashRouter, Navigate, NavLink, Route, Routes, useNavigate} from "react-router";
+import {HashRouter, Navigate, NavLink, Route, Routes, useLocation, useNavigate} from "react-router";
 import {Svc} from "./api";
 import type {StatusDTO} from "./api";
 import {FeedbackProvider, useConfirm, useToast} from "./components/feedback";
 import {ErrorNotice, Loading, Notice} from "./components/ui";
 import {useBackend} from "./lib/useBackend";
-import {dialogOpen, hasUnsavedChanges, isMac, isTyping, key, mod, useKeydown} from "./lib/shortcuts";
+import {clearUnsavedChanges, dialogOpen, hasUnsavedChanges, isMac, isTyping, key, mod, useKeydown} from "./lib/shortcuts";
 import {useDialog} from "./lib/useDialog";
 import Dashboard from "./pages/Dashboard";
 import Import from "./pages/Import";
@@ -81,6 +81,8 @@ function Layout({status, children}: {status: StatusDTO; children: ReactNode}) {
     const waiting = inbox.data?.length ?? 0;
     const [collapsed, setCollapsed] = useNavCollapsed();
     const [help, setHelp] = useState(false);
+    const navigate = useNavigate();
+    const confirm = useConfirm();
     return (
         <div className={`layout ${collapsed ? "nav-collapsed" : ""}`}>
             <nav className="sidebar" aria-label="Hauptmenü">
@@ -94,7 +96,17 @@ function Layout({status, children}: {status: StatusDTO; children: ReactNode}) {
                     </button>
                 </div>
                 {NAV.map(([to, label, icon]) => (
-                    <NavLink key={to} to={to} title={collapsed ? label : undefined} aria-label={collapsed ? label : undefined}>
+                    <NavLink key={to} to={to} title={collapsed ? label : undefined}
+                             aria-label={collapsed ? (to === "/posteingang" && waiting > 0 ? `${label}, ${waiting} Belege` : label) : undefined}
+                             onClick={async e => {
+                                 // Leaving a form with unsaved changes asks first (as the shortcuts do).
+                                 if (!hasUnsavedChanges()) return;
+                                 e.preventDefault();
+                                 if (await confirm("Die Änderungen sind noch nicht gespeichert. Trotzdem verlassen?", "Verlassen")) {
+                                     clearUnsavedChanges();
+                                     navigate(to);
+                                 }
+                             }}>
                         <Icon name={icon}/>
                         <span className="nav-label">{label}</span>
                         {to === "/posteingang" && waiting > 0 && <span className="nav-count" aria-label={`${waiting} Belege`}>{waiting}</span>}
@@ -151,7 +163,7 @@ function AppRoutes({status}: {status: StatusDTO}) {
                 <Route path="/dashboard" element={<Dashboard/>}/>
                 <Route path="/posteingang" element={<Inbox/>}/>
                 <Route path="/rechnungen" element={<Invoices/>}/>
-                <Route path="/rechnung/neu" element={<InvoiceForm/>}/>
+                <Route path="/rechnung/neu" element={<NewInvoiceForm/>}/>
                 <Route path="/rechnung/:id" element={<InvoiceForm/>}/>
                 <Route path="/jahre" element={<Overview/>}/>
                 <Route path="/import" element={<Import/>}/>
@@ -237,20 +249,26 @@ function GlobalShortcuts({onHelp}: {onHelp: () => void}) {
     const navigate = useNavigate();
     const confirm = useConfirm();
     const leave = async (go: () => void) => {
-        if (hasUnsavedChanges() && !await confirm("Die Änderungen sind noch nicht gespeichert. Trotzdem verlassen?", "Verlassen")) return;
+        if (hasUnsavedChanges()) {
+            if (!await confirm("Die Änderungen sind noch nicht gespeichert. Trotzdem verlassen?", "Verlassen")) return;
+            clearUnsavedChanges();
+        }
         go();
     };
     useKeydown(e => {
         if (dialogOpen()) return;
         const typing = isTyping(e.target);
         const plain = !e.ctrlKey && !e.metaKey && !e.altKey;
-        if ((e.key === "Backspace" && plain && !typing) || (e.altKey && e.key === "ArrowLeft") || (isMac && e.metaKey && e.key === "[")) {
+        // Alt+arrows only outside text fields and not on macOS, where Option+arrow moves by words.
+        const altArrow = (k: string) => !isMac && !typing && e.altKey && !e.ctrlKey && !e.metaKey && e.key === k;
+        const idx = ((window.history.state as {idx?: number} | null)?.idx ?? 0);
+        if ((e.key === "Backspace" && plain && !typing) || altArrow("ArrowLeft") || (isMac && e.metaKey && e.key === "[")) {
             // react-router keeps the position in the history: never leave the app
-            if (((window.history.state as {idx?: number} | null)?.idx ?? 0) > 0) void leave(() => navigate(-1));
+            if (idx > 0) void leave(() => navigate(-1));
             return true;
         }
-        if ((e.altKey && e.key === "ArrowRight") || (isMac && e.metaKey && e.key === "]")) {
-            void leave(() => navigate(1));
+        if (altArrow("ArrowRight") || (isMac && e.metaKey && e.key === "]")) {
+            if (idx < window.history.length - 1) void leave(() => navigate(1));
             return true;
         }
         if (mod(e) && !e.shiftKey && e.key.toLowerCase() === "n") {
@@ -302,4 +320,10 @@ function ShortcutHelp({onClose}: {onClose: () => void}) {
             </div>
         </div>
     );
+}
+
+/** A fresh form every time "Neue Rechnung" is opened, also from the form itself (Ctrl+N). */
+function NewInvoiceForm() {
+    const location = useLocation();
+    return <InvoiceForm key={location.key}/>;
 }

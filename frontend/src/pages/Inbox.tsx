@@ -7,7 +7,7 @@ import {useConfirm, useToast} from "../components/feedback";
 import {Badge, Empty, ErrorNotice, Field, Notice} from "../components/ui";
 import {recognize, renderPdfPreview} from "../lib/capture";
 import {CATEGORY_LABELS, errMsg, eur, plural, toInput, today} from "../lib/format";
-import {key, useSaveShortcut} from "../lib/shortcuts";
+import {key, useSaveShortcut, useUnsavedChanges} from "../lib/shortcuts";
 import {useBackend} from "../lib/useBackend";
 import {useDialog} from "../lib/useDialog";
 import RefundReview from "./RefundReview";
@@ -194,6 +194,8 @@ function InboxItem({item, payers, onDone, onDiscard}: {item: InboxItemDTO; payer
     // Set once the user edits the draft or switches between invoice and refund
     // document: a later recognition run (the file changed) must not undo that.
     const touched = useRef(false);
+    const [edited, setEdited] = useState(false); // the user typed into the draft: leaving asks first
+    useUnsavedChanges(edited && !saving);
     const {url, type, modified} = item;
     useSaveShortcut(() => void save(), draft !== null && review === null);
 
@@ -276,6 +278,7 @@ function InboxItem({item, payers, onDone, onDiscard}: {item: InboxItemDTO; payer
     };
     const set = (patch: Partial<InvoiceDTO>) => {
         touched.current = true;
+        setEdited(true);
         setDraft(d => d && {...d, ...patch});
     };
 
