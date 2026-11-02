@@ -17,6 +17,7 @@ light mode) and three ways to look at the invoices – without losing any data i
 | Default view | Configurable per device; out of the box: **Detail**. Switching in the list applies until the next start (or until changed in the settings). |
 | Table | **Read only**: sorting, choosing columns, sum row. Editing stays in the invoice form (double click / Enter opens it). |
 | Themes | System / Hell / Dunkel, per device, in the settings and as a quick toggle. |
+| Documents in the form | The invoice form gets "Beleg hinzufügen" (click or drop) for new and existing invoices; for a new invoice the document is recognised and fills **empty fields only**. The inbox stays for everything that arrives on its own (phone, `Eingang/` folder, Bescheide). |
 | Version | All of this is v0.3.0; v0.2.0 (prescriptions, re-import, shortcuts …) ships first. |
 
 ## Views
@@ -44,6 +45,28 @@ Common to all three: the toolbar (year, search, filters, Ausstand per payer), ke
 navigation (↑/↓ moves the selection, Enter opens), bulk selection (eingereicht for several),
 the same filters and search, the same sort order unless the table is sorted otherwise.
 
+## Documents in the invoice form
+
+Today the form can only open documents; adding one, or prefilling a new invoice from a photo,
+needs the detour through the inbox. v0.3.0:
+
+- A drop zone / button "Beleg hinzufügen" at the top of the form (new and existing invoices);
+  PDF and images, same size limit as the inbox (40 MB); several documents per invoice
+  (e.g. a second page).
+- New invoice: the document runs through the same recognition as the inbox (`capture.ts` →
+  `AnalyzeDocument`) and fills only fields that are still empty; every filled field shows its
+  source (GiroCode / erkannt / geschätzt) as in the inbox. Fields the user typed stay.
+  Prescriptions also set "bezahlt". A refund document (Bescheid) is not booked from here: the
+  form says so and offers to open it in the inbox review instead.
+- Existing invoice: the document is only attached (no prefilling, nothing overwritten).
+- Backend: a method to attach a document to an invoice (`AddDocument` + `Attachments`), with
+  the duplicate check of the inbox (the same file as another invoice's document is refused) and
+  only PDF/image types; saving a new invoice attaches the documents added in the form.
+- Removing an attachment from an invoice (the file in `belege/` stays as long as another record
+  uses it).
+- The inbox keeps its role: files that arrive without the user (phone, cloud folder) and refund
+  documents that are spread over several invoices.
+
 ## Settings · Darstellung
 
 - Standardansicht: Detail (default) / Kompakt / Tabelle.
@@ -64,7 +87,9 @@ the same filters and search, the same sort order unless the table is sorted othe
 4. **Kompakt** with expandable rows.
 5. **Settings · Darstellung** with the default view and table options; remember the last
    quick choice for the session only.
-6. Tests: unit tests per view (same data, sorting, column chooser, keyboard), theme contrast
+6. **Documents in the invoice form**: "Beleg hinzufügen" with recognition for new invoices
+   (fills empty fields only), attaching to existing invoices, removing attachments.
+7. Tests: unit tests per view (same data, sorting, column chooser, keyboard), theme contrast
    check, headless screenshots in both themes; docs (README, PLAN).
 
 ## Open points
