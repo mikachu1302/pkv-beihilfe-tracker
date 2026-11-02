@@ -1,8 +1,12 @@
 package service
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -649,4 +653,63 @@ func TestReviewKeepsManualChoices(t *testing.T) {
 	if len(r2.Lines[1].InvoiceIDs) != 0 && r2.Lines[1].InvoiceIDs[0] == ids[1] {
 		t.Error("invoice chosen by hand offered again")
 	}
+}
+
+func TestExportsAndReminders(t *testing.T) {
+	s := newTestService(t)
+	ids := refundFixture(t, s)
+	// An old invoice: Beihilfe deadline (3 years after 2023-12-01) is near, not paid.
+	old, _ := s.SaveInvoice(InvoiceDTO{Provider: "Labor Alt", InvoiceDate: "2023-12-01", Amount: "50", Due: "2023-12-31"}, nil)
+	s.SetMark(MarkChangeDTO{InvoiceID: ids[0], PayerID: "beihilfe-bund", Mark: MarkClarify, On: true, Note: "Rückfrage"})
+
+	rem, err := s.Reminders()
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]int{}
+	for _, r := range rem {
+		kinds[r.Kind]++
+	}
+	if kinds["deadline"] != 1 || kinds["payment"] != 1 || kinds["clarify"] != 1 || kinds["refund"] != 2 || !rem[0].Urgent {
+		t.Errorf("reminders: %+v", rem)
+	}
+	found := false
+	for _, r := range rem {
+		if r.InvoiceID == old.Invoice.ID && r.Kind == "deadline" && strings.Contains(r.Text, "01.12.2026") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("deadline reminder for the old invoice missing: %+v", rem)
+	}
+
+	dir := t.TempDir()
+	path, err := s.ExportExcel(2026, filepath.Join(dir, "export"))
+	if err != nil || !strings.HasSuffix(path, ".xlsx") {
+		t.Fatalf("excel: %q %v", path, err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Error(err)
+	}
+
+	inbox, _ := s.AddToInbox("foto.png", base64.StdEncoding.EncodeToString(tinyPNG()))
+	an, _ := s.AnalyzeDocument(AnalyzeInputDTO{Lines: linesOf("Apotheke Neu\nRechnung\nDatum: 01.10.2026\nSumme 9,99")})
+	det, err := s.CreateInvoiceFromInbox(inbox, an.Draft.Invoice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.ExportSubmission([]string{ids[2], det.Invoice.ID}, "beihilfe-bund", filepath.Join(dir, "einreichung"))
+	if err != nil || res.Invoices != 2 || res.Documents != 1 || len(res.Missing) != 1 || !strings.HasSuffix(res.Path, ".pdf") {
+		t.Fatalf("submission: %+v %v", res, err)
+	}
+}
+
+func tinyPNG() []byte {
+	img := image.NewRGBA(image.Rect(0, 0, 40, 60))
+	for x := 0; x < 40; x++ {
+		img.Set(x, 30, color.Black)
+	}
+	var buf bytes.Buffer
+	_ = png.Encode(&buf, img)
+	return buf.Bytes()
 }

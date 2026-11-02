@@ -11,10 +11,14 @@ import (
 const debounce = 60 * time.Millisecond
 
 func start(t *testing.T, root string, own func(string) bool) (*atomic.Int32, chan struct{}) {
+	return startWith(t, root, own, debounce)
+}
+
+func startWith(t *testing.T, root string, own func(string) bool, wait time.Duration) (*atomic.Int32, chan struct{}) {
 	t.Helper()
 	var n atomic.Int32
 	ch := make(chan struct{}, 10)
-	w, err := Start(root, debounce, own, func() {
+	w, err := Start(root, wait, own, func() {
 		n.Add(1)
 		ch <- struct{}{}
 	})
@@ -47,12 +51,17 @@ func TestReportsExternalChangesOnce(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "2026", "rechnungen")
 	os.MkdirAll(dir, 0o755)
-	n, ch := start(t, root, nil)
+	// A longer quiet period so the burst settles even on a slow CI runner.
+	n, ch := startWith(t, root, nil, 300*time.Millisecond)
 	for i := 0; i < 5; i++ { // a burst from a sync tool
 		os.WriteFile(filepath.Join(dir, "a.json"), []byte(`{}`), 0o644)
 	}
 	wait(t, ch)
-	quiet(t, ch)
+	select {
+	case <-ch:
+		t.Fatal("burst reported twice")
+	case <-time.After(time.Second):
+	}
 	if n.Load() != 1 {
 		t.Errorf("reported %d times, want once per burst", n.Load())
 	}

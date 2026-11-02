@@ -47,6 +47,15 @@ func (d *DesktopService) ChooseFiles(title, filterName, pattern string) ([]strin
 	return dlg.PromptForMultipleSelection()
 }
 
+// ChooseSaveFile opens a save dialog with a suggested file name; returns "" when cancelled.
+func (d *DesktopService) ChooseSaveFile(title, filename string) (string, error) {
+	dlg := d.app.Dialog.SaveFile().SetFilename(filename).SetMessage(title)
+	if d.window != nil {
+		dlg = dlg.AttachToWindow(d.window)
+	}
+	return dlg.PromptForSingleSelection()
+}
+
 // OpenPath opens a file or folder with the default application.
 func (d *DesktopService) OpenPath(path string) error {
 	return d.app.Browser.OpenFile(path)

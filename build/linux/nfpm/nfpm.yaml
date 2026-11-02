@@ -9,11 +9,11 @@ platform: "linux"
 version: "0.1.0"
 section: "default"
 priority: "extra"
-maintainer: ${GIT_COMMITTER_NAME} <${GIT_COMMITTER_EMAIL}>
+maintainer: "mikachu1302"
 description: "Arztrechnungen, Beihilfe und PKV im Blick"
 vendor: "mikachu1302"
-homepage: "https://wails.io"
-license: "MIT"
+homepage: "https://github.com/mikachu1302/pkv-beihilfe-tracker"
+license: "proprietary"
 release: "1"
 
 contents:
@@ -25,23 +25,24 @@ contents:
     dst: "/usr/share/applications/pkv-beihilfe-tracker.desktop"
 
 # Default dependencies for the GTK4 + WebKitGTK 6.0 stack (Ubuntu 24.04+ / Debian 13+)
+# Built with the gtk3 tag: GTK3 and WebKitGTK 4.1.
 depends:
-  - libgtk-4-1
-  - libwebkitgtk-6.0-4
+  - libgtk-3-0
+  - libwebkit2gtk-4.1-0
 
 # Distribution-specific overrides for different package formats
 overrides:
   # RPM packages for Fedora / RHEL / AlmaLinux / Rocky Linux
   rpm:
     depends:
-      - gtk4
-      - webkitgtk6.0
+      - gtk3
+      - webkit2gtk4.1
 
   # Arch Linux packages
   archlinux:
     depends:
-      - gtk4
-      - webkitgtk-6.0
+      - gtk3
+      - webkit2gtk-4.1
 
 # scripts section to ensure desktop database is updated after install
 scripts:

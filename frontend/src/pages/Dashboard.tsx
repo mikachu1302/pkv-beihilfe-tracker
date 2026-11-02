@@ -1,5 +1,6 @@
 import {useEffect, useState} from "react";
 import {Link} from "react-router";
+import type {ReminderDTO} from "../api";
 import {Svc} from "../api";
 import type {AllowanceDTO, PayerYearDTO, YearSettingDTO} from "../api";
 import {useApp} from "../App";
@@ -31,6 +32,7 @@ export default function Dashboard() {
                 <YearSelect years={yearList.includes(year) ? yearList : [year, ...yearList]} value={year} onChange={setYear}/>
                 <span className="muted small">Leistungsjahr: Jahr der Behandlung</span>
             </div>
+            <Reminders/>
             {dash.error && <ErrorNotice error={dash.error}/>}
             {!y ? <Loading/> : (
                 <div style={{opacity: dash.loading ? 0.6 : 1}}>
@@ -48,6 +50,36 @@ export default function Dashboard() {
                 </div>
             )}
         </>
+    );
+}
+
+/** "Zu erledigen": deadlines, payments, open refunds, Klärungsbedarf, BRE decision, inbox. */
+function Reminders() {
+    const {dataVersion, setYear} = useApp();
+    const list = useBackend(() => Svc.Reminders(), [dataVersion]);
+    const [all, setAll] = useState(false);
+    const items = list.data ?? [];
+    if (items.length === 0) return null;
+    const shown = all ? items : items.slice(0, 6);
+    const link = (r: ReminderDTO) => {
+        if (r.invoiceId) return <Link to={`/rechnung/${encodeURIComponent(r.invoiceId)}`}>öffnen</Link>;
+        if (r.kind === "inbox") return <Link to="/posteingang">Posteingang</Link>;
+        if (r.kind === "premium") return <button className="link" onClick={() => setYear(r.year)}>Jahr {r.year} anzeigen</button>;
+        return null;
+    };
+    return (
+        <section className="panel" aria-label="Zu erledigen">
+            <div className="payer-head"><h2>Zu erledigen</h2><span className="muted">{plural(items.length, "Punkt", "Punkte")}</span></div>
+            <ul className="todo">
+                {shown.map((r, i) => (
+                    <li key={i} className={r.urgent ? "urgent" : ""}>
+                        <span>{r.urgent && <strong>Dringend: </strong>}{r.text}</span>
+                        {link(r)}
+                    </li>
+                ))}
+            </ul>
+            {items.length > 6 && <button className="link" onClick={() => setAll(!all)}>{all ? "weniger anzeigen" : `alle ${items.length} anzeigen`}</button>}
+        </section>
     );
 }
 

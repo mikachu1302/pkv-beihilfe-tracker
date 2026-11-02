@@ -1,6 +1,6 @@
 # pkv-beihilfe-tracker – Technical Plan
 
-Status: M1–M5 implemented (core, desktop app, live data folder, capture, refund documents) · 2026-11-02 – section 16 lists what changed during implementation
+Status: M1–M6 implemented · 2026-11-02 · 2026-11-02 – section 16 lists what changed during implementation
 
 ## 1. Goal
 
@@ -224,7 +224,7 @@ OCR on the device, nothing leaves the data folder. Real data never goes into the
 | M3 | Live data folder: file watcher, reload and merge while running, backups (zip snapshots to a second location, important without cloud) | done |
 | M4 | Capture: inbox (`Eingang/`, drag & drop), Tesseract.js, pdf.js, GiroCode, invoice parser, phone upload via QR code | done |
 | M5 | Refund documents: extraction, layout profiles, checksum, matching review, aliases | done |
-| M6 | Submissions and PDF bundle, exports (Excel/CSV/PDF), reminders (deadlines, due dates), release builds for three OS | |
+| M6 | Submissions and PDF bundle, exports (Excel/CSV/PDF), reminders (deadlines, due dates), release builds for three OS | done (Excel instead of CSV) |
 
 ## 15. Open points
 
@@ -292,3 +292,15 @@ OCR on the device, nothing leaves the data folder. Real data never goes into the
   from names that differ from the invoice (e.g. billing services).
 - Verified end to end: a made-up Beihilfebescheid photo for three demo invoices was recognised,
   all three lines matched "sicher", checksum correct, refunds booked with the notice linked.
+- **M6:** Excel export (`internal/export`): sheets Rechnungen (SOLL/IST, status and dates per
+  payer), Übersicht (years and total), Leistungen ohne Rechnung; for one year or all. CSV was
+  dropped – Excel/LibreOffice cover it.
+- PDF bundle for a submission: cover page (gofpdf) listing the invoices and their sum, then the
+  documents (PDFs as they are, photos as pages via pdfcpu); invoices without a document are named.
+- "Zu erledigen" on the dashboard: claim deadlines, payments due, refunds open for more than six
+  weeks, Klärungsbedarf and deviations, the premium refund decision (January–June for the
+  previous year), documents in the inbox; urgent items first. No system notifications.
+- Release workflow (`.github/workflows/release.yml`): a tag `v*` builds a Windows installer
+  (NSIS), a macOS universal app (zip, ad-hoc signed) and Linux DEB/RPM/tar.gz and attaches them to
+  a GitHub release; started by hand it only uploads artifacts. The Linux packages depend on GTK3
+  and WebKitGTK 4.1 (the template assumed GTK4).

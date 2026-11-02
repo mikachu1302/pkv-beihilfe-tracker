@@ -4,7 +4,7 @@ import type {BucketDTO, PayerYearDTO, YearDTO} from "../api";
 import {renderAt} from "../test/render";
 import Dashboard from "./Dashboard";
 
-const svc = vi.hoisted(() => ({Years: vi.fn(), Dashboard: vi.fn(), ListAllowances: vi.fn(), SaveYearSetting: vi.fn()}));
+const svc = vi.hoisted(() => ({Years: vi.fn(), Dashboard: vi.fn(), ListAllowances: vi.fn(), SaveYearSetting: vi.fn(), Reminders: vi.fn()}));
 vi.mock("../api", () => ({Svc: svc}));
 
 const b = (count: number, expected: string, actual = "0.00"): BucketDTO => ({count, expected, actual});
@@ -39,6 +39,10 @@ beforeEach(() => {
     svc.Dashboard.mockResolvedValue(year);
     svc.ListAllowances.mockResolvedValue([]);
     svc.SaveYearSetting.mockResolvedValue(undefined);
+    svc.Reminders.mockResolvedValue([
+        {kind: "deadline", text: "Bei Beihilfe bis 01.12.2026 einreichen (noch 29 Tage): Labor Alt", invoiceId: "x", year: 2023, urgent: true},
+        {kind: "inbox", text: "2 Belege im Posteingang", invoiceId: "", year: 0, urgent: false},
+    ]);
 });
 
 describe("Dashboard", () => {
@@ -50,6 +54,9 @@ describe("Dashboard", () => {
         expect(screen.getByText(/Nicht einreichen lohnt sich/)).toHaveTextContent("120,00 €");
         expect(screen.getByRole("group", {name: "Beihilfe: SOLL nach Status"})).toBeInTheDocument();
         expect(screen.getByLabelText("Erstattet: 2.100,00 € (79 %)")).toBeInTheDocument();
+        const todo = screen.getByRole("region", {name: "Zu erledigen"});
+        expect(todo).toHaveTextContent("Dringend: Bei Beihilfe bis 01.12.2026 einreichen");
+        expect(todo).toHaveTextContent("2 Belege im Posteingang");
     });
 
     it("saves the expected premium refund", async () => {

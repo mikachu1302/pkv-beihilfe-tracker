@@ -17,6 +17,10 @@ compared with the premium refund (Beitragsrückerstattung). The user interface i
 - **Refund documents** (Beihilfebescheid, PKV-Leistungsabrechnung) are read the same way; their
   lines are matched to invoices by amount, date and name, checked against the payout, and booked
   as refunds after a review.
+- **Exports**: Excel workbook per year or for all years; one PDF per submission with a cover page
+  and all documents (for the Beihilfe app or a portal).
+- **Zu erledigen**: deadlines, payments due, refunds taking long, Klärungsbedarf, the premium
+  refund decision.
 - **Import** of the old spreadsheet with preview and duplicate check.
 - **Data stays yours**: one JSON file per record in a folder of your choice, synced by any
   tool (Nextcloud, iCloud Drive, Google Drive, OneDrive, Dropbox, Syncthing …) or not at all.
@@ -24,8 +28,8 @@ compared with the premium refund (Beitragsrückerstattung). The user interface i
   show up while the app runs; conflict copies are merged field by field.
 - **Backups**: daily zip snapshots to a second folder (USB stick, NAS, another cloud).
 
-Status: milestones M1–M5 are done (core, desktop app, live data folder with backups, capture,
-refund documents); exports, reminders and release builds follow (M6). See [docs/PLAN.md](docs/PLAN.md).
+Status: all planned milestones (M1–M6) are done. Releases: push a tag `v1.2.3` – GitHub Actions
+builds the Windows installer, the macOS app and Linux packages. See [docs/PLAN.md](docs/PLAN.md).
 
 ## Build and run
 
@@ -71,6 +75,7 @@ To look at the UI in a browser (e.g. for headless screenshots), build the Wails 
 | `internal/xlsximport` | Import of the old spreadsheet |
 | `internal/extract` | Recognises invoices and refund documents from text and GiroCodes |
 | `internal/upload` | Upload page for the phone (LAN, one-time link) |
+| `internal/export` | Excel export and PDF bundle for submissions |
 | `internal/leaf` | JSON leaves: flatten, rebuild, three-way rebase |
 | `internal/watch` | Notices changes in the data folder made by others |
 | `internal/backup` | Zip snapshots of the data folder |

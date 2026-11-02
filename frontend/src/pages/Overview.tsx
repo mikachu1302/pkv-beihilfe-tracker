@@ -1,5 +1,6 @@
 import {useNavigate} from "react-router";
-import {Svc} from "../api";
+import {Desktop, Svc} from "../api";
+import {useToast} from "../components/feedback";
 import type {YearDTO} from "../api";
 import {useApp} from "../App";
 import {StackedBars} from "../components/charts";
@@ -8,10 +9,24 @@ import {Empty, ErrorNotice, Loading} from "../components/ui";
 import {eur, num} from "../lib/format";
 import {useBackend} from "../lib/useBackend";
 
+/** Asks for a file name and writes the Excel export of a year (0 = all years). */
+export async function exportExcel(toast: {show: (m: string, e?: boolean) => void; error: (e: unknown) => void}, year: number) {
+    try {
+        const name = year ? `PKV-Beihilfe-${year}.xlsx` : "PKV-Beihilfe-alle-Jahre.xlsx";
+        const path = await Desktop.ChooseSaveFile("Excel-Export speichern", name);
+        if (!path) return;
+        const written = await Svc.ExportExcel(year, path);
+        toast.show(`Gespeichert: ${written}`);
+    } catch (e) {
+        toast.error(e);
+    }
+}
+
 /** Overview of all Leistungsjahre: refunds per payer and own share. */
 export default function Overview() {
     const {setYear, dataVersion} = useApp();
     const navigate = useNavigate();
+    const toast = useToast();
     const ov = useBackend(() => Svc.Overview(), [dataVersion]);
     if (ov.error) return <ErrorNotice error={ov.error}/>;
     if (!ov.data) return <Loading/>;
@@ -42,7 +57,11 @@ export default function Overview() {
 
     return (
         <>
-            <div className="page-head"><h1>Alle Jahre</h1></div>
+            <div className="page-head">
+                <h1>Alle Jahre</h1>
+                <span className="spacer"/>
+                <button onClick={() => exportExcel(toast, 0)}>Als Excel exportieren</button>
+            </div>
             {years.length === 0 ? <Empty>Noch keine Rechnungen erfasst.</Empty> : (
                 <>
                     <div className="panel">

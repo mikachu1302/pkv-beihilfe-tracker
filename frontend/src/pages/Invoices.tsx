@@ -1,6 +1,6 @@
 import {useEffect, useMemo, useState} from "react";
 import {Link, useNavigate} from "react-router";
-import {Svc} from "../api";
+import {Desktop, Svc} from "../api";
 import type {ClaimViewDTO, InvoiceRowDTO, MarkChangeDTO, PayerDTO} from "../api";
 import {useApp} from "../App";
 import {useConfirm, useToast} from "../components/feedback";
@@ -8,6 +8,7 @@ import {MarkBox} from "../components/MarkBox";
 import {Badge, Empty, ErrorNotice, Loading, YearSelect} from "../components/ui";
 import {CATEGORY_LABELS, date, eur, num, plural, toInput, today} from "../lib/format";
 import {useBackend} from "../lib/useBackend";
+import {exportExcel} from "./Overview";
 
 type Filter = "all" | "open" | "submitted" | "clarify" | "deadline" | "unpaid";
 
@@ -126,6 +127,7 @@ export default function Invoices() {
                 <span className="spacer"/>
                 <input aria-label="Suchen" placeholder="Suchen …" style={{width: 200}} value={query}
                        onChange={e => setQuery(e.target.value)}/>
+                <button onClick={() => exportExcel(toast, year)}>Excel</button>
                 <button className="primary" onClick={() => navigate("/rechnung/neu")}>Neue Rechnung</button>
             </div>
             <div className="chips" style={{marginBottom: 12}}>
@@ -323,6 +325,21 @@ function BulkBar({ids, payers, onDone}: {ids: string[]; payers: PayerDTO[]; onDo
     const [d, setD] = useState(today());
     const [channel, setChannel] = useState("");
 
+    async function bundle() {
+        try {
+            const payer = payers.find(p => p.id === payerId);
+            const path = await Desktop.ChooseSaveFile("PDF für die Einreichung speichern", `Einreichung ${payer?.name ?? ""} ${d}.pdf`);
+            if (!path) return;
+            const res = await Svc.ExportSubmission(ids, payerId, path);
+            const missing = res.missing ?? [];
+            toast.show(`PDF mit ${plural(res.invoices, "Rechnung", "Rechnungen")} erstellt` +
+                (missing.length ? ` – ohne Beleg: ${missing.join(", ")}` : ""), missing.length > 0);
+            await Desktop.OpenPath(res.path);
+        } catch (e) {
+            toast.error(e);
+        }
+    }
+
     async function submit() {
         try {
             const res = await Svc.BulkSubmit({invoiceIds: ids, payerId, date: d, channel, note: ""});
@@ -346,6 +363,7 @@ function BulkBar({ids, payers, onDone}: {ids: string[]; payers: PayerDTO[]; onDo
             <input type="date" aria-label="Einreichungsdatum" value={d} onChange={e => setD(e.target.value)}/>
             <input aria-label="Weg" placeholder="Weg (App, Post …)" value={channel} onChange={e => setChannel(e.target.value)}/>
             <button className="primary" disabled={!payerId} onClick={submit}>Als eingereicht markieren</button>
+            <button disabled={!payerId} onClick={bundle} title="Deckblatt und alle Belege in einer PDF – z. B. zum Hochladen in die Beihilfe-App">PDF-Paket</button>
         </div>
     );
 }

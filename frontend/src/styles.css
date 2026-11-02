@@ -313,3 +313,8 @@ table.refund-lines select { min-width: 220px; }
 .inbox-detail.review { grid-template-columns: 1fr; }
 .inbox-detail.review .preview-wrap { order: 2; max-height: 60vh; }
 .inbox-detail.review .preview { max-width: 640px; }
+/* reminders */
+ul.todo { list-style: none; margin: 8px 0 0; padding: 0; }
+ul.todo li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+ul.todo li:last-child { border-bottom: none; }
+ul.todo li.urgent strong { color: var(--bad); }
