@@ -208,7 +208,8 @@ ServiceYear = Leistungsjahr · PremiumRefund = Beitragsrückerstattung.
   the invoice when clicked anywhere outside its controls (also ✎ next to the name); notes show
   as a "Notiz" badge with the text on hover.
 - **Rechnung**: detail form with SOLL/IST per payer, documents, refunds.
-- **Dashboard** per year; **Übersicht** of all years.
+- **Dashboard** per year; **Alle Jahre** (overview): per payer the Ausstand over all years
+  (cards) and per year (column next to SOLL / IST).
 - **Posteingang**: drafts from scans and refund documents with review.
 - **Einstellungen**: payers, coverage periods, year settings, data folder, backups. Aliases
   and column layouts are learned from confirmed refund documents and kept, but there is no

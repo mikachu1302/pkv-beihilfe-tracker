@@ -1,9 +1,11 @@
+import {Fragment} from "react";
 import {useNavigate} from "react-router";
 import {Desktop, Svc} from "../api";
 import {useToast} from "../components/feedback";
-import type {YearDTO} from "../api";
+import type {PayerYearDTO, YearDTO} from "../api";
 import {useApp} from "../App";
 import {StackedBars} from "../components/charts";
+import {OutstandingCards} from "../components/Outstanding";
 import type {StackRow} from "../components/charts";
 import {Empty, ErrorNotice, Loading} from "../components/ui";
 import {eur, num} from "../lib/format";
@@ -64,6 +66,7 @@ export default function Overview() {
             </div>
             {years.length === 0 ? <Empty>Noch keine Rechnungen erfasst.</Empty> : (
                 <>
+                    <OutstandingCards payers={total.payers ?? []} period="alle Jahre"/>
                     <div className="panel">
                         <StackedBars rows={rows} label="Rechnungsbeträge je Leistungsjahr: erstattet und Eigenanteil"
                                      legend={[...payers.map((p, i) => ({label: `${p.name} erstattet`, slot: slot(i)})),
@@ -76,7 +79,9 @@ export default function Overview() {
                                 <th>Jahr</th>
                                 <th className="num">Rechnungen</th>
                                 <th className="num">Rechnungsbeträge</th>
-                                {payers.map(p => <th key={p.id} className="num">{p.name}<br/>SOLL / IST</th>)}
+                                {payers.map(p => (
+                                    <th key={p.id} className="num" colSpan={2}>{p.name}<br/>SOLL / IST · <span title={OUTSTANDING_HINT}>Ausstand</span></th>
+                                ))}
                                 <th className="num" title="Rechnungsbeträge minus Erstattungen">Nicht erstattet</th>
                                 <th className="num">Krankenhaustagegeld u. Ä.</th>
                             </tr>
@@ -88,10 +93,7 @@ export default function Overview() {
                                     <td>{y.year === 0 ? "ohne Datum" : y.year}</td>
                                     <td className="num">{y.invoices}</td>
                                     <td className="num">{eur(y.billed)}</td>
-                                    {payers.map(p => {
-                                        const py = payerOf(y, p.id);
-                                        return <td key={p.id} className="num">{py ? `${eur(py.expected)} / ${eur(py.actual)}` : "–"}</td>;
-                                    })}
+                                    {payers.map(p => <PayerCells key={p.id} py={payerOf(y, p.id)}/>)}
                                     <td className="num">{eur(y.ownShare)}</td>
                                     <td className="num">{num(y.allowances) ? eur(y.allowances) : "–"}</td>
                                 </tr>
@@ -102,10 +104,7 @@ export default function Overview() {
                                 <td><strong>Gesamt</strong></td>
                                 <td className="num">{total.invoices}</td>
                                 <td className="num">{eur(total.billed)}</td>
-                                {payers.map(p => {
-                                    const py = payerOf(total, p.id);
-                                    return <td key={p.id} className="num">{py ? `${eur(py.expected)} / ${eur(py.actual)}` : "–"}</td>;
-                                })}
+                                {payers.map(p => <PayerCells key={p.id} py={payerOf(total, p.id)}/>)}
                                 <td className="num">{eur(total.ownShare)}</td>
                                 <td className="num">{eur(total.allowances)}</td>
                             </tr>
@@ -113,7 +112,12 @@ export default function Overview() {
                                 <td className="muted">Ø pro Jahr</td>
                                 <td className="num muted">{(total.invoices / counted).toLocaleString("de-DE", {maximumFractionDigits: 1})}</td>
                                 <td className="num muted">{avg(total.billed)}</td>
-                                {payers.map(p => <td key={p.id} className="num muted">{avg(payerOf(total, p.id)?.expected ?? "0")} / {avg(payerOf(total, p.id)?.actual ?? "0")}</td>)}
+                                {payers.map(p => (
+                                    <Fragment key={p.id}>
+                                        <td className="num muted">{avg(payerOf(total, p.id)?.expected ?? "0")} / {avg(payerOf(total, p.id)?.actual ?? "0")}</td>
+                                        <td className="num muted">–</td>
+                                    </Fragment>
+                                ))}
                                 <td className="num muted">{avg(total.ownShare)}</td>
                                 <td className="num muted">{avg(total.allowances)}</td>
                             </tr>
@@ -122,6 +126,20 @@ export default function Overview() {
                     </div>
                 </>
             )}
+        </>
+    );
+}
+
+const OUTSTANDING_HINT = "SOLL − IST der eingereichten und noch einzureichenden Ansprüche (zurückgehaltene und nicht einzureichende zählen nicht)";
+
+/** SOLL / IST and the outstanding amount of one payer in one year (or the total). */
+function PayerCells({py}: {py?: PayerYearDTO}) {
+    if (!py) return <><td className="num">–</td><td className="num">–</td></>;
+    const out = num(py.outstanding.total);
+    return (
+        <>
+            <td className="num">{eur(py.expected)} / {eur(py.actual)}</td>
+            <td className="num" title={OUTSTANDING_HINT}>{out === 0 ? "–" : eur(py.outstanding.total)}</td>
         </>
     );
 }

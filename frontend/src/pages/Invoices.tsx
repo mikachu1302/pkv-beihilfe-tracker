@@ -5,6 +5,7 @@ import type {ClaimViewDTO, InvoiceRowDTO, MarkChangeDTO, PayerDTO, YearDTO} from
 import {useApp} from "../App";
 import {useConfirm, useToast} from "../components/feedback";
 import {MarkBox} from "../components/MarkBox";
+import {OutstandingCards} from "../components/Outstanding";
 import {Badge, Empty, ErrorNotice, Loading, YearSelect} from "../components/ui";
 import {CATEGORY_LABELS, date, eur, num, plural, toInput, today} from "../lib/format";
 import {useBackend} from "../lib/useBackend";
@@ -150,7 +151,7 @@ export default function Invoices() {
                 <button onClick={() => exportExcel(toast, year)}>Excel</button>
                 <button className="primary" onClick={() => navigate("/rechnung/neu")}>Neue Rechnung</button>
             </div>
-            <OutstandingCards year={year}/>
+            <OutstandingForYear year={year}/>
             <div className="chips" style={{marginBottom: 12}}>
                 {FILTERS.map(([f, label]) => {
                     const count = f === "warnings" ? rows.filter(r => matchesFilter(r, f)).length : 0;
@@ -400,35 +401,9 @@ function BulkBar({ids, payers, onDone}: {ids: string[]; payers: PayerDTO[]; onDo
     );
 }
 
-/**
- * What each payer still owes: SOLL − IST of the claims that are submitted or
- * still to be submitted, for the chosen year or all years (calc.Outstanding).
- */
-function OutstandingCards({year}: {year: number}) {
+/** Outstanding amounts for the chosen year or all years, above the list. */
+function OutstandingForYear({year}: {year: number}) {
     const {dataVersion} = useApp();
     const figures = useBackend<YearDTO>(() => (year === 0 ? Svc.Overview().then(o => o.total) : Svc.Dashboard(year)), [year, dataVersion]);
-    const payers = (figures.data?.payers ?? []).filter(p => p.claims > 0);
-    if (payers.length === 0) return null;
-    const period = year === 0 ? "alle Jahre" : String(year);
-    return (
-        <div className="cards outstanding">
-            {payers.map(p => {
-                const o = p.outstanding;
-                const parts = [
-                    num(o.submitted) !== 0 && `eingereicht, offen ${eur(o.submitted)}`,
-                    num(o.open) !== 0 && `noch nicht eingereicht ${eur(o.open)}`,
-                    num(o.refunded) !== 0 && `Abweichung bei erstatteten ${eur(o.refunded)}`,
-                ].filter(Boolean);
-                return (
-                    <div key={p.payerId} className="card">
-                        <div className="label">{p.payerName} · Ausstand {period}</div>
-                        <div className="value">{eur(o.total)}</div>
-                        <div className="note">SOLL {eur(o.expected)} − IST {eur(o.actual)}</div>
-                        {parts.length > 0 && <div className="note">davon {parts.join(" · ")}</div>}
-                        {num(o.held) !== 0 && <div className="note">zurückgehalten {eur(o.held)} – nicht eingerechnet</div>}
-                    </div>
-                );
-            })}
-        </div>
-    );
+    return <OutstandingCards payers={figures.data?.payers ?? []} period={year === 0 ? "alle Jahre" : String(year)}/>;
 }
