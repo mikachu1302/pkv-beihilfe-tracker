@@ -221,7 +221,10 @@ table are ignored, and so are rows with neither a date nor a provider (totals be
 table); a refund of 0 counts as empty. Dates come from raw cell values. Each row may produce
 warnings (dates before the invoice, implausible years, refunds above the amount). The UI
 shows a preview before saving (M2); the records keep their IDs from the preview, so saving
-again after an error does not duplicate them.
+again after an error does not duplicate them. Cells that cannot be read are kept in the
+invoice note ("In Excel nicht lesbar: …"); the other findings are plausibility rules the app
+checks all the time (section 7), shown as ⚠ in the list (filter "Mit Hinweisen") and in the
+invoice form until they are fixed.
 
 ## 12. Build and packaging
 

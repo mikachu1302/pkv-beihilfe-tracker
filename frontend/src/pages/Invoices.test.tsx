@@ -88,4 +88,10 @@ describe("Invoices", () => {
         expect(matchesFilter(rows[1], "open")).toBe(true); // PKV held back counts as not submitted
         expect(matchesFilter(rows[0], "unpaid")).toBe(true);
     });
+
+    it("finds invoices with plausibility hints", () => {
+        const flagged = {...rows[0], warnings: [{code: "date_implausible", text: "Beihilfe: eingereicht am 17.09.2013 – Tippfehler?"}]};
+        expect(matchesFilter(flagged, "warnings")).toBe(true);
+        expect(matchesFilter({...rows[0], warnings: []}, "warnings")).toBe(false);
+    });
 });

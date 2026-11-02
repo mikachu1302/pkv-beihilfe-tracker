@@ -235,3 +235,19 @@ func TestPaidColumnNames(t *testing.T) {
 		}
 	}
 }
+
+func TestUnreadableCellsAreKeptInTheNote(t *testing.T) {
+	f := excelize.NewFile()
+	defer f.Close()
+	f.SetSheetRow("Sheet1", "A1", &[]any{"Rechnungsdatum", "Behandlungsdatum", "Behandler", "Gesamtbetrag", "Bemerkung"})
+	f.SetSheetRow("Sheet1", "A2", &[]any{"12.03.2025", "Mitte März", "Praxis Beispiel", 80, "Kontrolle"})
+	var buf bytes.Buffer
+	f.Write(&buf)
+	res, err := Import(&buf, Options{PKVPayerID: "pkv"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Invoices) != 1 || res.Invoices[0].Note != "Kontrolle · In Excel nicht lesbar: Behandlungsdatum „Mitte März“" {
+		t.Errorf("note %q", res.Invoices[0].Note)
+	}
+}

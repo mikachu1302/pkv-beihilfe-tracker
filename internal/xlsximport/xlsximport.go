@@ -202,6 +202,9 @@ func importWorkbook(f *excelize.File, opt Options, now time.Time) (*Result, erro
 }
 
 func importRow(res *Result, sheet string, row []string, rowNum int, cols columns, opt Options, now time.Time) {
+	// Cells that could not be read are kept in the note: the warning is only
+	// shown in the preview, the note stays with the invoice.
+	var unreadable []string
 	warn := func(format string, args ...any) {
 		res.Warnings = append(res.Warnings, Warning{Sheet: sheet, Row: rowNum, Text: fmt.Sprintf(format, args...)})
 	}
@@ -220,6 +223,7 @@ func importRow(res *Result, sheet string, row []string, rowNum int, cols columns
 		d, err := parseDate(s)
 		if err != nil {
 			warn("%s %q ist kein Datum", label, s)
+			unreadable = append(unreadable, fmt.Sprintf("%s „%s“", label, s))
 		}
 		return d
 	}
@@ -232,6 +236,7 @@ func importRow(res *Result, sheet string, row []string, rowNum int, cols columns
 		if err != nil {
 			if v, err = money.Parse(s); err != nil {
 				warn("%s %q ist kein Betrag", label, s)
+				unreadable = append(unreadable, fmt.Sprintf("%s „%s“", label, s))
 				return 0, false
 			}
 		}
@@ -304,6 +309,10 @@ func importRow(res *Result, sheet string, row []string, rowNum int, cols columns
 	checkDate(warn, "Bezahlt", inv.Paid.Date, invDate)
 	if hasAmount && refunded > amt+rounding {
 		warn("Erstattungen (%s €) höher als der Rechnungsbetrag (%s €)", refunded.DE(), amt.DE())
+	}
+	if len(unreadable) > 0 {
+		text := "In Excel nicht lesbar: " + strings.Join(unreadable, ", ")
+		inv.Note = strings.TrimPrefix(inv.Note+" · "+text, " · ")
 	}
 	res.Invoices = append(res.Invoices, inv)
 	res.Rows = append(res.Rows, rowNum)

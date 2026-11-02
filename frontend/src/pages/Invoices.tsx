@@ -11,7 +11,7 @@ import {useBackend} from "../lib/useBackend";
 import {useDialog} from "../lib/useDialog";
 import {exportExcel} from "./Overview";
 
-type Filter = "all" | "open" | "submitted" | "clarify" | "deadline" | "unpaid";
+type Filter = "all" | "open" | "submitted" | "clarify" | "deadline" | "unpaid" | "warnings";
 
 const FILTERS: [Filter, string][] = [
     ["all", "Alle"],
@@ -20,6 +20,7 @@ const FILTERS: [Filter, string][] = [
     ["clarify", "Klärungsbedarf"],
     ["deadline", "Frist bald"],
     ["unpaid", "Nicht bezahlt"],
+    ["warnings", "Mit Hinweisen"],
 ];
 
 export function matchesFilter(r: InvoiceRowDTO, f: Filter): boolean {
@@ -35,6 +36,8 @@ export function matchesFilter(r: InvoiceRowDTO, f: Filter): boolean {
             return cl.some(c => c.deadline !== "" && c.deadlineDays <= 90);
         case "unpaid":
             return !r.paid.done;
+        case "warnings": // plausibility findings, e.g. typos taken over from the old spreadsheet
+            return (r.warnings ?? []).length > 0;
         default:
             return true;
     }
@@ -132,10 +135,13 @@ export default function Invoices() {
                 <button className="primary" onClick={() => navigate("/rechnung/neu")}>Neue Rechnung</button>
             </div>
             <div className="chips" style={{marginBottom: 12}}>
-                {FILTERS.map(([f, label]) => (
-                    <button key={f} className={`chip ${filter === f ? "on" : ""}`} aria-pressed={filter === f}
-                            onClick={() => setFilter(f)}>{label}</button>
-                ))}
+                {FILTERS.map(([f, label]) => {
+                    const count = f === "warnings" ? rows.filter(r => matchesFilter(r, f)).length : 0;
+                    return (
+                        <button key={f} className={`chip ${filter === f ? "on" : ""}`} aria-pressed={filter === f}
+                                onClick={() => setFilter(f)}>{label}{count > 0 && ` (${count})`}</button>
+                    );
+                })}
             </div>
             {list.error && <ErrorNotice error={list.error}/>}
             {selected.size > 0 && (
