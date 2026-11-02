@@ -1,0 +1,25 @@
+*.test
+*.out
+dist/
+bin/
+
+# never commit personal data: invoices, refund documents, spreadsheets, data folders
+*.xlsx
+*.xls
+*.csv
+*.pdf
+*.jpg
+*.jpeg
+*.png
+*.heic
+!testdata/**
+!build/**/*.png
+einstellungen.json
+Eingang/
+belege/
+
+# wails / frontend (from M2)
+.task/
+frontend/node_modules/
+frontend/dist/
+frontend/bindings/
