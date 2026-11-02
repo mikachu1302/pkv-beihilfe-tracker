@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3b7ff0"/>
+      <stop offset="1" stop-color="#2459b8"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#bg)"/>
+  <!-- invoice sheet with folded corner -->
+  <path d="M300 220 h300 l130 130 v420 a30 30 0 0 1 -30 30 h-400 a30 30 0 0 1 -30 -30 v-520 a30 30 0 0 1 30 -30 z" fill="#ffffff"/>
+  <path d="M600 220 v100 a30 30 0 0 0 30 30 h100 z" fill="#c9d9f7"/>
+  <!-- text lines -->
+  <rect x="340" y="330" width="200" height="28" rx="14" fill="#c9d9f7"/>
+  <rect x="340" y="400" width="320" height="28" rx="14" fill="#c9d9f7"/>
+  <rect x="340" y="470" width="280" height="28" rx="14" fill="#c9d9f7"/>
+  <!-- check badge -->
+  <circle cx="660" cy="680" r="150" fill="#1e8a4c" stroke="#ffffff" stroke-width="28"/>
+  <path d="M590 682 l48 48 l96 -100" fill="none" stroke="#ffffff" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

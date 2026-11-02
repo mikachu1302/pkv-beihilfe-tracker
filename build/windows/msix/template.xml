@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<MsixPackagingToolTemplate
+    xmlns="http://schemas.microsoft.com/msix/packaging/msixpackagingtool/template/2022">
+    <Settings
+        AllowTelemetry="false"
+        ApplyACLsToPackageFiles="true"
+        GenerateCommandLineFile="true"
+        AllowPromptForPassword="false">
+    </Settings>
+    <Installer
+        Path="pkv-beihilfe-tracker"
+        Arguments=""
+        InstallLocation="C:\Program Files\mikachu1302\PKV Beihilfe Tracker">
+    </Installer>
+    <PackageInformation
+        PackageName="PKV Beihilfe Tracker"
+        PackageDisplayName="PKV Beihilfe Tracker"
+        PublisherName="CN=mikachu1302"
+        PublisherDisplayName="mikachu1302"
+        Version="0.1.0.0"
+        PackageDescription="Arztrechnungen, Beihilfe und PKV im Blick">
+        <Capabilities>
+            <Capability Name="runFullTrust" />
+            
+        </Capabilities>
+        <Applications>
+            <Application
+                Id="dev.pkvbeihilfe.tracker"
+                Description="Arztrechnungen, Beihilfe und PKV im Blick"
+                DisplayName="PKV Beihilfe Tracker"
+                ExecutableName="pkv-beihilfe-tracker"
+                EntryPoint="Windows.FullTrustApplication">
+                
+            </Application>
+        </Applications>
+        <Resources>
+            <Resource Language="en-us" />
+        </Resources>
+        <Dependencies>
+            <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.19041.0" />
+        </Dependencies>
+        <Properties>
+            <Framework>false</Framework>
+            <DisplayName>PKV Beihilfe Tracker</DisplayName>
+            <PublisherDisplayName>mikachu1302</PublisherDisplayName>
+            <Description>Arztrechnungen, Beihilfe und PKV im Blick</Description>
+            <Logo>Assets\AppIcon.png</Logo>
+        </Properties>
+    </PackageInformation>
+    <SaveLocation PackagePath="pkv-beihilfe-tracker.msix" />
+    <PackageIntegrity>
+        <CertificatePath></CertificatePath>
+    </PackageIntegrity>
+</MsixPackagingToolTemplate>

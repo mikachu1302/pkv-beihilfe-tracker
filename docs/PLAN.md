@@ -1,6 +1,6 @@
 # pkv-beihilfe-tracker – Technical Plan
 
-Status: M1 (core) implemented · 2026-11-02
+Status: M1 (core) and M2 (desktop app) implemented · 2026-11-02 – section 16 lists what changed during implementation
 
 ## 1. Goal
 
@@ -63,7 +63,7 @@ The tax effect of the BRE and BRE tiers are out of scope (user decision).
 | OCR | Tesseract.js (WebAssembly, German model bundled) in the webview; PDF text with pdf.js | Identical on all three OS, offline, nothing to install (crypto-tax's Tesseract CLI is practical on Linux only) |
 | GiroCode | Decoded from the image or PDF on the desktop | No live scan on the phone needed |
 | Phone | (a) inbox folder `Eingang/` in the data folder; (b) QR code → upload page in the home network | (a) needs no code on the phone; (b) works without any cloud |
-| UI language | German (assumption, confirm before M2); code and docs English | Domain is German only |
+| UI language | German (confirmed); code and docs English | Domain is German only |
 | Private data | Never in the repo; tests use synthetic data | As in crypto-tax |
 | Distribution | GitHub Actions builds Linux (RPM, AppImage), Windows (installer), macOS (DMG, ad-hoc signed, not notarised) | No cost; one-time OS warnings accepted |
 
@@ -204,9 +204,9 @@ a preview before saving (M2).
 
 ## 12. Build and packaging
 
-- `make test|vet|lint|check` now; Wails targets (`dev`, `build`, `install`) come with M2.
-- CI: tests on Linux, Windows and macOS; gofmt, vet, golangci-lint and govulncheck on Linux;
-  frontend checks from M2; release workflow for all three OS in M6.
+- `make dev|build|install|check|demo`; `wails3 task build` builds for the current OS.
+- CI: Go tests and a full app build on Linux, Windows and macOS; gofmt, vet, race tests,
+  golangci-lint, govulncheck and frontend checks on Linux; release workflow for all three OS in M6.
 - macOS: ad-hoc signed; first start via System Settings → Privacy & Security → "Open Anyway".
   Windows: SmartScreen "More info → Run anyway".
 
@@ -220,7 +220,7 @@ OCR on the device, nothing leaves the data folder. Real data never goes into the
 | | Content | Status |
 |---|---|---|
 | M1 | Core: money/date types, model, calc (SOLL/IST, years, PKV vs. BRE, deadlines, warnings), matching, store (file per record, atomic writes, per-leaf merge, conflict copies), spreadsheet import; tests with synthetic data; CI on three OS | done |
-| M2 | Desktop app: Wails + React, first start (data folder, payers, coverage), invoice list with checkboxes, detail form, dashboard, overview, spreadsheet import with preview → replaces the spreadsheet | |
+| M2 | Desktop app: Wails + React, first start (data folder, payers, coverage), invoice list with checkboxes, detail form, dashboard, overview, spreadsheet import with preview → replaces the spreadsheet | done |
 | M3 | Live data folder: file watcher, reload and merge while running, backups (zip snapshots to a second location, important without cloud) | |
 | M4 | Capture: inbox (`Eingang/`, drag & drop), Tesseract.js, pdf.js, GiroCode, invoice parser, phone upload via QR code | |
 | M5 | Refund documents: extraction, layout profiles, checksum, matching review, aliases | |
@@ -228,5 +228,24 @@ OCR on the device, nothing leaves the data folder. Real data never goes into the
 
 ## 15. Open points
 
-- UI language (German assumed).
-- App name (working title: pkv-beihilfe-tracker).
+- App name (working title: pkv-beihilfe-tracker; window title "PKV Beihilfe Tracker").
+
+## 16. Changes during implementation
+
+- **M1:** Groups (several lines = one invoice) are matched *before* the 1:1 assignment, otherwise
+  a weak date-only pair would take the invoice first. Refunds may exceed the invoice by one cent
+  per payer (each payer rounds its share up) without a warning.
+- **M2:** The service layer (`internal/service`) speaks DTOs with amounts as strings; input
+  accepts the German format. Every change is written immediately (no "save all").
+- Ticking "erstattet" in the list asks for the amount, prefilled with the open SOLL;
+  unticking removes refunds entered by hand (refunds from documents stay).
+- "Eigenanteil" on the dashboard is shown as "noch nicht erstattet" (it includes claims held
+  back or still open); the final own share counts settled invoices only.
+- Charts follow the dataviz method: thin segmented bar per payer (SOLL by status, figures in
+  the table below), horizontal stacked bars in the overview; colours validated for light and
+  dark mode.
+- UI checks run headless: Wails server mode (`-tags server`) plus Playwright/Firefox for
+  screenshots; `cmd/demodata` creates a demo data folder.
+- Own app icon (`build/appicon.svg`); the template's macOS vector icon was removed so the
+  `.icns` is used.
+- The linter's ST1005 rule is off for `internal/service`: its errors are German UI texts.

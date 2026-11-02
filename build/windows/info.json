@@ -1,0 +1,17 @@
+{
+	"fixed": {
+		"file_version": "0.1.0",
+		"product_version": "0.1.0"
+	},
+	"info": {
+		"0409": {
+			"FileVersion": "0.1.0",
+			"ProductVersion": "0.1.0",
+			"CompanyName": "mikachu1302",
+			"FileDescription": "Arztrechnungen, Beihilfe und PKV im Blick",
+			"LegalCopyright": "© 2026 mikachu1302",
+			"ProductName": "PKV Beihilfe Tracker",
+			"Comments": "(c) 2026 mikachu1302"
+		}
+	}
+}

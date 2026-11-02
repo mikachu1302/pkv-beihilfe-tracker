@@ -18,7 +18,9 @@ einstellungen.json
 Eingang/
 belege/
 
-# wails / frontend (from M2)
+# wails / frontend
+build/linux/pkv-beihilfe-tracker.desktop
+build/linux/appimage/build/
 .task/
 frontend/node_modules/
 frontend/dist/

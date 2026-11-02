@@ -49,6 +49,9 @@ type Result struct {
 	Invoices   []model.Invoice   `json:"invoices"`
 	Allowances []model.Allowance `json:"allowances"`
 	Warnings   []Warning         `json:"warnings"`
+	// Rows[i] is the spreadsheet row of Invoices[i]; AllowanceRows likewise.
+	Rows          []int `json:"rows"`
+	AllowanceRows []int `json:"allowanceRows"`
 }
 
 type field int
@@ -293,9 +296,11 @@ func importRow(res *Result, row []string, rowNum int, cols columns, opt Options,
 		warn("Erstattungen (%s €) höher als der Rechnungsbetrag (%s €)", refunded.DE(), amt.DE())
 	}
 	res.Invoices = append(res.Invoices, inv)
+	res.Rows = append(res.Rows, rowNum)
 
 	if a, ok := amount(fAllowance, "Krankenhaustagegeld"); ok && a != 0 {
 		d := inv.ServiceDate()
+		res.AllowanceRows = append(res.AllowanceRows, rowNum)
 		res.Allowances = append(res.Allowances, model.Allowance{
 			ID: model.NewID(now), PayerID: opt.PKVPayerID, Kind: model.AllowanceHospitalDay,
 			Date: d, Amount: a, Received: model.Mark{Date: d}, Note: "aus Excel übernommen",

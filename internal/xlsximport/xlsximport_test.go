@@ -3,6 +3,7 @@ package xlsximport
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -93,7 +94,7 @@ func TestImportLegacyLayout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Sheet != "Auflistung" || len(res.Invoices) != 4 {
+	if res.Sheet != "Auflistung" || len(res.Invoices) != 4 || fmt.Sprint(res.Rows) != "[2 3 5 6]" || fmt.Sprint(res.AllowanceRows) != "[5]" {
 		t.Fatalf("sheet %q, %d invoices", res.Sheet, len(res.Invoices))
 	}
 	r2 := res.Invoices[0]

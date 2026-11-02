@@ -1,0 +1,47 @@
+version: '3'
+
+# Run tasks with `wails3 task <name>` (no separate Task install needed).
+# Builds for the current OS: Linux uses GTK3/WebKitGTK 4.1 via the `gtk3`
+# build tag (as crypto-tax), Windows WebView2, macOS WKWebView.
+
+includes:
+  common: ./build/Taskfile.yml
+  windows: ./build/windows/Taskfile.yml
+  darwin: ./build/darwin/Taskfile.yml
+  linux: ./build/linux/Taskfile.yml
+
+vars:
+  APP_NAME: "pkv-beihilfe-tracker"
+  BIN_DIR: "bin"
+  PACKAGE_MANAGER: '{{.PACKAGE_MANAGER | default "npm"}}'
+  VITE_PORT: '{{.WAILS_VITE_PORT | default 9246}}'
+  EXTRA_TAGS: '{{.EXTRA_TAGS | default (eq OS "linux" | ternary "gtk3" "")}}'
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+  VERSION_FLAG: '-X github.com/mikachu1302/pkv-beihilfe-tracker/internal/service.Version={{.VERSION}}'
+
+tasks:
+  build:
+    summary: Builds the application for the current OS
+    cmds:
+      - task: "{{OS}}:build"
+
+  package:
+    summary: Packages a production build for the current OS
+    cmds:
+      - task: "{{OS}}:package"
+
+  run:
+    summary: Runs the application
+    cmds:
+      - task: "{{OS}}:run"
+
+  dev:
+    summary: Runs the application in development mode
+    cmds:
+      - wails3 dev -config ./build/config.yml -port {{.VITE_PORT}}
+
+  test:
+    summary: Runs all Go tests
+    cmds:
+      - go test {{if .EXTRA_TAGS}}-tags {{.EXTRA_TAGS}}{{end}} ./...
