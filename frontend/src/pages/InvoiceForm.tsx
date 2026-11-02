@@ -1,6 +1,6 @@
 import {useEffect, useRef, useState} from "react";
 import {useNavigate, useParams} from "react-router";
-import {Svc} from "../api";
+import {Desktop, Svc} from "../api";
 import type {ClaimDTO, ClaimViewDTO, InvoiceDTO, InvoiceRowDTO, MarkDTO, RefundDTO} from "../api";
 import {useApp} from "../App";
 import {useConfirm, useToast} from "../components/feedback";
@@ -204,6 +204,17 @@ export default function InvoiceForm() {
                     <Field label="Notiz" htmlFor="note" wide>
                         <textarea id="note" value={inv.note} onChange={e => set({note: e.target.value})}/>
                     </Field>
+                    {(inv.attachments ?? []).length > 0 && (
+                        <Field label="Belege" wide>
+                            <div className="row">
+                                {(inv.attachments ?? []).map((a, i) => (
+                                    <button key={a} onClick={() => Svc.DocumentPath(a).then(p => Desktop.OpenPath(p)).catch(toast.error)}>
+                                        Beleg {i + 1} öffnen
+                                    </button>
+                                ))}
+                            </div>
+                        </Field>
+                    )}
                 </div>
             </fieldset>
 

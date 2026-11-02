@@ -25,3 +25,4 @@ build/linux/appimage/build/
 node_modules/
 frontend/dist/
 frontend/bindings/
+frontend/public/ocr/

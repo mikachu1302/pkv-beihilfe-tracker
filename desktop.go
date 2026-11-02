@@ -35,6 +35,18 @@ func (d *DesktopService) ChooseFile(title, filterName, pattern string) (string, 
 	return dlg.PromptForSingleSelection()
 }
 
+// ChooseFiles opens a file picker allowing several files; returns nil when cancelled.
+func (d *DesktopService) ChooseFiles(title, filterName, pattern string) ([]string, error) {
+	dlg := d.app.Dialog.OpenFile().SetTitle(title).CanChooseFiles(true)
+	if pattern != "" {
+		dlg = dlg.AddFilter(filterName, pattern)
+	}
+	if d.window != nil {
+		dlg = dlg.AttachToWindow(d.window)
+	}
+	return dlg.PromptForMultipleSelection()
+}
+
 // OpenPath opens a file or folder with the default application.
 func (d *DesktopService) OpenPath(path string) error {
 	return d.app.Browser.OpenFile(path)

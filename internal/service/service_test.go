@@ -1,7 +1,12 @@
 package service
 
 import (
+	"encoding/base64"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -419,5 +424,90 @@ func TestBackups(t *testing.T) {
 	}
 	if _, err := s.BackupNow(); err == nil {
 		t.Error("backup without folder accepted")
+	}
+}
+
+func TestInboxToInvoice(t *testing.T) {
+	s := newTestService(t)
+	name, err := s.AddToInbox("Arzt Rechnung.pdf", "data:application/pdf;base64,"+base64.StdEncoding.EncodeToString([]byte("%PDF-1.7 test")))
+	if err != nil || name != "Arzt Rechnung.pdf" {
+		t.Fatalf("add: %q %v", name, err)
+	}
+	items, _ := s.ListInbox()
+	if len(items) != 1 || items[0].Type != "pdf" || items[0].URL != "/datafile/inbox/Arzt%20Rechnung.pdf" {
+		t.Fatalf("list: %+v", items)
+	}
+
+	// The webview fetches the file through ServeFile.
+	rec := httptest.NewRecorder()
+	if !s.ServeFile(rec, httptest.NewRequest("GET", items[0].URL, nil)) || rec.Body.String() != "%PDF-1.7 test" {
+		t.Fatalf("serve: %d %q", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	s.ServeFile(rec, httptest.NewRequest("GET", "/datafile/inbox/../../einstellungen.json", nil))
+	if rec.Code == http.StatusOK || strings.Contains(rec.Body.String(), "schema") {
+		t.Errorf("path traversal served: %d", rec.Code)
+	}
+	if s.ServeFile(httptest.NewRecorder(), httptest.NewRequest("GET", "/index.html", nil)) {
+		t.Error("other paths must be passed on")
+	}
+
+	an, err := s.AnalyzeDocument(AnalyzeInputDTO{
+		Lines: []LineDTO{{Text: "Hautarztpraxis Dr. Klar"}, {Text: "Rechnung Nr. H-77"}, {Text: "Datum: 10.10.2026"},
+			{Text: "10.10.2026 GOÄ 1 Beratung 10,72"}, {Text: "Rechnungsbetrag 120,00 EUR"}},
+	})
+	if err != nil || an.Kind != "invoice" || an.Draft.Invoice.Provider != "Hautarztpraxis Dr. Klar" || an.Draft.Invoice.Amount != "120.00" ||
+		claim(an.Draft.View, "beihilfe-bund").Expected != "84.00" || an.Sources["amount"] != "label" {
+		t.Fatalf("analyze: %+v, %v", an, err)
+	}
+
+	det, err := s.CreateInvoiceFromInbox(name, an.Draft.Invoice)
+	if err != nil || len(det.Invoice.Attachments) != 1 {
+		t.Fatalf("create: %+v, %v", det, err)
+	}
+	if items, _ := s.ListInbox(); len(items) != 0 {
+		t.Errorf("inbox not emptied: %+v", items)
+	}
+	path, _ := s.DocumentPath(det.Invoice.Attachments[0])
+	if b, _ := os.ReadFile(path); string(b) != "%PDF-1.7 test" {
+		t.Errorf("document content %q", b)
+	}
+
+	other, _ := s.AddToInbox("foto.jpg", base64.StdEncoding.EncodeToString([]byte("jpg")))
+	if err := s.DiscardInbox(other); err != nil {
+		t.Fatal(err)
+	}
+	if items, _ := s.ListInbox(); len(items) != 0 {
+		t.Errorf("discard failed: %+v", items)
+	}
+}
+
+func TestPhoneUploadReachesInbox(t *testing.T) {
+	s := newTestService(t)
+	em := &fakeEmitter{}
+	s.SetEmitter(em)
+	pu, err := s.StartPhoneUpload()
+	if err != nil || !strings.HasPrefix(pu.QR, "data:image/png;base64,") || !strings.Contains(pu.URL, "/u/") {
+		t.Fatalf("start: %+v, %v", pu, err)
+	}
+	again, _ := s.StartPhoneUpload()
+	if again.URL != pu.URL {
+		t.Error("a second start must reuse the open upload")
+	}
+	url := "http://127.0.0.1" + pu.URL[strings.LastIndex(pu.URL, ":"):]
+	res, err := http.Post(url, "image/jpeg", strings.NewReader("foto"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, res.Body)
+	res.Body.Close()
+	eventually(t, func() bool {
+		items, _ := s.ListInbox()
+		return len(items) == 1 && em.count() > 0
+	})
+	s.StopPhoneUpload()
+	if res, err := http.Get(url); err == nil {
+		res.Body.Close()
+		t.Error("upload still open after stop")
 	}
 }

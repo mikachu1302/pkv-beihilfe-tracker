@@ -9,6 +9,7 @@ import {ErrorNotice, Loading, Notice} from "./components/ui";
 import {useBackend} from "./lib/useBackend";
 import Dashboard from "./pages/Dashboard";
 import Import from "./pages/Import";
+import Inbox from "./pages/Inbox";
 import InvoiceForm from "./pages/InvoiceForm";
 import Invoices from "./pages/Invoices";
 import Overview from "./pages/Overview";
@@ -35,6 +36,7 @@ export function useApp(): AppState {
 
 const NAV = [
     ["/dashboard", "Dashboard"],
+    ["/posteingang", "Posteingang"],
     ["/rechnungen", "Rechnungen"],
     ["/rechnung/neu", "Neue Rechnung"],
     ["/jahre", "Alle Jahre"],
@@ -43,11 +45,18 @@ const NAV = [
 ] as const;
 
 function Layout({status, children}: {status: StatusDTO; children: ReactNode}) {
+    const {dataVersion} = useApp();
+    const inbox = useBackend(() => Svc.ListInbox(), [dataVersion]);
+    const waiting = inbox.data?.length ?? 0;
     return (
         <div className="layout">
             <nav className="sidebar">
                 <div className="brand">PKV · Beihilfe</div>
-                {NAV.map(([to, label]) => <NavLink key={to} to={to}>{label}</NavLink>)}
+                {NAV.map(([to, label]) => (
+                    <NavLink key={to} to={to}>
+                        {label}{to === "/posteingang" && waiting > 0 && <span className="nav-count" aria-label={`${waiting} Belege`}>{waiting}</span>}
+                    </NavLink>
+                ))}
                 <div className="nav-foot">
                     {status.dataDir && <>Daten: {status.dataDir}<br/></>}
                     Version {status.version}
@@ -94,6 +103,7 @@ function AppRoutes({status}: {status: StatusDTO}) {
             <Routes>
                 <Route path="/" element={<Navigate to="/dashboard" replace/>}/>
                 <Route path="/dashboard" element={<Dashboard/>}/>
+                <Route path="/posteingang" element={<Inbox/>}/>
                 <Route path="/rechnungen" element={<Invoices/>}/>
                 <Route path="/rechnung/neu" element={<InvoiceForm/>}/>
                 <Route path="/rechnung/:id" element={<InvoiceForm/>}/>
@@ -110,11 +120,22 @@ function AppRoutes({status}: {status: StatusDTO}) {
 function LiveUpdates({onChange}: {onChange: () => void}) {
     const toast = useToast();
     useEffect(() => Events.On("data-changed", ev => {
-        const d = ev.data as {issues?: number; error?: string} | undefined;
+        const d = ev.data as {issues?: number; inboxAdded?: number; error?: string} | undefined;
         if (d?.error) toast.show(`Datenordner konnte nicht neu eingelesen werden: ${d.error}`, true);
+        else if (d?.inboxAdded) toast.show(d.inboxAdded === 1 ? "Neuer Beleg im Posteingang" : `${d.inboxAdded} neue Belege im Posteingang`);
         else toast.show(d?.issues ? "Änderungen übernommen – bitte die Hinweise oben beachten" : "Änderungen aus dem Datenordner übernommen");
         onChange();
     }), [toast, onChange]);
+    // Dropping a file outside the inbox must not navigate the window away.
+    useEffect(() => {
+        const stop = (e: DragEvent) => e.preventDefault();
+        window.addEventListener("dragover", stop);
+        window.addEventListener("drop", stop);
+        return () => {
+            window.removeEventListener("dragover", stop);
+            window.removeEventListener("drop", stop);
+        };
+    }, []);
     return null;
 }
 

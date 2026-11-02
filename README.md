@@ -11,6 +11,9 @@ compared with the premium refund (Beitragsrückerstattung). The user interface i
   date of treatment.
 - **Dashboard per year** (Leistungsjahr = year of treatment), comparison "claim from the PKV
   vs. keep the premium refund", overview of all years.
+- **Capture**: scans, photos and PDFs land in the inbox – from the phone (QR code, no app
+  needed), by drag & drop or through the `Eingang/` folder; text recognition and the GiroCode
+  pre-fill the invoice (everything runs on the device).
 - **Import** of the old spreadsheet with preview and duplicate check.
 - **Data stays yours**: one JSON file per record in a folder of your choice, synced by any
   tool (Nextcloud, iCloud Drive, Google Drive, OneDrive, Dropbox, Syncthing …) or not at all.
@@ -18,8 +21,8 @@ compared with the premium refund (Beitragsrückerstattung). The user interface i
   show up while the app runs; conflict copies are merged field by field.
 - **Backups**: daily zip snapshots to a second folder (USB stick, NAS, another cloud).
 
-Status: milestones M1 (core), M2 (desktop app) and M3 (live data folder, backups) are done;
-capture from scans and refund documents follow. See [docs/PLAN.md](docs/PLAN.md).
+Status: milestones M1–M4 are done (core, desktop app, live data folder with backups,
+capture); matching refund documents follows. See [docs/PLAN.md](docs/PLAN.md).
 
 ## Build and run
 
@@ -63,6 +66,8 @@ To look at the UI in a browser (e.g. for headless screenshots), build the Wails 
 | `internal/match` | Matching refund document lines to invoices |
 | `internal/store` | Data folder: file per record, atomic writes, merging conflict copies |
 | `internal/xlsximport` | Import of the old spreadsheet |
+| `internal/extract` | Recognises invoices from text and GiroCodes |
+| `internal/upload` | Upload page for the phone (LAN, one-time link) |
 | `internal/leaf` | JSON leaves: flatten, rebuild, three-way rebase |
 | `internal/watch` | Notices changes in the data folder made by others |
 | `internal/backup` | Zip snapshots of the data folder |

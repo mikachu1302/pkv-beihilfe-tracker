@@ -1,0 +1,88 @@
+import {screen, waitFor} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import {beforeEach, describe, expect, it, vi} from "vitest";
+import type {AnalysisDTO, InvoiceDTO} from "../api";
+import {invoiceRow, noMark} from "../test/fixtures";
+import {renderAt} from "../test/render";
+import Inbox from "./Inbox";
+
+const svc = vi.hoisted(() => ({
+    ListInbox: vi.fn(), AnalyzeDocument: vi.fn(), CreateInvoiceFromInbox: vi.fn(), DiscardInbox: vi.fn(),
+    AddFilesToInbox: vi.fn(), AddToInbox: vi.fn(), StartPhoneUpload: vi.fn(), StopPhoneUpload: vi.fn(),
+}));
+const desktop = vi.hoisted(() => ({ChooseFiles: vi.fn()}));
+const capture = vi.hoisted(() => ({recognize: vi.fn(), renderPdfPreview: vi.fn()}));
+vi.mock("../api", () => ({Svc: svc, Desktop: desktop}));
+vi.mock("../lib/capture", () => capture);
+
+const draft: InvoiceDTO = {
+    id: "", provider: "Dr. med. Anna Muster", payee: "PVS Beispiel eG", iban: "DE89370400440532013000", reference: "2026-004711",
+    category: "arzt", invoiceDate: "2026-03-14", serviceFrom: "2026-03-03", serviceTo: "2026-03-05", serviceYear: 0,
+    amount: "286.40", due: "", paid: noMark, claims: [], attachments: [], note: "",
+};
+
+function analysis(kind = "invoice"): AnalysisDTO {
+    return {kind, draft: {invoice: draft, view: invoiceRow("", draft.provider)}, sources: {amount: "qr", provider: "label", category: "guess"}, notes: []};
+}
+
+beforeEach(() => {
+    vi.clearAllMocks();
+    svc.ListInbox.mockResolvedValue([{name: "scan.pdf", size: 1000, modified: "2026-11-02 10:15", type: "pdf", url: "/datafile/inbox/scan.pdf"}]);
+    capture.recognize.mockResolvedValue({lines: [{text: "Rechnung", page: 1, x: 0, y: 0, w: 0, h: 0}], qr: ["BCD"], ocr: false});
+    capture.renderPdfPreview.mockResolvedValue(undefined);
+    svc.AnalyzeDocument.mockResolvedValue(analysis());
+    svc.StopPhoneUpload.mockResolvedValue(undefined);
+});
+
+describe("Inbox", () => {
+    it("recognises a document and saves it as an invoice", async () => {
+        const user = userEvent.setup();
+        svc.CreateInvoiceFromInbox.mockResolvedValue({invoice: {...draft, id: "x"}, view: invoiceRow("x", draft.provider, {year: 2026})});
+        renderAt("/", "/", <Inbox/>);
+        expect(await screen.findByDisplayValue("Dr. med. Anna Muster")).toBeInTheDocument();
+        expect(screen.getByLabelText("Betrag (€) *")).toHaveValue("286,40");
+        expect(screen.getByText("aus GiroCode")).toBeInTheDocument();
+        expect(screen.getByText("bitte prüfen")).toBeInTheDocument();
+        expect(capture.recognize).toHaveBeenCalledWith("/datafile/inbox/scan.pdf", "pdf", expect.any(Function));
+        expect(svc.AnalyzeDocument).toHaveBeenCalledWith({lines: [{text: "Rechnung", page: 1, x: 0, y: 0, w: 0, h: 0}], qr: ["BCD"]});
+
+        await user.clear(screen.getByLabelText("Betrag (€) *"));
+        await user.type(screen.getByLabelText("Betrag (€) *"), "290,00");
+        await user.click(screen.getByRole("button", {name: "Als Rechnung speichern"}));
+        await waitFor(() => expect(svc.CreateInvoiceFromInbox).toHaveBeenCalled());
+        const [name, sent] = svc.CreateInvoiceFromInbox.mock.calls[0];
+        expect(name).toBe("scan.pdf");
+        expect(sent).toMatchObject({provider: "Dr. med. Anna Muster", amount: "290,00", iban: "DE89370400440532013000"});
+    });
+
+    it("tells when a refund document was found", async () => {
+        svc.AnalyzeDocument.mockResolvedValue(analysis("refund"));
+        renderAt("/", "/", <Inbox/>);
+        expect(await screen.findByText("Erstattungsbeleg erkannt")).toBeInTheDocument();
+    });
+
+    it("lets the user fill the fields when recognition fails", async () => {
+        capture.recognize.mockRejectedValue(new Error("Das Bild kann nicht gelesen werden."));
+        renderAt("/", "/", <Inbox/>);
+        expect(await screen.findByText(/Das Bild kann nicht gelesen werden/)).toBeInTheDocument();
+        expect(screen.getByLabelText("Behandler *")).toHaveValue("");
+    });
+
+    it("shows the QR code for the phone", async () => {
+        const user = userEvent.setup();
+        svc.StartPhoneUpload.mockResolvedValue({url: "http://192.168.1.20:41234/u/abc", qr: "data:image/png;base64,AAAA",
+            expires: "11:30", received: 0, lan: true});
+        renderAt("/", "/", <Inbox/>);
+        await user.click(screen.getByRole("button", {name: "Mit Handy fotografieren"}));
+        expect(await screen.findByAltText("QR-Code für das Handy")).toBeInTheDocument();
+        expect(screen.getByText("http://192.168.1.20:41234/u/abc")).toBeInTheDocument();
+        await user.click(screen.getByRole("button", {name: "Fertig"}));
+        await waitFor(() => expect(svc.StopPhoneUpload).toHaveBeenCalled());
+    });
+
+    it("shows an empty inbox", async () => {
+        svc.ListInbox.mockResolvedValue([]);
+        renderAt("/", "/", <Inbox/>);
+        expect(await screen.findByText(/Der Posteingang ist leer/)).toBeInTheDocument();
+    });
+});

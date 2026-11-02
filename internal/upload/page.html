@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beleg senden</title>
+<style>
+  :root { color-scheme: light dark; --accent: #2f6fde; --bg: #f7f8fa; --panel: #fff; --text: #1c2430; --muted: #5e6b7a; --good: #1e8a4c; --bad: #c53030; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #14181e; --panel: #1c222b; --text: #e4e8ee; --muted: #97a3b2; --good: #4cc282; --bad: #f07272; } }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 480px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 8px; }
+  p { color: var(--muted); margin: 0 0 20px; }
+  label.btn { display: block; text-align: center; padding: 16px; border-radius: 12px; margin-bottom: 12px; font-weight: 600; cursor: pointer; }
+  label.primary { background: var(--accent); color: #fff; }
+  label.secondary { background: var(--panel); border: 1px solid var(--muted); }
+  input[type=file] { display: none; }
+  ul { list-style: none; padding: 0; margin: 20px 0 0; }
+  li { background: var(--panel); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; display: flex; justify-content: space-between; gap: 8px; }
+  .ok { color: var(--good); } .err { color: var(--bad); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Beleg an den Computer senden</h1>
+  <p>Rechnungen oder Erstattungsbescheide fotografieren oder als PDF wählen. Sie landen sofort im Posteingang der App.</p>
+  <label class="btn primary">Foto aufnehmen<input id="camera" type="file" accept="image/*" capture="environment"></label>
+  <label class="btn secondary">Fotos oder PDF wählen<input id="files" type="file" accept="image/*,application/pdf" multiple></label>
+  <ul id="list"></ul>
+</main>
+<script>
+  const list = document.getElementById("list");
+  async function send(file) {
+    const li = document.createElement("li");
+    const name = document.createElement("span");
+    name.textContent = file.name || "Foto";
+    const state = document.createElement("span");
+    state.textContent = "wird gesendet …";
+    li.append(name, state);
+    list.prepend(li);
+    try {
+      const res = await fetch(location.pathname, {method: "POST", headers: {"Content-Type": file.type || "application/octet-stream"}, body: file});
+      const text = await res.text();
+      if (!res.ok) throw new Error(text);
+      state.textContent = "✓ übertragen";
+      state.className = "ok";
+    } catch (e) {
+      state.textContent = "✗ " + (e.message || "Fehler");
+      state.className = "err";
+    }
+  }
+  for (const id of ["camera", "files"]) {
+    document.getElementById(id).addEventListener("change", e => {
+      for (const f of e.target.files) send(f);
+      e.target.value = "";
+    });
+  }
+</script>
+</body>
+</html>

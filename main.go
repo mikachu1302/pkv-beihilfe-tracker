@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"log"
+	"net/http"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
@@ -25,6 +26,14 @@ func main() {
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
+			// Inbox files and stored documents for previews and text recognition.
+			Middleware: func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if !svc.ServeFile(w, r) {
+						next.ServeHTTP(w, r)
+					}
+				})
+			},
 		},
 		SingleInstance: &application.SingleInstanceOptions{
 			UniqueID: "dev.pkvbeihilfe.tracker",

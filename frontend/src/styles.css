@@ -292,3 +292,16 @@ table.refunds input { padding: 3px 6px; }
 .hint-list { margin: 8px 0 12px; padding-left: 18px; font-size: 13px; }
 .hint-list:empty { display: none; }
 .year-values { margin-top: 12px; }
+
+/* inbox */
+.nav-count { display: inline-block; min-width: 18px; padding: 0 6px; margin-left: 8px; border-radius: 9px; background: var(--accent); color: #fff; font-size: 11px; text-align: center; }
+.inbox { display: grid; grid-template-columns: 240px 1fr; gap: 16px; align-items: start; }
+.inbox-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.inbox-item { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 2px; }
+.inbox-item.on { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.inbox-item .name { word-break: break-all; }
+.inbox-detail { display: grid; grid-template-columns: minmax(260px, 520px) 1fr; gap: 16px; align-items: start; }
+.preview-wrap { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px; max-height: 80vh; overflow: auto; }
+.preview { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.dropzone { border: 2px dashed var(--accent); border-radius: 10px; padding: 24px; text-align: center; color: var(--accent); margin-bottom: 12px; }
+@media (max-width: 1200px) { .inbox-detail { grid-template-columns: 1fr; } }

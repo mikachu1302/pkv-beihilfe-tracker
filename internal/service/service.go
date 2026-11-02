@@ -15,6 +15,7 @@ import (
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/config"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/model"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/store"
+	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/upload"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/watch"
 )
 
@@ -30,8 +31,9 @@ const EventDataChanged = "data-changed"
 
 // DataChangedDTO is the payload of EventDataChanged.
 type DataChangedDTO struct {
-	Issues int    `json:"issues"` // notes from loading (e.g. merged conflict copies)
-	Error  string `json:"error"`
+	Issues     int    `json:"issues"`     // notes from loading (e.g. merged conflict copies)
+	InboxAdded int    `json:"inboxAdded"` // new files in the inbox folder (e.g. from the phone)
+	Error      string `json:"error"`
 }
 
 // Emitter sends events to the frontend (application.EventManager).
@@ -56,6 +58,8 @@ type Service struct {
 	watchDebounce time.Duration
 	emitter       Emitter
 	backupErr     error
+	upload        *upload.Server
+	inboxSeen     []string // inbox file names at the last reload
 
 	now func() time.Time
 }
@@ -105,6 +109,12 @@ func (s *Service) open(dir string) error {
 	}
 	s.st, s.data, s.issues, s.loadErr = st, data, issues, nil
 	s.stopWatch()
+	s.inboxSeen = s.inboxSeen[:0]
+	if files, err := st.ListInbox(); err == nil {
+		for _, f := range files {
+			s.inboxSeen = append(s.inboxSeen, f.Name)
+		}
+	}
 	s.watcher, s.watchErr = watch.Start(dir, s.watchDebounce, st.IsOwnChange, s.externalChange)
 	s.autoBackup()
 	return nil
@@ -125,6 +135,19 @@ func (s *Service) externalChange() {
 		return
 	}
 	ev := DataChangedDTO{}
+	before := map[string]bool{}
+	if files, err := s.st.ListInbox(); err == nil {
+		for _, f := range s.inboxSeen {
+			before[f] = true
+		}
+		s.inboxSeen = s.inboxSeen[:0]
+		for _, f := range files {
+			s.inboxSeen = append(s.inboxSeen, f.Name)
+			if !before[f.Name] {
+				ev.InboxAdded++
+			}
+		}
+	}
 	data, issues, err := s.st.Load()
 	if err != nil {
 		ev.Error = err.Error()
@@ -155,6 +178,10 @@ func (s *Service) ServiceShutdown() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.stopWatch()
+	if s.upload != nil {
+		_ = s.upload.Stop()
+		s.upload = nil
+	}
 	return nil
 }
 

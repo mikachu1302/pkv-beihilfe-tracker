@@ -334,3 +334,30 @@ func TestIsOwnChange(t *testing.T) {
 		t.Error("own removal not recognised")
 	}
 }
+
+func TestInbox(t *testing.T) {
+	root := t.TempDir()
+	s := open(t, root, "a", "2026-11-02T10:00:00Z")
+	n1, err := s.AddToInbox("scan.pdf", []byte("%PDF eins"))
+	if err != nil || n1 != "scan.pdf" {
+		t.Fatalf("add: %q %v", n1, err)
+	}
+	n2, _ := s.AddToInbox("../scan.pdf", []byte("%PDF zwei"))
+	if n2 != "scan (2).pdf" {
+		t.Errorf("second name %q", n2)
+	}
+	if !s.IsOwnChange(s.InboxPath(n1)) {
+		t.Error("own inbox file not recognised")
+	}
+	os.WriteFile(filepath.Join(root, InboxDir, ".tmp-x"), []byte("x"), 0o644)
+	list, err := s.ListInbox()
+	if err != nil || len(list) != 2 {
+		t.Fatalf("list %+v %v", list, err)
+	}
+	if err := s.RemoveFromInbox(n1); err != nil || !s.IsOwnChange(s.InboxPath(n1)) {
+		t.Errorf("remove: %v", err)
+	}
+	if list, _ := s.ListInbox(); len(list) != 1 || list[0].Name != n2 {
+		t.Errorf("after remove %+v", list)
+	}
+}

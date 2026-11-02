@@ -1,6 +1,6 @@
 # pkv-beihilfe-tracker – Technical Plan
 
-Status: M1 (core), M2 (desktop app) and M3 (live data folder) implemented · 2026-11-02 – section 16 lists what changed during implementation
+Status: M1–M4 implemented (core, desktop app, live data folder, capture) · 2026-11-02 – section 16 lists what changed during implementation
 
 ## 1. Goal
 
@@ -222,7 +222,7 @@ OCR on the device, nothing leaves the data folder. Real data never goes into the
 | M1 | Core: money/date types, model, calc (SOLL/IST, years, PKV vs. BRE, deadlines, warnings), matching, store (file per record, atomic writes, per-leaf merge, conflict copies), spreadsheet import; tests with synthetic data; CI on three OS | done |
 | M2 | Desktop app: Wails + React, first start (data folder, payers, coverage), invoice list with checkboxes, detail form, dashboard, overview, spreadsheet import with preview → replaces the spreadsheet | done |
 | M3 | Live data folder: file watcher, reload and merge while running, backups (zip snapshots to a second location, important without cloud) | done |
-| M4 | Capture: inbox (`Eingang/`, drag & drop), Tesseract.js, pdf.js, GiroCode, invoice parser, phone upload via QR code | |
+| M4 | Capture: inbox (`Eingang/`, drag & drop), Tesseract.js, pdf.js, GiroCode, invoice parser, phone upload via QR code | done |
 | M5 | Refund documents: extraction, layout profiles, checksum, matching review, aliases | |
 | M6 | Submissions and PDF bundle, exports (Excel/CSV/PDF), reminders (deadlines, due dates), release builds for three OS | |
 
@@ -260,3 +260,19 @@ OCR on the device, nothing leaves the data folder. Real data never goes into the
 - `internal/backup`: zip snapshots (without hidden files) to a device-local backup folder, once a
   day on start and on demand, the newest 20 are kept; a folder inside the data folder is refused.
   Restore = unzip into an empty folder and choose it as data folder.
+- **M4:** Recognition runs in the webview: pdf.js for the text layer (pages are rendered for
+  GiroCodes; OCR when a page has no text), Tesseract.js 7 with the German "best_int" model,
+  zxing-wasm for QR codes. All assets are copied into the app (`scripts/copy-assets.mjs`,
+  ~13 MB) – nothing is loaded from a CDN. The text goes to Go (`internal/extract`), which decides
+  invoice vs. refund document and fills the fields; every field carries its source
+  (GiroCode / label / guess) for the UI.
+- For billing services the letterhead names the service; the practitioner is taken from
+  "Behandlung durch …", the service becomes the payee.
+- The webview gets inbox files and documents through an asset middleware
+  (`/datafile/inbox/…`, `/datafile/doc/…`).
+- Phone upload: `internal/upload` serves an embedded page on the LAN with a random token; files
+  arrive in `Eingang/` and reach the UI through the folder watcher (inbox files count as
+  changes; the toast says "Neuer Beleg im Posteingang").
+- Verified end to end (server mode + headless Firefox): a made-up invoice photo sent through
+  the phone page was recognised in about 6 s with all fields correct and saved with the photo
+  in `belege/`.

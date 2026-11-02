@@ -9,13 +9,21 @@
     "build": "vite build --mode production",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "assets": "node scripts/copy-assets.mjs",
+    "predev": "node scripts/copy-assets.mjs",
+    "prebuild": "node scripts/copy-assets.mjs",
+    "prebuild:dev": "node scripts/copy-assets.mjs"
   },
   "dependencies": {
+    "@tesseract.js-data/deu": "^1.0.0",
     "@wailsio/runtime": "3.1.0",
+    "pdfjs-dist": "^6.5.438",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router": "^7.18.5"
+    "react-router": "^7.18.5",
+    "tesseract.js": "^7.0.0",
+    "zxing-wasm": "^3.1.6"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.2",

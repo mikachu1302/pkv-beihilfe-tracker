@@ -474,6 +474,68 @@ func (s *Store) AddDocument(r io.Reader, ext string) (string, error) {
 	return name, writeFileAtomic(path, b)
 }
 
+// InboxFile is a file waiting in the inbox folder.
+type InboxFile struct {
+	Name     string
+	Size     int64
+	Modified time.Time
+}
+
+// ListInbox returns the files in the inbox folder, oldest first.
+func (s *Store) ListInbox() ([]InboxFile, error) {
+	entries, err := os.ReadDir(filepath.Join(s.root, InboxDir))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []InboxFile
+	for _, e := range entries {
+		if e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		fi, err := e.Info()
+		if err != nil {
+			continue
+		}
+		out = append(out, InboxFile{Name: e.Name(), Size: fi.Size(), Modified: fi.ModTime()})
+	}
+	slices.SortFunc(out, func(a, b InboxFile) int { return a.Modified.Compare(b.Modified) })
+	return out, nil
+}
+
+// InboxPath returns the full path of an inbox file (the name is reduced to its base).
+func (s *Store) InboxPath(name string) string {
+	return filepath.Join(s.root, InboxDir, filepath.Base(name))
+}
+
+// AddToInbox writes a file into the inbox folder under a free name and returns it.
+func (s *Store) AddToInbox(name string, data []byte) (string, error) {
+	name = strings.TrimSpace(filepath.Base(name))
+	if name == "" || name == "." || strings.HasPrefix(name, ".") {
+		name = "Beleg" + filepath.Ext(name)
+	}
+	base, ext := strings.TrimSuffix(name, filepath.Ext(name)), filepath.Ext(name)
+	path := s.InboxPath(name)
+	for i := 2; ; i++ {
+		if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+			break
+		}
+		path = s.InboxPath(fmt.Sprintf("%s (%d)%s", base, i, ext))
+	}
+	if err := writeFileAtomic(path, data); err != nil {
+		return "", err
+	}
+	s.noteOwn(path)
+	return filepath.Base(path), nil
+}
+
+// RemoveFromInbox deletes an inbox file.
+func (s *Store) RemoveFromInbox(name string) error {
+	return s.remove(s.InboxPath(name))
+}
+
 // DocumentPath returns the full path of a stored document.
 func (s *Store) DocumentPath(name string) string {
 	return filepath.Join(s.root, DocumentsDir, filepath.Base(name))
@@ -484,12 +546,16 @@ func (s *Store) write(path string, env envelope) error {
 	if err := writeEnvelope(path, env); err != nil {
 		return err
 	}
+	s.noteOwn(path)
+	return nil
+}
+
+func (s *Store) noteOwn(path string) {
 	if fi, err := os.Stat(path); err == nil {
 		s.ownMu.Lock()
 		s.own[path] = ownStamp{size: fi.Size(), mod: fi.ModTime()}
 		s.ownMu.Unlock()
 	}
-	return nil
 }
 
 // remove deletes path (a missing file is fine) and remembers it as our own change.
