@@ -88,6 +88,9 @@ jobs:
         with:
           name: package-${{ runner.os }}
           if-no-files-found: error
+          # Only needed to hand the files to the release job (the release keeps
+          # its own copies); private repos have 500 MB of artifact storage.
+          retention-days: 3
           path: |
             bin/*.deb
             bin/*.rpm
