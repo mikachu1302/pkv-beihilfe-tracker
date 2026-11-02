@@ -123,7 +123,7 @@ export default function Overview() {
                                     <Fragment key={p.id}>
                                         <td className="num muted payer-first">{avg(payerOf(total, p.id)?.expected ?? "0")}</td>
                                         <td className="num muted">{avg(payerOf(total, p.id)?.actual ?? "0")}</td>
-                                        <td className="num muted">–</td>
+                                        <td className="num muted">{avg(payerOf(total, p.id)?.outstanding.total ?? "0")}</td>
                                     </Fragment>
                                 ))}
                                 <td className="num muted">{avg(total.ownShare)}</td>

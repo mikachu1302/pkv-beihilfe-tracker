@@ -49,5 +49,7 @@ describe("Overview", () => {
         const row2026 = screen.getByRole("cell", {name: "2026"}).closest("tr") as HTMLElement;
         expect(within(row2026).getByText("150,00 €")).toBeInTheDocument();
         expect(screen.getAllByRole("columnheader", {name: /Ausstand/})).toHaveLength(2);
+        const avgRow = screen.getByRole("cell", {name: "Ø pro Jahr"}).closest("tr") as HTMLElement;
+        expect(within(avgRow).getByText("100,00 €")).toBeInTheDocument(); // 200 € over two years
     });
 });
