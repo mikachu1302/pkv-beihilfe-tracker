@@ -5,6 +5,7 @@ import {useApp} from "../App";
 import {useToast} from "../components/feedback";
 import {ErrorNotice, Field, Loading, Notice} from "../components/ui";
 import {errMsg, toInput} from "../lib/format";
+import {key, useSaveShortcut, useUnsavedChanges} from "../lib/shortcuts";
 import {useBackend} from "../lib/useBackend";
 
 /** Amounts in the form use the German format. */
@@ -53,6 +54,9 @@ export default function Settings() {
         if (!edited) apply(loaded.data);
         else if (JSON.stringify(loaded.data) !== JSON.stringify(base)) setNewer(loaded.data);
     }
+
+    useUnsavedChanges(edited);
+    useSaveShortcut(() => void save(), s !== null);
 
     if (loaded.error) return <ErrorNotice error={loaded.error}/>;
     if (!s) return <Loading/>;
@@ -215,7 +219,7 @@ export default function Settings() {
             </section>
 
             <div className="actions">
-                <button className="primary" onClick={save}>Speichern</button>
+                <button className="primary" onClick={save} title={`Speichern (${key("S")})`}>Speichern</button>
                 <button onClick={() => {
                     const d = newer ?? base;
                     if (d) apply(d);

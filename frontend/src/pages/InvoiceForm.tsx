@@ -6,6 +6,7 @@ import {useApp} from "../App";
 import {useConfirm, useToast} from "../components/feedback";
 import {Badge, ErrorNotice, Field, Loading, Notice} from "../components/ui";
 import {CATEGORY_LABELS, STATUS_LABELS, date, errMsg, eur, num, pct, toInput, today} from "../lib/format";
+import {dialogOpen, key, mod, useKeydown, useSaveShortcut, useUnsavedChanges} from "../lib/shortcuts";
 
 /** Amounts arrive as "286.40"; the form shows and sends "286,40". */
 function forForm(inv: InvoiceDTO): InvoiceDTO {
@@ -46,8 +47,19 @@ export default function InvoiceForm() {
     const [inputError, setInputError] = useState("");
     const [saveError, setSaveError] = useState("");
     const [saving, setSaving] = useState(false);
+    // The form as loaded: differences are unsaved changes (asked before leaving).
+    const [initial, setInitial] = useState("");
     const timer = useRef<number>(undefined);
     const seq = useRef(0);
+
+    const dirty = inv !== null && initial !== "" && !saving && JSON.stringify(inv) !== initial;
+    useUnsavedChanges(dirty);
+    useSaveShortcut(() => void save("list"), inv !== null);
+    useKeydown(e => {
+        if (!mod(e) || e.key !== "Enter" || dialogOpen()) return false;
+        void save("new");
+        return true;
+    }, inv !== null);
 
     useEffect(() => {
         setInv(null);
@@ -57,6 +69,7 @@ export default function InvoiceForm() {
         (id ? Svc.GetInvoice(id) : Svc.NewInvoice()).then(
             d => {
                 setInv(forForm(d.invoice));
+                setInitial(JSON.stringify(forForm(d.invoice)));
                 setOriginal(id ? d.invoice : null);
                 setView(d.view);
             },
@@ -105,7 +118,7 @@ export default function InvoiceForm() {
         update({...inv, claims: (inv.claims ?? []).map(c => (c.payerId === payerId ? {...c, ...patch} : c))});
 
     async function save(next: "list" | "new") {
-        if (!inv) return;
+        if (!inv || saving) return;
         setSaving(true);
         setSaveError("");
         try {
@@ -117,6 +130,7 @@ export default function InvoiceForm() {
                 else {
                     const blank = await Svc.NewInvoice();
                     setInv(forForm(blank.invoice));
+                    setInitial(JSON.stringify(forForm(blank.invoice)));
                     setOriginal(null);
                     setView(blank.view);
                 }
@@ -239,9 +253,12 @@ export default function InvoiceForm() {
             </div>
 
             <div className="actions">
-                <button className="primary" disabled={saving} onClick={() => save("list")}>Speichern</button>
-                <button disabled={saving} onClick={() => save("new")}>Speichern &amp; nächste</button>
-                <button onClick={() => navigate(-1)}>Abbrechen</button>
+                <button className="primary" disabled={saving} onClick={() => save("list")} title={`Speichern (${key("S")})`}>Speichern</button>
+                <button disabled={saving} onClick={() => save("new")} title={`Speichern und nächste Rechnung erfassen (${key("Enter")})`}>Speichern &amp; nächste</button>
+                <button onClick={async () => {
+                    if (dirty && !await confirm("Die Änderungen sind noch nicht gespeichert. Trotzdem verlassen?", "Verlassen")) return;
+                    navigate(-1);
+                }}>Abbrechen</button>
                 <span className="spacer"/>
                 {id && <button className="danger" onClick={remove}>Löschen</button>}
             </div>

@@ -1,4 +1,4 @@
-import {useEffect, useMemo, useState} from "react";
+import {useEffect, useMemo, useRef, useState} from "react";
 import {Link, useNavigate} from "react-router";
 import {Desktop, Svc} from "../api";
 import type {ClaimViewDTO, InvoiceRowDTO, MarkChangeDTO, PayerDTO, YearDTO} from "../api";
@@ -9,6 +9,7 @@ import {Badge, Empty, ErrorNotice, Loading, YearSelect} from "../components/ui";
 import {CATEGORY_LABELS, date, eur, num, plural, toInput, today} from "../lib/format";
 import {useBackend} from "../lib/useBackend";
 import {useDialog} from "../lib/useDialog";
+import {dialogOpen, isTyping, key, mod, useKeydown} from "../lib/shortcuts";
 import {exportExcel} from "./Overview";
 
 type Filter = "all" | "open" | "submitted" | "clarify" | "deadline" | "unpaid" | "warnings";
@@ -60,6 +61,13 @@ export default function Invoices() {
     const [rows, setRows] = useState<InvoiceRowDTO[]>([]);
     const [filter, setFilter] = useState<Filter>("all");
     const [query, setQuery] = useState("");
+    const search = useRef<HTMLInputElement>(null);
+    useKeydown(e => {
+        if (dialogOpen() || !(mod(e) && e.key.toLowerCase() === "f" || e.key === "/" && !isTyping(e.target))) return false;
+        search.current?.focus();
+        search.current?.select();
+        return true;
+    });
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [pop, setPop] = useState<Pop | null>(null);
 
@@ -137,7 +145,7 @@ export default function Invoices() {
                 <YearSelect years={yearList.includes(year) ? yearList : [year, ...yearList]} value={year}
                             onChange={setYear} allLabel="alle Jahre"/>
                 <span className="spacer"/>
-                <input aria-label="Suchen" placeholder="Suchen …" style={{width: 200}} value={query}
+                <input ref={search} aria-label="Suchen" placeholder={`Suchen … (${key("F")})`} style={{width: 200}} value={query}
                        onChange={e => setQuery(e.target.value)}/>
                 <button onClick={() => exportExcel(toast, year)}>Excel</button>
                 <button className="primary" onClick={() => navigate("/rechnung/neu")}>Neue Rechnung</button>

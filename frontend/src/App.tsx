@@ -1,12 +1,14 @@
 import {createContext, useContext, useEffect, useState} from "react";
 import {Events} from "@wailsio/runtime";
 import type {ReactNode} from "react";
-import {HashRouter, Navigate, NavLink, Route, Routes} from "react-router";
+import {HashRouter, Navigate, NavLink, Route, Routes, useNavigate} from "react-router";
 import {Svc} from "./api";
 import type {StatusDTO} from "./api";
-import {FeedbackProvider, useToast} from "./components/feedback";
+import {FeedbackProvider, useConfirm, useToast} from "./components/feedback";
 import {ErrorNotice, Loading, Notice} from "./components/ui";
 import {useBackend} from "./lib/useBackend";
+import {dialogOpen, hasUnsavedChanges, isMac, isTyping, key, mod, useKeydown} from "./lib/shortcuts";
+import {useDialog} from "./lib/useDialog";
 import Dashboard from "./pages/Dashboard";
 import Import from "./pages/Import";
 import Inbox from "./pages/Inbox";
@@ -78,6 +80,7 @@ function Layout({status, children}: {status: StatusDTO; children: ReactNode}) {
     const inbox = useBackend(() => Svc.ListInbox(), [dataVersion]);
     const waiting = inbox.data?.length ?? 0;
     const [collapsed, setCollapsed] = useNavCollapsed();
+    const [help, setHelp] = useState(false);
     return (
         <div className={`layout ${collapsed ? "nav-collapsed" : ""}`}>
             <nav className="sidebar" aria-label="Hauptmenü">
@@ -100,8 +103,11 @@ function Layout({status, children}: {status: StatusDTO; children: ReactNode}) {
                 <div className="nav-foot">
                     {status.dataDir && <>Daten: {status.dataDir}<br/></>}
                     Version {status.version}
+                    <br/><button type="button" className="link nav-help" onClick={() => setHelp(true)}>Tastenkürzel (?)</button>
                 </div>
             </nav>
+            <GlobalShortcuts onHelp={() => setHelp(true)}/>
+            {help && <ShortcutHelp onClose={() => setHelp(false)}/>}
             <main className="content">
                 <StatusNotices status={status}/>
                 <InboxChangedContext.Provider value={inbox.reload}>{children}</InboxChangedContext.Provider>
@@ -220,5 +226,80 @@ function Icon({name}: {name: string}) {
     return (
         <svg className="icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8"
              strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ICONS[name]}</svg>
+    );
+}
+
+/**
+ * Shortcuts that work on every page: back and forward, new invoice, the menu
+ * entries, and the list of shortcuts. Leaving a form with unsaved changes asks first.
+ */
+function GlobalShortcuts({onHelp}: {onHelp: () => void}) {
+    const navigate = useNavigate();
+    const confirm = useConfirm();
+    const leave = async (go: () => void) => {
+        if (hasUnsavedChanges() && !await confirm("Die Änderungen sind noch nicht gespeichert. Trotzdem verlassen?", "Verlassen")) return;
+        go();
+    };
+    useKeydown(e => {
+        if (dialogOpen()) return;
+        const typing = isTyping(e.target);
+        const plain = !e.ctrlKey && !e.metaKey && !e.altKey;
+        if ((e.key === "Backspace" && plain && !typing) || (e.altKey && e.key === "ArrowLeft") || (isMac && e.metaKey && e.key === "[")) {
+            // react-router keeps the position in the history: never leave the app
+            if (((window.history.state as {idx?: number} | null)?.idx ?? 0) > 0) void leave(() => navigate(-1));
+            return true;
+        }
+        if ((e.altKey && e.key === "ArrowRight") || (isMac && e.metaKey && e.key === "]")) {
+            void leave(() => navigate(1));
+            return true;
+        }
+        if (mod(e) && !e.shiftKey && e.key.toLowerCase() === "n") {
+            void leave(() => navigate("/rechnung/neu"));
+            return true;
+        }
+        if (mod(e) && !e.shiftKey && /^[1-7]$/.test(e.key)) {
+            const to = NAV[Number(e.key) - 1][0];
+            void leave(() => navigate(to));
+            return true;
+        }
+        if (!typing && (e.key === "?" || e.key === "F1")) {
+            onHelp();
+            return true;
+        }
+        return false;
+    });
+    return null;
+}
+
+function ShortcutHelp({onClose}: {onClose: () => void}) {
+    const ref = useDialog<HTMLDivElement>(onClose);
+    const rows: [string[], string][] = [
+        [[key("S")], "Speichern (Rechnung, Posteingang, Einstellungen)"],
+        [[key("Enter")], "Rechnung speichern und nächste erfassen"],
+        [[key("N")], "Neue Rechnung"],
+        [[key("F"), "/"], "Suchen in der Rechnungsliste"],
+        [[key("1"), key("7")], "Menüpunkte der Reihe nach (1 bis 7)"],
+        [isMac ? ["⌫", "⌘["] : ["Rücktaste", "Alt+Pfeil links"], "Zurück (nicht beim Tippen in einem Feld)"],
+        [isMac ? ["⌘]"] : ["Alt+Pfeil rechts"], "Vor"],
+        [["Esc"], "Dialog schließen"],
+        [["?"], "Diese Übersicht"],
+    ];
+    return (
+        <div className="modal-back" onClick={e => e.target === e.currentTarget && onClose()}>
+            <div ref={ref} className="modal" role="dialog" aria-modal="true" aria-labelledby="shortcut-title" tabIndex={-1} style={{maxWidth: 480}}>
+                <h2 id="shortcut-title" style={{marginTop: 0}}>Tastenkürzel</h2>
+                <table className="shortcuts">
+                    <tbody>
+                    {rows.map(([keys, what]) => (
+                        <tr key={what}>
+                            <td>{keys.map((k, i) => <span key={k}>{i > 0 && <span className="muted small"> {keys[0].endsWith("1") ? "bis" : "oder"} </span>}<kbd>{k}</kbd></span>)}</td>
+                            <td>{what}</td>
+                        </tr>
+                    ))}
+                    </tbody>
+                </table>
+                <div className="actions"><button className="primary" onClick={onClose}>Schließen</button></div>
+            </div>
+        </div>
     );
 }

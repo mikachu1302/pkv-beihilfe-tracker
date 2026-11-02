@@ -62,6 +62,17 @@ describe("Settings", () => {
         expect(original).toEqual(settings);
         expect(await screen.findByText("Einstellungen gespeichert")).toBeInTheDocument();
     });
+
+    it("saves with Ctrl+S", async () => {
+        const user = userEvent.setup();
+        svc.SaveSettings.mockImplementation(async (d: SettingsDTO) => ({settings: d, problems: []}));
+        renderAt("/", "/", <Settings/>);
+        await screen.findByDisplayValue("1,00");
+        await user.clear(tolerance());
+        await user.type(tolerance(), "3,00{Control>}s{/Control}");
+        await waitFor(() => expect(svc.SaveSettings).toHaveBeenCalled());
+        expect(svc.SaveSettings.mock.calls[0][0].clarifyTolerance).toBe("3,00");
+    });
 });
 
 describe("Backups", () => {

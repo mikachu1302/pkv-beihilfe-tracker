@@ -353,6 +353,10 @@ into the repo.
   sender line. An invoice number label without a number ("Rechnungsnummer | Datum" table header)
   takes the number from the line below.
 - The menu can be collapsed to icons (remembered per device), so wide tables fit.
+- Keyboard shortcuts (Cmd on macOS, Ctrl elsewhere; list with "?"): save (S) in the invoice
+  form, inbox and settings, save & next (Enter), new invoice (N), search (F or /), menu entries
+  (1–7), back with Backspace outside fields or Alt+← (⌘[ on macOS), forward. Leaving a form with
+  unsaved changes asks first.
 - Verified end to end: a made-up Beihilfebescheid photo for three demo invoices was recognised,
   all three lines matched "sicher", checksum correct, refunds booked with the notice linked.
 - **M6:** Excel export (`internal/export`): sheets Rechnungen (SOLL/IST, status and dates per

@@ -53,6 +53,24 @@ describe("InvoiceForm", () => {
         expect(await screen.findByText("andere Seite")).toBeInTheDocument(); // navigated to the list
     });
 
+    it("saves with Ctrl+S, also while typing in a field", async () => {
+        const user = userEvent.setup();
+        svc.SaveInvoice.mockResolvedValue({invoice: {...blank, id: "x"}, view: invoiceRow("x", "Dr. Muster", {year: 2026})});
+        renderAt("/rechnung/neu", "/rechnung/neu", <InvoiceForm/>);
+        await user.type(await screen.findByLabelText("Behandler *"), "Dr. Muster");
+        await user.keyboard("{Control>}s{/Control}");
+        await waitFor(() => expect(svc.SaveInvoice).toHaveBeenCalledTimes(1));
+        expect(svc.SaveInvoice.mock.calls[0][0].provider).toBe("Dr. Muster");
+    });
+
+    it("asks before leaving with unsaved changes", async () => {
+        const user = userEvent.setup();
+        renderAt("/rechnung/neu", "/rechnung/neu", <InvoiceForm/>);
+        await user.type(await screen.findByLabelText("Behandler *"), "Dr. Muster");
+        await user.click(screen.getByRole("button", {name: "Abbrechen"}));
+        expect(await screen.findByRole("alertdialog")).toHaveTextContent("noch nicht gespeichert");
+    });
+
     it("shows backend validation errors", async () => {
         const user = userEvent.setup();
         svc.SaveInvoice.mockRejectedValue(new Error("Behandler fehlt\nBetrag fehlt"));

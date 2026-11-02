@@ -7,6 +7,7 @@ import {useConfirm, useToast} from "../components/feedback";
 import {Badge, Empty, ErrorNotice, Field, Notice} from "../components/ui";
 import {recognize, renderPdfPreview} from "../lib/capture";
 import {CATEGORY_LABELS, errMsg, eur, plural, toInput, today} from "../lib/format";
+import {key, useSaveShortcut} from "../lib/shortcuts";
 import {useBackend} from "../lib/useBackend";
 import {useDialog} from "../lib/useDialog";
 import RefundReview from "./RefundReview";
@@ -194,6 +195,7 @@ function InboxItem({item, payers, onDone, onDiscard}: {item: InboxItemDTO; payer
     // document: a later recognition run (the file changed) must not undo that.
     const touched = useRef(false);
     const {url, type, modified} = item;
+    useSaveShortcut(() => void save(), draft !== null && review === null);
 
     async function asRefund(inp: AnalyzeInputDTO) {
         touched.current = true;
@@ -252,7 +254,7 @@ function InboxItem({item, payers, onDone, onDiscard}: {item: InboxItemDTO; payer
     }, [url, type, modified]);
 
     async function save() {
-        if (!draft) return;
+        if (!draft || saving) return;
         setSaving(true);
         try {
             const d = await Svc.CreateInvoiceFromInbox(item.name, draft);
@@ -340,7 +342,7 @@ function InboxItem({item, payers, onDone, onDiscard}: {item: InboxItemDTO; payer
                             </Field>
                         </div>
                         <div className="actions">
-                            <button className="primary" disabled={saving} onClick={save}>Als Rechnung speichern</button>
+                            <button className="primary" disabled={saving} onClick={save} title={`Als Rechnung speichern (${key("S")})`}>Als Rechnung speichern</button>
                             <button className="danger" onClick={onDiscard}>Verwerfen</button>
                         </div>
                         <p className="muted small" style={{marginTop: 8}}>Der Beleg wird mit der Rechnung verknüpft und im Ordner „belege“ abgelegt. Status und Erstattungen lassen sich danach in der Rechnungsliste setzen.</p>
