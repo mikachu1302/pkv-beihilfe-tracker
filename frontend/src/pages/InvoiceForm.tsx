@@ -275,6 +275,7 @@ function MarkField({label, mark, onChange, withNote}: {
 }
 
 function ClaimCard({claim: c, view: v, onChange}: {claim: ClaimDTO; view: ClaimViewDTO; onChange: (p: Partial<ClaimDTO>) => void}) {
+    const toast = useToast();
     const refunds = c.refunds ?? [];
     const setRefund = (i: number, patch: Partial<RefundDTO>) =>
         onChange({refunds: refunds.map((r, j) => (j === i ? {...r, ...patch} : r))});
@@ -329,7 +330,11 @@ function ClaimCard({claim: c, view: v, onChange}: {claim: ClaimDTO; view: ClaimV
                         <tr key={r.id || `new-${i}`}>
                             <td><input aria-label="Erstattungsbetrag" inputMode="decimal" value={r.amount} onChange={e => setRefund(i, {amount: e.target.value})}/></td>
                             <td><input aria-label="Erstattungsdatum" type="date" value={r.date} onChange={e => setRefund(i, {date: e.target.value})}/></td>
-                            <td><input aria-label="Erstattungsnotiz" value={r.note} onChange={e => setRefund(i, {note: e.target.value})}/></td>
+                            <td>
+                                {r.docId
+                                    ? <button className="link" onClick={() => Svc.RefundDocPath(r.docId).then(p => Desktop.OpenPath(p)).catch(toast.error)}>aus Bescheid – öffnen</button>
+                                    : <input aria-label="Erstattungsnotiz" value={r.note} onChange={e => setRefund(i, {note: e.target.value})}/>}
+                            </td>
                             <td><button className="link" aria-label="Erstattung entfernen" onClick={() => removeRefund(i)}>✕</button></td>
                         </tr>
                     ))}

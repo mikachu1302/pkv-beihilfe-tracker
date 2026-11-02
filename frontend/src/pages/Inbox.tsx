@@ -1,13 +1,14 @@
 import {useEffect, useRef, useState} from "react";
 import type {DragEvent} from "react";
 import {Desktop, Svc} from "../api";
-import type {AnalysisDTO, InboxItemDTO, InvoiceDTO, PhoneUploadDTO} from "../api";
+import type {AnalysisDTO, AnalyzeInputDTO, InboxItemDTO, InvoiceDTO, PayerDTO, PhoneUploadDTO, RefundReviewDTO} from "../api";
 import {useApp} from "../App";
 import {useConfirm, useToast} from "../components/feedback";
 import {Badge, Empty, ErrorNotice, Field, Notice} from "../components/ui";
 import {recognize, renderPdfPreview} from "../lib/capture";
 import {CATEGORY_LABELS, errMsg, eur, plural, toInput} from "../lib/format";
 import {useBackend} from "../lib/useBackend";
+import RefundReview from "./RefundReview";
 
 const SOURCE: Record<string, [string, "good" | "warn" | undefined]> = {
     qr: ["aus GiroCode", "good"],
@@ -30,6 +31,7 @@ export default function Inbox() {
     const toast = useToast();
     const confirm = useConfirm();
     const list = useBackend(() => Svc.ListInbox(), [dataVersion]);
+    const settings = useBackend(() => Svc.GetSettings(), [dataVersion]);
     const [selected, setSelected] = useState<string>("");
     const [phone, setPhone] = useState(false);
     const [dragging, setDragging] = useState(false);
@@ -104,7 +106,8 @@ export default function Inbox() {
                             </li>
                         ))}
                     </ul>
-                    {current && <InboxItem key={current.name} item={current} onDone={list.reload} onDiscard={() => discard(current)}/>}
+                    {current && <InboxItem key={current.name} item={current} payers={settings.data?.payers ?? []}
+                                           onDone={list.reload} onDiscard={() => discard(current)}/>}
                 </div>
             )}
             {phone && <PhoneDialog onClose={() => setPhone(false)}/>}
@@ -124,7 +127,7 @@ function Preview({item}: {item: InboxItemDTO}) {
     return <Notice kind="warn">Vorschau nicht möglich.</Notice>;
 }
 
-function InboxItem({item, onDone, onDiscard}: {item: InboxItemDTO; onDone: () => void; onDiscard: () => void}) {
+function InboxItem({item, payers, onDone, onDiscard}: {item: InboxItemDTO; payers: PayerDTO[]; onDone: () => void; onDiscard: () => void}) {
     const toast = useToast();
     const {setYear} = useApp();
     const [status, setStatus] = useState("");
@@ -132,6 +135,16 @@ function InboxItem({item, onDone, onDiscard}: {item: InboxItemDTO; onDone: () =>
     const [analysis, setAnalysis] = useState<AnalysisDTO | null>(null);
     const [draft, setDraft] = useState<InvoiceDTO | null>(null);
     const [saving, setSaving] = useState(false);
+    const [input, setInput] = useState<AnalyzeInputDTO | null>(null);
+    const [review, setReview] = useState<RefundReviewDTO | null>(null);
+
+    async function asRefund(inp: AnalyzeInputDTO) {
+        try {
+            setReview(await Svc.AnalyzeRefund(inp));
+        } catch (e) {
+            setError(errMsg(e));
+        }
+    }
 
     useEffect(() => {
         let stale = false;
@@ -140,9 +153,12 @@ function InboxItem({item, onDone, onDiscard}: {item: InboxItemDTO; onDone: () =>
                 const rec = await recognize(item.url, item.type, msg => !stale && setStatus(msg));
                 if (stale) return;
                 setStatus("Felder werden zugeordnet …");
-                const a = await Svc.AnalyzeDocument({lines: rec.lines, qr: rec.qr});
+                const inp = {lines: rec.lines, qr: rec.qr};
+                const a = await Svc.AnalyzeDocument(inp);
                 if (stale) return;
+                setInput(inp);
                 setAnalysis(a);
+                if (a.kind === "refund") await asRefund(inp);
                 setDraft({...a.draft.invoice, amount: toInput(a.draft.invoice.amount === "0.00" ? "" : a.draft.invoice.amount)});
                 setStatus(rec.ocr ? "Text per Texterkennung gelesen – bitte die Felder prüfen." : "");
             } catch (e) {
@@ -180,24 +196,23 @@ function InboxItem({item, onDone, onDiscard}: {item: InboxItemDTO; onDone: () =>
     const set = (patch: Partial<InvoiceDTO>) => draft && setDraft({...draft, ...patch});
 
     return (
-        <section className="inbox-detail" aria-label={item.name}>
+        <section className={`inbox-detail ${review ? "review" : ""}`} aria-label={item.name}>
             <div className="preview-wrap"><Preview item={item}/></div>
             <div className="panel">
                 <div className="payer-head">
                     <h2>{item.name}</h2>
                     {analysis?.kind === "invoice" && <Badge kind="good">Rechnung erkannt</Badge>}
-                    {analysis?.kind === "refund" && <Badge kind="warn">Erstattungsbeleg erkannt</Badge>}
+                    {analysis?.kind === "refund" && <Badge kind="good">Erstattungsbeleg erkannt</Badge>}
+                    <span className="spacer"/>
+                    {input && (review
+                        ? <button className="link" onClick={() => setReview(null)}>Als Rechnung behandeln</button>
+                        : <button className="link" onClick={() => asRefund(input)}>Als Erstattungsbeleg behandeln</button>)}
                 </div>
                 {status && <p className="muted small" role="status">{status}</p>}
                 {error && <Notice kind="warn">{error} Die Felder lassen sich von Hand ausfüllen.</Notice>}
-                {analysis?.kind === "refund" && (
-                    <Notice kind="warn">
-                        Das sieht nach einem Beihilfebescheid oder einer Leistungsabrechnung aus. Das Zuordnen von
-                        Erstattungsbelegen folgt im nächsten Schritt; bis dahin bleibt die Datei im Posteingang.
-                    </Notice>
-                )}
-                {(analysis?.notes ?? []).map(n => <Notice key={n} kind="warn">{n}</Notice>)}
-                {draft && (
+                {review && <RefundReview inboxName={item.name} initial={review} payers={payers} onDone={onDone} onDiscard={onDiscard}/>}
+                {!review && (analysis?.notes ?? []).map(n => <Notice key={n} kind="warn">{n}</Notice>)}
+                {!review && draft && (
                     <>
                         <div className="grid" style={{marginTop: 8}}>
                             <Field label="Behandler *" htmlFor="ib-provider" hint={src("provider")}>

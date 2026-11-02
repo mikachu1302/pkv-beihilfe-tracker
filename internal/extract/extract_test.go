@@ -154,3 +154,16 @@ func TestParseEPC(t *testing.T) {
 		t.Error("IBAN checksum")
 	}
 }
+
+func TestKindOfNoticeWithoutKeyword(t *testing.T) {
+	d := Analyze(lines(`
+Beihilfestelle Beispiel
+Bescheid vom 20.10.2026
+Ihr Antrag vom 01.09.2026
+Datum       Leistungserbringer   Betrag   Satz     Beihilfe
+05.08.2026  Labor Nord           57,60    70,00 %  40,32
+Auszahlungsbetrag                                  40,32`), nil, now)
+	if d.Kind != KindRefundDoc {
+		t.Errorf("kind = %s", d.Kind)
+	}
+}

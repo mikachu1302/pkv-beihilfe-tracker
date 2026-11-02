@@ -84,13 +84,34 @@ type Alias struct {
 	To   string `json:"to"`
 }
 
+// RefundLayout is the remembered layout of one payer's refund documents:
+// which amount of a position line is the invoice amount, the eligible amount
+// and the refund (1-based position, -1 = last, 0 = not shown).
+type RefundLayout struct {
+	PayerID  string `json:"payerId"`
+	Billed   int    `json:"billed"`
+	Eligible int    `json:"eligible"`
+	Refund   int    `json:"refund"`
+}
+
 // Settings are shared by all devices (stored in the data folder).
 type Settings struct {
 	Payers           []Payer          `json:"payers"`
 	Coverage         []CoveragePeriod `json:"coverage"`
 	Years            []YearSetting    `json:"years,omitempty"`
 	Aliases          []Alias          `json:"aliases,omitempty"`
+	RefundLayouts    []RefundLayout   `json:"refundLayouts,omitempty"`
 	ClarifyTolerance money.Cents      `json:"clarifyTolerance,omitzero"`
+}
+
+// RefundLayoutFor returns the remembered layout of a payer.
+func (s *Settings) RefundLayoutFor(payerID string) (RefundLayout, bool) {
+	for _, l := range s.RefundLayouts {
+		if l.PayerID == payerID {
+			return l, true
+		}
+	}
+	return RefundLayout{}, false
 }
 
 // Payer returns the payer with the given ID.

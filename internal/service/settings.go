@@ -47,13 +47,22 @@ type AliasDTO struct {
 	To   string `json:"to"`
 }
 
+// RefundLayoutDTO is the remembered layout of a payer's refund documents.
+type RefundLayoutDTO struct {
+	PayerID  string `json:"payerId"`
+	Billed   int    `json:"billed"`
+	Eligible int    `json:"eligible"`
+	Refund   int    `json:"refund"`
+}
+
 // SettingsDTO are the shared settings.
 type SettingsDTO struct {
-	Payers           []PayerDTO       `json:"payers"`
-	Coverage         []CoverageDTO    `json:"coverage"`
-	Years            []YearSettingDTO `json:"years"`
-	Aliases          []AliasDTO       `json:"aliases"`
-	ClarifyTolerance string           `json:"clarifyTolerance"`
+	Payers           []PayerDTO        `json:"payers"`
+	Coverage         []CoverageDTO     `json:"coverage"`
+	Years            []YearSettingDTO  `json:"years"`
+	Aliases          []AliasDTO        `json:"aliases"`
+	RefundLayouts    []RefundLayoutDTO `json:"refundLayouts"`
+	ClarifyTolerance string            `json:"clarifyTolerance"`
 }
 
 // SettingsResultDTO is returned after saving: the stored settings and remaining warnings.
@@ -64,7 +73,10 @@ type SettingsResultDTO struct {
 
 func settingsDTO(s *model.Settings) SettingsDTO {
 	d := SettingsDTO{Payers: []PayerDTO{}, Coverage: []CoverageDTO{}, Years: []YearSettingDTO{}, Aliases: []AliasDTO{},
-		ClarifyTolerance: s.Tolerance().String()}
+		RefundLayouts: []RefundLayoutDTO{}, ClarifyTolerance: s.Tolerance().String()}
+	for _, l := range s.RefundLayouts {
+		d.RefundLayouts = append(d.RefundLayouts, RefundLayoutDTO(l))
+	}
 	for _, p := range s.Payers {
 		d.Payers = append(d.Payers, PayerDTO{ID: p.ID, Kind: string(p.Kind), Name: p.Name,
 			ClaimDeadlineYears: p.ClaimDeadlineYears, MinClaimAmount: amountOrEmpty(p.MinClaimAmount), Note: p.Note})
@@ -171,6 +183,11 @@ func settingsFromDTO(d SettingsDTO) (model.Settings, error) {
 		add(err)
 		if ys.Deductible != 0 || ys.AnnualDeduction != 0 || ys.ExpectedPremiumRefund != 0 {
 			s.Years = append(s.Years, ys)
+		}
+	}
+	for _, l := range d.RefundLayouts {
+		if l.PayerID != "" {
+			s.RefundLayouts = append(s.RefundLayouts, model.RefundLayout(l))
 		}
 	}
 	for _, a := range d.Aliases {

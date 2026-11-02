@@ -511,3 +511,142 @@ func TestPhoneUploadReachesInbox(t *testing.T) {
 		t.Error("upload still open after stop")
 	}
 }
+
+func linesOf(text string) []LineDTO {
+	var out []LineDTO
+	for _, t := range strings.Split(strings.TrimSpace(text), "\n") {
+		out = append(out, LineDTO{Text: t, Page: 1})
+	}
+	return out
+}
+
+// Made-up Beihilfebescheid for the three invoices of refundFixture.
+const notice = `
+Beihilfestelle Beispiel
+Bescheid vom 28.04.2026
+Ihr Antrag vom 02.04.2026
+Beleg  Datum       Leistungserbringer   Rechnungsbetrag  beihilfefähig  Satz     Beihilfe
+1      03.03.2026  Dr. Muster           286,40           257,43         70,00 %  180,20
+2      05.03.2026  Apotheke am Markt     45,10            45,10         70,00 %   31,57
+3      10.03.2026  Apotheke am Markt     12,50            12,50         70,00 %    8,75
+Summe                                    344,00           315,03                  220,52
+Kostendämpfungspauschale                                                         -100,00
+Auszahlungsbetrag                                                                 120,52`
+
+func refundFixture(t *testing.T, s *Service) []string {
+	t.Helper()
+	var ids []string
+	for _, in := range []InvoiceDTO{
+		{Provider: "Dr. Muster", InvoiceDate: "2026-03-14", ServiceFrom: "2026-03-03", Amount: "286,40"},
+		{Provider: "Apotheke am Markt", InvoiceDate: "2026-03-05", Amount: "45,10"},
+		{Provider: "Apotheke am Markt", InvoiceDate: "2026-03-10", Amount: "12,50"},
+	} {
+		det, err := s.SaveInvoice(in, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, det.Invoice.ID)
+	}
+	for _, id := range ids[:2] {
+		s.SetMark(MarkChangeDTO{InvoiceID: id, PayerID: "beihilfe-bund", Mark: MarkSubmitted, On: true, Date: "2026-04-01"})
+	}
+	return ids
+}
+
+func TestRefundNoticeMatchedAndBooked(t *testing.T) {
+	s := newTestService(t)
+	ids := refundFixture(t, s)
+	r, err := s.AnalyzeRefund(AnalyzeInputDTO{Lines: linesOf(notice)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.PayerID != "beihilfe-bund" || r.Date != "2026-04-28" || r.ApplicationDate != "2026-04-02" || r.PaidOut != "120.52" ||
+		len(r.Lines) != 3 || !r.ChecksumOK || r.Layout != (LayoutDTO{Billed: 1, Eligible: 2, Refund: -1}) {
+		t.Fatalf("review: %+v", r)
+	}
+	for i, l := range r.Lines {
+		if l.Match != "auto" || len(l.InvoiceIDs) != 1 || l.InvoiceIDs[0] != ids[i] {
+			t.Errorf("line %d: %+v", i+1, l)
+		}
+	}
+	if r.Lines[0].Refund != "180.20" || r.Lines[0].Billed != "286.40" || len(r.Invoices) != 3 {
+		t.Errorf("amounts / invoices: %+v %d", r.Lines[0], len(r.Invoices))
+	}
+
+	inbox, _ := s.AddToInbox("Bescheid.pdf", base64.StdEncoding.EncodeToString([]byte("%PDF bescheid")))
+	res, err := s.ConfirmRefund(inbox, r, true)
+	if err != nil || res.Invoices != 3 || res.Aliases != 0 {
+		t.Fatalf("confirm: %+v %v", res, err)
+	}
+	first, _ := s.GetInvoice(ids[0])
+	bh := claim(first.View, "beihilfe-bund")
+	if bh.Actual != "180.20" || bh.Refunded.Date != "2026-04-28" || bh.Diff != "-20.28" || !bh.SuggestClarify {
+		t.Errorf("first invoice: %+v", bh)
+	}
+	third, _ := s.GetInvoice(ids[2])
+	if c := claim(third.View, "beihilfe-bund"); c.Submitted.Date != "2026-04-02" || c.Actual != "8.75" {
+		t.Errorf("third invoice (submitted backfilled from 'Antrag vom'): %+v", c)
+	}
+	if third.Invoice.Claims[0].Refunds[0].DocID != res.DocID {
+		t.Errorf("refund not linked to the document")
+	}
+	if path, err := s.RefundDocPath(res.DocID); err != nil || !strings.HasSuffix(path, ".pdf") {
+		t.Errorf("document path %q %v", path, err)
+	}
+	if items, _ := s.ListInbox(); len(items) != 0 {
+		t.Error("inbox file not moved")
+	}
+	set, _ := s.GetSettings()
+	if len(set.RefundLayouts) != 1 || set.RefundLayouts[0].Eligible != 2 {
+		t.Errorf("layout not remembered: %+v", set.RefundLayouts)
+	}
+	if d, _ := s.Dashboard(2026); d.Payers[0].Refunded.Count != 3 || d.Payers[0].SuggestClarify != 1 {
+		t.Errorf("dashboard: %+v", d.Payers[0])
+	}
+}
+
+func TestRefundStatementLearnsAlias(t *testing.T) {
+	s := newTestService(t)
+	ids := refundFixture(t, s)
+	r, err := s.AnalyzeRefund(AnalyzeInputDTO{Lines: linesOf(`
+Muster PKV
+Leistungsabrechnung vom 15.05.2026
+03.03.2026   PVS Beispiel eG   286,40   85,92
+Gesamterstattung                         85,92`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.PayerID != "muster-pkv" || len(r.Lines) != 1 || r.Lines[0].InvoiceIDs[0] != ids[0] || !r.ChecksumOK {
+		t.Fatalf("review: %+v", r)
+	}
+	res, err := s.ConfirmRefund("", r, false)
+	if err != nil || res.Aliases != 1 {
+		t.Fatalf("confirm: %+v %v", res, err)
+	}
+	set, _ := s.GetSettings()
+	if len(set.Aliases) != 1 || set.Aliases[0].From != "PVS Beispiel eG" || set.Aliases[0].To != "Dr. Muster" || len(set.RefundLayouts) != 0 {
+		t.Errorf("settings: %+v", set)
+	}
+}
+
+func TestReviewKeepsManualChoices(t *testing.T) {
+	s := newTestService(t)
+	ids := refundFixture(t, s)
+	r, _ := s.AnalyzeRefund(AnalyzeInputDTO{Lines: linesOf(notice)})
+	// The user assigns line 3 to the second invoice by hand and corrects line 2's refund.
+	r.Lines[2].InvoiceIDs, r.Lines[2].Match = []string{ids[1]}, "confirmed"
+	r.Lines[1].Refund, r.Lines[1].Edited = "30,00", true
+	r2, err := s.ReviewRefund(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r2.Lines[2].InvoiceIDs[0] != ids[1] || r2.Lines[2].Match != "confirmed" {
+		t.Errorf("manual choice lost: %+v", r2.Lines[2])
+	}
+	if r2.Lines[1].Refund != "30,00" || r2.ChecksumOK || r2.ChecksumDiff != "-1.57" {
+		t.Errorf("edited amount: %+v diff %s", r2.Lines[1], r2.ChecksumDiff)
+	}
+	if len(r2.Lines[1].InvoiceIDs) != 0 && r2.Lines[1].InvoiceIDs[0] == ids[1] {
+		t.Error("invoice chosen by hand offered again")
+	}
+}

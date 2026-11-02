@@ -305,3 +305,11 @@ table.refunds input { padding: 3px 6px; }
 .preview { display: block; max-width: 100%; height: auto; margin: 0 auto; }
 .dropzone { border: 2px dashed var(--accent); border-radius: 10px; padding: 24px; text-align: center; color: var(--accent); margin-bottom: 12px; }
 @media (max-width: 1200px) { .inbox-detail { grid-template-columns: 1fr; } }
+.refund-review h3 { margin-top: 16px; }
+table.refund-lines input { padding: 3px 6px; }
+table.refund-lines input.num { text-align: right; width: 110px; }
+table.refund-lines select { min-width: 220px; }
+/* refund documents: the review needs the full width, the preview goes below */
+.inbox-detail.review { grid-template-columns: 1fr; }
+.inbox-detail.review .preview-wrap { order: 2; max-height: 60vh; }
+.inbox-detail.review .preview { max-width: 640px; }

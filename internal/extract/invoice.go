@@ -64,8 +64,13 @@ var (
 	streetRe    = regexp.MustCompile(`(?i)(straße|strasse|str\.|weg\b|platz\b|allee\b|gasse\b|ring\b)\s*\d|\b\d{5}\s+[A-ZÄÖÜ][a-zäöüß]`)
 )
 
-var refundWords = []string{"beihilfebescheid", "bescheid über", "festsetzung", "festgesetzt", "beihilfe wird", "leistungsabrechnung",
-	"erstattungsbetrag", "ihre erstattung", "abrechnungsschreiben", "erstattungsabrechnung", "überweisen wir", "beihilfefähig"}
+// Words that point to a refund document or to an invoice (one point each).
+var (
+	refundWords = []string{"bescheid", "festsetzung", "festgesetzt", "antrag vom", "ihr antrag", "auszahlungsbetrag",
+		"beihilfefähig", "erstattungsbetrag", "erstattung", "leistungsabrechnung", "abrechnungsschreiben", "überweisen wir", "beihilfe"}
+	refundStrong = []string{"beihilfebescheid", "leistungsabrechnung", "festsetzung der beihilfe", "erstattungsabrechnung"}
+	invoiceWords = []string{"rechnung", "goä", "goz", "quittung", "kassenbeleg", "zahlbar", "bitte überweisen", "zahlungsziel", "zu zahlen"}
+)
 
 var amountLabels = []struct {
 	word   string
@@ -95,18 +100,21 @@ func Analyze(lines []Line, qr []string, now time.Time) Draft {
 	all := strings.Join(lower, "\n")
 	set := func(field, src string) { d.Sources[field] = src }
 
-	// Kind.
-	refundHits := 0
-	for _, w := range refundWords {
-		if strings.Contains(all, w) {
-			refundHits++
+	// Kind: count indicators of both sides.
+	score := func(words []string) int {
+		n := 0
+		for _, w := range words {
+			if strings.Contains(all, w) {
+				n++
+			}
 		}
+		return n
 	}
+	refund, invoice := score(refundWords), score(invoiceWords)
 	switch {
-	case refundHits >= 2 || strings.Contains(all, "beihilfebescheid") || strings.Contains(all, "leistungsabrechnung"):
+	case score(refundStrong) > 0 || refund >= 2 && refund > invoice:
 		d.Kind = KindRefundDoc
-	case strings.Contains(all, "rechnung") || strings.Contains(all, "quittung") || strings.Contains(all, "kassenbeleg") ||
-		strings.Contains(all, "goä") || strings.Contains(all, "goz") || len(qr) > 0:
+	case invoice > 0 || len(qr) > 0:
 		d.Kind = KindInvoice
 	}
 

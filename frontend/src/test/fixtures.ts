@@ -30,5 +30,5 @@ export const payers: PayerDTO[] = [
 export const settings: SettingsDTO = {
     payers,
     coverage: [{from: "2023-01-01", shares: [{payerId: "bh", rate: "70"}, {payerId: "pkv", rate: "30"}]}],
-    years: [], aliases: [], clarifyTolerance: "1.00",
+    years: [], aliases: [], refundLayouts: [], clarifyTolerance: "1.00",
 };

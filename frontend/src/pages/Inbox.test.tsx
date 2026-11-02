@@ -2,13 +2,14 @@ import {screen, waitFor} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import type {AnalysisDTO, InvoiceDTO} from "../api";
-import {invoiceRow, noMark} from "../test/fixtures";
+import {invoiceRow, noMark, settings} from "../test/fixtures";
 import {renderAt} from "../test/render";
 import Inbox from "./Inbox";
 
 const svc = vi.hoisted(() => ({
     ListInbox: vi.fn(), AnalyzeDocument: vi.fn(), CreateInvoiceFromInbox: vi.fn(), DiscardInbox: vi.fn(),
     AddFilesToInbox: vi.fn(), AddToInbox: vi.fn(), StartPhoneUpload: vi.fn(), StopPhoneUpload: vi.fn(),
+    GetSettings: vi.fn(), AnalyzeRefund: vi.fn(), ReviewRefund: vi.fn(), ConfirmRefund: vi.fn(),
 }));
 const desktop = vi.hoisted(() => ({ChooseFiles: vi.fn()}));
 const capture = vi.hoisted(() => ({recognize: vi.fn(), renderPdfPreview: vi.fn()}));
@@ -32,6 +33,7 @@ beforeEach(() => {
     capture.renderPdfPreview.mockResolvedValue(undefined);
     svc.AnalyzeDocument.mockResolvedValue(analysis());
     svc.StopPhoneUpload.mockResolvedValue(undefined);
+    svc.GetSettings.mockResolvedValue(settings);
 });
 
 describe("Inbox", () => {
@@ -55,10 +57,16 @@ describe("Inbox", () => {
         expect(sent).toMatchObject({provider: "Dr. med. Anna Muster", amount: "290,00", iban: "DE89370400440532013000"});
     });
 
-    it("tells when a refund document was found", async () => {
+    it("opens the review for a refund document", async () => {
         svc.AnalyzeDocument.mockResolvedValue(analysis("refund"));
+        svc.AnalyzeRefund.mockResolvedValue({payerId: "bh", date: "2026-04-28", applicationDate: "", payoutDate: "", paidOut: "",
+            deductions: [], lines: [], layout: {billed: 1, eligible: 0, refund: -1}, linesTotal: "0.00", checksumOk: false,
+            checksumDiff: "0.00", notes: ["Keine Positionen erkannt – bitte die Zeilen von Hand eintragen"], invoices: []});
         renderAt("/", "/", <Inbox/>);
         expect(await screen.findByText("Erstattungsbeleg erkannt")).toBeInTheDocument();
+        expect(await screen.findByText(/Keine Positionen erkannt/)).toBeInTheDocument();
+        expect(screen.getByRole("button", {name: "Als Rechnung behandeln"})).toBeInTheDocument();
+        expect(svc.AnalyzeRefund).toHaveBeenCalledWith({lines: [{text: "Rechnung", page: 1, x: 0, y: 0, w: 0, h: 0}], qr: ["BCD"]});
     });
 
     it("lets the user fill the fields when recognition fails", async () => {

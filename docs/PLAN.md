@@ -1,6 +1,6 @@
 # pkv-beihilfe-tracker – Technical Plan
 
-Status: M1–M4 implemented (core, desktop app, live data folder, capture) · 2026-11-02 – section 16 lists what changed during implementation
+Status: M1–M5 implemented (core, desktop app, live data folder, capture, refund documents) · 2026-11-02 – section 16 lists what changed during implementation
 
 ## 1. Goal
 
@@ -223,7 +223,7 @@ OCR on the device, nothing leaves the data folder. Real data never goes into the
 | M2 | Desktop app: Wails + React, first start (data folder, payers, coverage), invoice list with checkboxes, detail form, dashboard, overview, spreadsheet import with preview → replaces the spreadsheet | done |
 | M3 | Live data folder: file watcher, reload and merge while running, backups (zip snapshots to a second location, important without cloud) | done |
 | M4 | Capture: inbox (`Eingang/`, drag & drop), Tesseract.js, pdf.js, GiroCode, invoice parser, phone upload via QR code | done |
-| M5 | Refund documents: extraction, layout profiles, checksum, matching review, aliases | |
+| M5 | Refund documents: extraction, layout profiles, checksum, matching review, aliases | done |
 | M6 | Submissions and PDF bundle, exports (Excel/CSV/PDF), reminders (deadlines, due dates), release builds for three OS | |
 
 ## 15. Open points
@@ -276,3 +276,19 @@ OCR on the device, nothing leaves the data folder. Real data never goes into the
 - Verified end to end (server mode + headless Firefox): a made-up invoice photo sent through
   the phone page was recognised in about 6 s with all fields correct and saved with the photo
   in `belege/`.
+- **M5:** `extract.AnalyzeRefund` reads refund documents generically: a line with a date and
+  amounts is a position (percentages ignored, summary and deduction lines recognised); header
+  dates ("Bescheid vom", "Antrag vom") and the payout by labels. Instead of marking columns on
+  the page, the layout profile is "which amount of a line means what" (first/second/last),
+  guessed from the number of amounts and remembered per payer once confirmed.
+- Document kind by points: refund indicators ("Bescheid", "Antrag vom", "Auszahlungsbetrag",
+  "Beihilfe" …) against invoice indicators ("Rechnung", "GOÄ", "bitte überweisen" …); the user can
+  switch between both views in the inbox.
+- The review (`ReviewRefund`) keeps lines the user assigned by hand ("confirmed") and amounts
+  edited by hand; the 1:1 matching runs only over the rest.
+- Booking: one refund per line and invoice (a line covering several invoices is split by their
+  amounts), linked to the stored document (doc/line ID, re-booking replaces), "erstattet" with
+  the payout date or the notice date, "eingereicht" backfilled from "Antrag vom", aliases learned
+  from names that differ from the invoice (e.g. billing services).
+- Verified end to end: a made-up Beihilfebescheid photo for three demo invoices was recognised,
+  all three lines matched "sicher", checksum correct, refunds booked with the notice linked.
