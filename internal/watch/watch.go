@@ -1,6 +1,7 @@
 // Package watch notices changes in the data folder made by someone else – a
-// sync tool bringing changes from another device, or the user editing files –
-// while the app is running.
+// sync tool bringing changes from another device, the phone upload, or the
+// user editing files – while the app is running. Relevant are record files
+// (*.json) and any file in the inbox folder.
 //
 // It watches the data folder, its year folders and their record folders
 // (fsnotify is not recursive, so new folders are added as they appear),
@@ -18,6 +19,9 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
+// InboxDir is the inbox folder whose files are all relevant.
+const InboxDir = "Eingang"
+
 // Watcher watches one data folder.
 type Watcher struct {
 	fs       *fsnotify.Watcher
@@ -26,10 +30,12 @@ type Watcher struct {
 	own      func(path string) bool
 	onChange func()
 
-	mu    sync.Mutex
-	timer *time.Timer
-	done  chan struct{}
-	wg    sync.WaitGroup
+	mu      sync.Mutex
+	timer   *time.Timer
+	pending map[string]bool // changed paths since the last check (true = folder)
+	force   bool            // something may have been missed (watcher error)
+	done    chan struct{}
+	wg      sync.WaitGroup
 }
 
 // Start watches root. own reports whether a changed path was written by the
@@ -39,7 +45,8 @@ func Start(root string, debounce time.Duration, own func(path string) bool, onCh
 	if err != nil {
 		return nil, err
 	}
-	w := &Watcher{fs: fw, root: root, debounce: debounce, own: own, onChange: onChange, done: make(chan struct{})}
+	w := &Watcher{fs: fw, root: root, debounce: debounce, own: own, onChange: onChange, done: make(chan struct{}),
+		pending: map[string]bool{}}
 	if err := w.addTree(root, 0); err != nil {
 		_ = fw.Close()
 		return nil, err
@@ -111,6 +118,9 @@ func (w *Watcher) loop() {
 				return
 			}
 			// Errors (e.g. queue overflow) mean we may have missed something.
+			w.mu.Lock()
+			w.force = true
+			w.mu.Unlock()
 			w.schedule()
 		}
 	}
@@ -126,20 +136,56 @@ func (w *Watcher) handle(ev fsnotify.Event) {
 			if d := w.depth(ev.Name); d <= 2 {
 				_ = w.addTree(ev.Name, d)
 				// Files may have arrived before the folder was watched.
-				if w.foreignFiles(ev.Name) {
-					w.schedule()
-				}
+				w.note(ev.Name, true)
 			}
 			return
 		}
 	}
-	if !strings.EqualFold(filepath.Ext(name), ".json") {
+	if !w.relevant(ev.Name) {
 		return
 	}
-	if w.own != nil && w.own(ev.Name) {
-		return
-	}
+	w.note(ev.Name, false)
+}
+
+// note remembers a changed path. Whether it was the app's own change is
+// checked only when the burst has settled: the app records its writes right
+// after renaming a file into place, which can be after the event arrives.
+func (w *Watcher) note(path string, dir bool) {
+	w.mu.Lock()
+	w.pending[path] = w.pending[path] || dir
+	w.mu.Unlock()
 	w.schedule()
+}
+
+// fire runs when a burst has settled: it reports a change if any noted path
+// was not written by the app itself.
+func (w *Watcher) fire() {
+	w.mu.Lock()
+	paths, force := w.pending, w.force
+	w.pending, w.force = map[string]bool{}, false
+	w.mu.Unlock()
+	foreign := force
+	for p, dir := range paths {
+		if foreign {
+			break
+		}
+		if dir {
+			foreign = w.foreignFiles(p)
+		} else {
+			foreign = w.own == nil || !w.own(p)
+		}
+	}
+	if foreign {
+		w.onChange()
+	}
+}
+
+// relevant: a record file, or any file in the inbox folder.
+func (w *Watcher) relevant(path string) bool {
+	if strings.EqualFold(filepath.Ext(path), ".json") {
+		return true
+	}
+	return filepath.Dir(path) == filepath.Join(w.root, InboxDir)
 }
 
 // foreignFiles reports whether dir (or its sub folders) holds record files
@@ -150,7 +196,7 @@ func (w *Watcher) foreignFiles(dir string) bool {
 		if err != nil || found {
 			return filepath.SkipAll
 		}
-		if !d.IsDir() && !hidden(d.Name()) && strings.EqualFold(filepath.Ext(path), ".json") && (w.own == nil || !w.own(path)) {
+		if !d.IsDir() && !hidden(d.Name()) && w.relevant(path) && (w.own == nil || !w.own(path)) {
 			found = true
 		}
 		return nil
@@ -174,7 +220,7 @@ func (w *Watcher) schedule() {
 		select {
 		case <-w.done:
 		default:
-			w.onChange()
+			w.fire()
 		}
 	})
 }

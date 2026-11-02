@@ -38,11 +38,11 @@ func TestCreateAndList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer zr.Close()
 	var names []string
 	for _, f := range zr.File {
 		names = append(names, f.Name)
 	}
+	zr.Close() // Windows cannot delete open files (pruning below)
 	slices.Sort(names)
 	want := []string{"2026/rechnungen/a.json", "belege/abc.pdf", "einstellungen.json"}
 	if !slices.Equal(names, want) {

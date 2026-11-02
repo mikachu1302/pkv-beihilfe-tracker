@@ -101,3 +101,15 @@ func TestNewFolderWithFiles(t *testing.T) {
 	os.WriteFile(mine, []byte(`{}`), 0o644)
 	quiet(t, ch)
 }
+
+func TestInboxFilesAreRelevant(t *testing.T) {
+	root := t.TempDir()
+	inbox := filepath.Join(root, InboxDir)
+	os.MkdirAll(inbox, 0o755)
+	os.MkdirAll(filepath.Join(root, "belege"), 0o755)
+	_, ch := start(t, root, nil)
+	os.WriteFile(filepath.Join(root, "belege", "abc.pdf"), []byte("%PDF"), 0o644)
+	quiet(t, ch) // documents folder: not relevant
+	os.WriteFile(filepath.Join(inbox, "Handy-1.jpg"), []byte("jpg"), 0o644)
+	wait(t, ch)
+}
