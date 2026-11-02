@@ -50,6 +50,6 @@ describe("Overview", () => {
         expect(within(row2026).getByText("150,00 €")).toBeInTheDocument();
         expect(screen.getAllByRole("columnheader", {name: /Ausstand/})).toHaveLength(2);
         const avgRow = screen.getByRole("cell", {name: "Ø pro Jahr"}).closest("tr") as HTMLElement;
-        expect(within(avgRow).getByText("100,00 €")).toBeInTheDocument(); // 200 € over two years
+        expect(within(avgRow).getAllByRole("cell")[5]).toHaveTextContent("100,00 €"); // Beihilfe: 200 € over two years
     });
 });
