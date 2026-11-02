@@ -14,15 +14,17 @@ compared with the premium refund (Beitragsrückerstattung). The user interface i
 - **Import** of the old spreadsheet with preview and duplicate check.
 - **Data stays yours**: one JSON file per record in a folder of your choice, synced by any
   tool (Nextcloud, iCloud Drive, Google Drive, OneDrive, Dropbox, Syncthing …) or not at all.
-  There is no server and no account, and nothing runs in the cloud.
+  There is no server and no account, and nothing runs in the cloud. Changes from other devices
+  show up while the app runs; conflict copies are merged field by field.
+- **Backups**: daily zip snapshots to a second folder (USB stick, NAS, another cloud).
 
-Status: milestones M1 (core) and M2 (desktop app) are done; capture from scans and refund
-documents follow. See [docs/PLAN.md](docs/PLAN.md).
+Status: milestones M1 (core), M2 (desktop app) and M3 (live data folder, backups) are done;
+capture from scans and refund documents follow. See [docs/PLAN.md](docs/PLAN.md).
 
 ## Build and run
 
 Requirements: Go 1.26, Node 22, the Wails CLI
-(`go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0`). On Linux also the GTK3 and
+(`go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0`, on Linux with `-tags gtk3`). On Linux also the GTK3 and
 WebKitGTK 4.1 development packages (Fedora: `gtk3-devel webkit2gtk4.1-devel`, Debian/Ubuntu:
 `libgtk-3-dev libwebkit2gtk-4.1-dev`).
 
@@ -61,7 +63,10 @@ To look at the UI in a browser (e.g. for headless screenshots), build the Wails 
 | `internal/match` | Matching refund document lines to invoices |
 | `internal/store` | Data folder: file per record, atomic writes, merging conflict copies |
 | `internal/xlsximport` | Import of the old spreadsheet |
-| `internal/config` | Device-local settings (data folder, device ID) |
+| `internal/leaf` | JSON leaves: flatten, rebuild, three-way rebase |
+| `internal/watch` | Notices changes in the data folder made by others |
+| `internal/backup` | Zip snapshots of the data folder |
+| `internal/config` | Device-local settings (data folder, device ID, backup folder) |
 | `internal/service` | Methods bound to the frontend (Wails), German messages |
 | `frontend/` | React + TypeScript UI (Vite, Vitest) |
 | `cmd/demodata` | Generator for a demo data folder |

@@ -69,9 +69,8 @@ var kindDirs = map[Kind]string{
 const settingsID = "settings"
 
 var (
-	errNotObject = errors.New("record data is not a JSON object")
-	yearDirRe    = regexp.MustCompile(`^\d{4}$`)
-	extRe        = regexp.MustCompile(`^\.[a-z0-9]{1,5}$`)
+	yearDirRe = regexp.MustCompile(`^\d{4}$`)
+	extRe     = regexp.MustCompile(`^\.[a-z0-9]{1,5}$`)
 )
 
 // ErrNewerSchema means a file was written by a newer version of the app.
@@ -109,6 +108,15 @@ type Store struct {
 	mu    sync.Mutex
 	paths map[string]string   // record key → path relative to root
 	base  map[string]envelope // record key → version last read or written
+
+	ownMu sync.Mutex
+	own   map[string]ownStamp // absolute path → state after our last write or removal
+}
+
+type ownStamp struct {
+	size    int64
+	mod     time.Time
+	removed bool
 }
 
 // Open prepares root (created if missing) for use by the device with the given ID.
@@ -122,7 +130,7 @@ func Open(root, device string) (*Store, error) {
 		}
 	}
 	return &Store{root: root, device: device, now: time.Now,
-		paths: map[string]string{}, base: map[string]envelope{}}, nil
+		paths: map[string]string{}, base: map[string]envelope{}, own: map[string]ownStamp{}}, nil
 }
 
 // Root returns the data folder.
@@ -225,14 +233,14 @@ func (s *Store) Load() (*Data, []Issue, error) {
 			return nil, nil, err
 		}
 		if len(g) > 1 || g[0].path != path {
-			if err := writeEnvelope(filepath.Join(s.root, path), env); err != nil {
+			if err := s.write(filepath.Join(s.root, path), env); err != nil {
 				return nil, nil, err
 			}
 			for _, l := range g {
 				if l.path == path {
 					continue
 				}
-				if err := os.Remove(filepath.Join(s.root, l.path)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				if err := s.remove(filepath.Join(s.root, l.path)); err != nil {
 					return nil, nil, err
 				}
 				text := "Konfliktkopie zusammengeführt"
@@ -417,11 +425,11 @@ func save[T any](s *Store, kind Kind, id string, rec T) (T, error) {
 	if err != nil {
 		return zero, err
 	}
-	if err := writeEnvelope(filepath.Join(s.root, path), env); err != nil {
+	if err := s.write(filepath.Join(s.root, path), env); err != nil {
 		return zero, err
 	}
 	if oldPath != "" && oldPath != path {
-		if err := os.Remove(filepath.Join(s.root, oldPath)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := s.remove(filepath.Join(s.root, oldPath)); err != nil {
 			return zero, err
 		}
 	}
@@ -469,6 +477,47 @@ func (s *Store) AddDocument(r io.Reader, ext string) (string, error) {
 // DocumentPath returns the full path of a stored document.
 func (s *Store) DocumentPath(name string) string {
 	return filepath.Join(s.root, DocumentsDir, filepath.Base(name))
+}
+
+// write stores env at path and remembers the result as our own change.
+func (s *Store) write(path string, env envelope) error {
+	if err := writeEnvelope(path, env); err != nil {
+		return err
+	}
+	if fi, err := os.Stat(path); err == nil {
+		s.ownMu.Lock()
+		s.own[path] = ownStamp{size: fi.Size(), mod: fi.ModTime()}
+		s.ownMu.Unlock()
+	}
+	return nil
+}
+
+// remove deletes path (a missing file is fine) and remembers it as our own change.
+func (s *Store) remove(path string) error {
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	s.ownMu.Lock()
+	s.own[path] = ownStamp{removed: true}
+	s.ownMu.Unlock()
+	return nil
+}
+
+// IsOwnChange reports whether the file at path is exactly as this store last
+// wrote or removed it – i.e. a change event for it came from the app itself.
+// Safe to call from other goroutines.
+func (s *Store) IsOwnChange(path string) bool {
+	s.ownMu.Lock()
+	st, ok := s.own[path]
+	s.ownMu.Unlock()
+	if !ok {
+		return false
+	}
+	fi, err := os.Stat(path)
+	if st.removed {
+		return errors.Is(err, fs.ErrNotExist)
+	}
+	return err == nil && fi.Size() == st.size && fi.ModTime().Equal(st.mod)
 }
 
 func readEnvelope(path string) (envelope, error) {

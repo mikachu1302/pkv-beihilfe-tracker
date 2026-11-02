@@ -34,6 +34,7 @@ func main() {
 		},
 	})
 	desktop.app = app
+	svc.SetEmitter(app.Event) // "data-changed" when another device changed the data folder
 
 	desktop.window = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:            "PKV Beihilfe Tracker",

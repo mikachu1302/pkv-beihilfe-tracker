@@ -19,6 +19,9 @@ const fileName = "config.json"
 type Config struct {
 	DataDir  string `json:"dataDir"`
 	DeviceID string `json:"deviceId"`
+	// BackupDir receives zip snapshots of the data folder (device-local:
+	// each device may keep its own backups).
+	BackupDir string `json:"backupDir,omitempty"`
 }
 
 // Dir returns the folder for the device-local configuration.

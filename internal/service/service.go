@@ -15,6 +15,7 @@ import (
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/config"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/model"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/store"
+	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/watch"
 )
 
 // Version is set at build time (-ldflags "-X …/service.Version=…").
@@ -22,6 +23,21 @@ var Version = "dev"
 
 // ErrNoDataDir means no data folder has been chosen yet.
 var ErrNoDataDir = errors.New("kein Datenordner gewählt")
+
+// EventDataChanged is emitted (with a DataChangedDTO) after the data folder
+// was reloaded because someone else changed it.
+const EventDataChanged = "data-changed"
+
+// DataChangedDTO is the payload of EventDataChanged.
+type DataChangedDTO struct {
+	Issues int    `json:"issues"` // notes from loading (e.g. merged conflict copies)
+	Error  string `json:"error"`
+}
+
+// Emitter sends events to the frontend (application.EventManager).
+type Emitter interface {
+	Emit(name string, data ...any) bool
+}
 
 // Service holds the state of the running app.
 type Service struct {
@@ -34,6 +50,12 @@ type Service struct {
 	issues  []store.Issue
 	loadErr error
 	pending map[string]*pendingImport
+
+	watcher       *watch.Watcher
+	watchErr      error
+	watchDebounce time.Duration
+	emitter       Emitter
+	backupErr     error
 
 	now func() time.Time
 }
@@ -53,7 +75,7 @@ func New() *Service {
 func NewWithConfigDir(dir string) *Service { return newService(dir) }
 
 func newService(cfgDir string) *Service {
-	s := &Service{cfgDir: cfgDir, now: time.Now, pending: map[string]*pendingImport{}}
+	s := &Service{cfgDir: cfgDir, now: time.Now, pending: map[string]*pendingImport{}, watchDebounce: 800 * time.Millisecond}
 	if cfgDir == "" {
 		return s
 	}
@@ -82,6 +104,57 @@ func (s *Service) open(dir string) error {
 		return fmt.Errorf("Datenordner kann nicht gelesen werden: %w", err)
 	}
 	s.st, s.data, s.issues, s.loadErr = st, data, issues, nil
+	s.stopWatch()
+	s.watcher, s.watchErr = watch.Start(dir, s.watchDebounce, st.IsOwnChange, s.externalChange)
+	s.autoBackup()
+	return nil
+}
+
+func (s *Service) stopWatch() {
+	if s.watcher != nil {
+		_ = s.watcher.Close()
+		s.watcher = nil
+	}
+}
+
+// externalChange reloads the data folder after someone else changed it.
+func (s *Service) externalChange() {
+	s.mu.Lock()
+	if s.st == nil {
+		s.mu.Unlock()
+		return
+	}
+	ev := DataChangedDTO{}
+	data, issues, err := s.st.Load()
+	if err != nil {
+		ev.Error = err.Error()
+	} else {
+		s.data, s.issues = data, issues
+		ev.Issues = len(issues)
+	}
+	em := s.emitter
+	s.mu.Unlock()
+	if em != nil {
+		em.Emit(EventDataChanged, ev)
+	}
+}
+
+// SetEmitter connects the service to the app's event bus.
+//
+//wails:ignore
+func (s *Service) SetEmitter(e Emitter) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.emitter = e
+}
+
+// ServiceShutdown stops watching the data folder (called by Wails on exit).
+//
+//wails:ignore
+func (s *Service) ServiceShutdown() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.stopWatch()
 	return nil
 }
 
@@ -115,6 +188,9 @@ type StatusDTO struct {
 	Error      string       `json:"error"`
 	Issues     []IssueDTO   `json:"issues"`
 	Problems   []ProblemDTO `json:"problems"`
+	// Warning: the app keeps working, but something is not as it should be
+	// (no live updates, last backup failed).
+	Warnings []string `json:"warnings"`
 }
 
 // Status returns the current state.
@@ -125,7 +201,7 @@ func (s *Service) Status() StatusDTO {
 }
 
 func (s *Service) status() StatusDTO {
-	st := StatusDTO{Version: Version, Issues: []IssueDTO{}, Problems: []ProblemDTO{}}
+	st := StatusDTO{Version: Version, Issues: []IssueDTO{}, Problems: []ProblemDTO{}, Warnings: []string{}}
 	if s.cfg != nil {
 		st.DataDir = s.cfg.DataDir
 		st.DeviceID = s.cfg.DeviceID
@@ -140,6 +216,12 @@ func (s *Service) status() StatusDTO {
 		return st
 	}
 	st.Configured = true
+	if s.watchErr != nil {
+		st.Warnings = append(st.Warnings, "Änderungen von anderen Geräten werden erst nach „Neu einlesen“ sichtbar: "+s.watchErr.Error())
+	}
+	if s.backupErr != nil {
+		st.Warnings = append(st.Warnings, "Letzte automatische Sicherung fehlgeschlagen: "+s.backupErr.Error())
+	}
 	st.NeedsSetup = len(s.data.Settings.Payers) == 0 || len(s.data.Settings.Coverage) == 0
 	for _, i := range s.issues {
 		st.Issues = append(st.Issues, IssueDTO(i))

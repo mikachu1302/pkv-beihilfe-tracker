@@ -63,7 +63,7 @@ func main() {
 		amount := p.min + r.Float64()*(p.max-p.min)
 		invoiceDate := t.AddDate(0, 0, 3+r.IntN(25))
 		det, err := s.SaveInvoice(service.InvoiceDTO{Provider: p.name, Category: p.category, InvoiceDate: day(invoiceDate),
-			ServiceFrom: day(t), Amount: fmt.Sprintf("%.2f", amount), Reference: fmt.Sprintf("R-%05d", 1000+count)})
+			ServiceFrom: day(t), Amount: fmt.Sprintf("%.2f", amount), Reference: fmt.Sprintf("R-%05d", 1000+count)}, nil)
 		check(err)
 		id := det.Invoice.ID
 		count++

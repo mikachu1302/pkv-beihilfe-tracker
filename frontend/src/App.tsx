@@ -1,9 +1,10 @@
-import {createContext, useContext, useState} from "react";
+import {createContext, useContext, useEffect, useState} from "react";
+import {Events} from "@wailsio/runtime";
 import type {ReactNode} from "react";
 import {HashRouter, Navigate, NavLink, Route, Routes} from "react-router";
 import {Svc} from "./api";
 import type {StatusDTO} from "./api";
-import {FeedbackProvider} from "./components/feedback";
+import {FeedbackProvider, useToast} from "./components/feedback";
 import {ErrorNotice, Loading, Notice} from "./components/ui";
 import {useBackend} from "./lib/useBackend";
 import Dashboard from "./pages/Dashboard";
@@ -20,6 +21,8 @@ export interface AppState {
     /** Leistungsjahr shown on Dashboard and Rechnungen (kept when switching pages). */
     year: number;
     setYear: (year: number) => void;
+    /** Increases whenever the data folder was changed from outside (another device). */
+    dataVersion: number;
 }
 
 export const AppContext = createContext<AppState | null>(null);
@@ -61,9 +64,11 @@ function Layout({status, children}: {status: StatusDTO; children: ReactNode}) {
 function StatusNotices({status}: {status: StatusDTO}) {
     const issues = status.issues ?? [];
     const problems = status.problems ?? [];
+    const warnings = status.warnings ?? [];
     return (
         <>
             {status.error && <ErrorNotice error={status.error}/>}
+            {warnings.map(w => <Notice key={w} kind="warn">{w}</Notice>)}
             {issues.length > 0 && (
                 <Notice kind="warn">
                     Beim Einlesen des Datenordners:
@@ -101,16 +106,34 @@ function AppRoutes({status}: {status: StatusDTO}) {
     );
 }
 
+/** Listens for changes another device made to the data folder. */
+function LiveUpdates({onChange}: {onChange: () => void}) {
+    const toast = useToast();
+    useEffect(() => Events.On("data-changed", ev => {
+        const d = ev.data as {issues?: number; error?: string} | undefined;
+        if (d?.error) toast.show(`Datenordner konnte nicht neu eingelesen werden: ${d.error}`, true);
+        else toast.show(d?.issues ? "Änderungen übernommen – bitte die Hinweise oben beachten" : "Änderungen aus dem Datenordner übernommen");
+        onChange();
+    }), [toast, onChange]);
+    return null;
+}
+
 export default function App() {
     const {data: status, error, reload} = useBackend(() => Svc.Status(), []);
     const [year, setYear] = useState(new Date().getFullYear());
+    const [dataVersion, setDataVersion] = useState(0);
+    const [onChange] = useState(() => () => {
+        setDataVersion(v => v + 1);
+        reload();
+    });
     return (
         <FeedbackProvider>
+            <LiveUpdates onChange={onChange}/>
             <HashRouter>
                 {error && <main className="content"><ErrorNotice error={error}/></main>}
                 {!status && !error && <Loading/>}
                 {status && (
-                    <AppContext.Provider value={{status, reloadStatus: reload, year, setYear}}>
+                    <AppContext.Provider value={{status, reloadStatus: reload, year, setYear, dataVersion}}>
                         <AppRoutes status={status}/>
                     </AppContext.Provider>
                 )}

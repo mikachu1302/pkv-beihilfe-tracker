@@ -62,7 +62,7 @@ jobs:
       - name: System libraries (needed to load the Go packages for bindings)
         run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
       - name: Wails CLI
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
+        run: go install -tags gtk3 github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
       - run: npm ci
         working-directory: frontend
       - name: Generate TypeScript bindings
@@ -97,6 +97,6 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
       - name: Wails CLI
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
+        run: go install ${{ runner.os == 'Linux' && '-tags gtk3' || '' }} github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
       - name: Build
         run: wails3 task build

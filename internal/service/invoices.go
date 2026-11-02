@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/calc"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/civil"
+	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/leaf"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/model"
 )
 
@@ -114,8 +116,11 @@ func validateInvoice(inv *model.Invoice) error {
 	return nil
 }
 
-// SaveInvoice creates (empty ID) or updates an invoice.
-func (s *Service) SaveInvoice(d InvoiceDTO) (InvoiceDetailDTO, error) {
+// SaveInvoice creates (empty ID) or updates an invoice. original is the
+// invoice as it was loaded into the form (nil for new invoices): if the
+// record changed in the meantime – e.g. on another device – only the fields
+// changed in the form are applied to the current version.
+func (s *Service) SaveInvoice(d InvoiceDTO, original *InvoiceDTO) (InvoiceDetailDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	st, data, err := s.ready()
@@ -126,12 +131,24 @@ func (s *Service) SaveInvoice(d InvoiceDTO) (InvoiceDetailDTO, error) {
 	if err != nil {
 		return InvoiceDetailDTO{}, err
 	}
-	if err := validateInvoice(&inv); err != nil {
-		return InvoiceDetailDTO{}, err
-	}
 	if inv.ID == "" {
 		inv.ID = s.newID()
-	} else if _, err := findInvoice(data, inv.ID); err != nil {
+	} else {
+		cur, err := findInvoice(data, inv.ID)
+		if err != nil {
+			return InvoiceDetailDTO{}, err
+		}
+		if original != nil && original.ID == inv.ID {
+			base, err := fromDTO(*original, &data.Settings, s.newID)
+			if err != nil {
+				return InvoiceDetailDTO{}, err
+			}
+			if inv, err = rebaseInvoice(base, inv, *cur); err != nil {
+				return InvoiceDetailDTO{}, err
+			}
+		}
+	}
+	if err := validateInvoice(&inv); err != nil {
 		return InvoiceDetailDTO{}, err
 	}
 	saved, err := st.SaveInvoice(inv)
@@ -140,6 +157,29 @@ func (s *Service) SaveInvoice(d InvoiceDTO) (InvoiceDetailDTO, error) {
 	}
 	replaceInvoice(data, saved)
 	return s.detail(&data.Settings, &saved), nil
+}
+
+// rebaseInvoice applies the changes from base to mine onto theirs (field by field).
+func rebaseInvoice(base, mine, theirs model.Invoice) (model.Invoice, error) {
+	b, err := json.Marshal(base)
+	if err != nil {
+		return mine, err
+	}
+	m, err := json.Marshal(mine)
+	if err != nil {
+		return mine, err
+	}
+	t, err := json.Marshal(theirs)
+	if err != nil {
+		return mine, err
+	}
+	out, err := leaf.Rebase(b, m, t)
+	if err != nil {
+		return mine, err
+	}
+	var inv model.Invoice
+	err = json.Unmarshal(out, &inv)
+	return inv, err
 }
 
 // DeleteInvoice marks an invoice as deleted (it stays in the file, so the

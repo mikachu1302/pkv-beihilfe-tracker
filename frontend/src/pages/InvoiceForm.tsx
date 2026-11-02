@@ -35,8 +35,12 @@ export default function InvoiceForm() {
     const navigate = useNavigate();
     const toast = useToast();
     const confirm = useConfirm();
-    const {setYear} = useApp();
+    const {setYear, dataVersion} = useApp();
     const [inv, setInv] = useState<InvoiceDTO | null>(null);
+    // The invoice as loaded (or last saved): saving sends it along, so changes
+    // another device made meanwhile are kept (only fields edited here win).
+    const [original, setOriginal] = useState<InvoiceDTO | null>(null);
+    const [changedElsewhere, setChangedElsewhere] = useState(false);
     const [view, setView] = useState<InvoiceRowDTO | null>(null);
     const [loadError, setLoadError] = useState("");
     const [inputError, setInputError] = useState("");
@@ -49,14 +53,26 @@ export default function InvoiceForm() {
         setInv(null);
         setView(null);
         setLoadError("");
+        setChangedElsewhere(false);
         (id ? Svc.GetInvoice(id) : Svc.NewInvoice()).then(
             d => {
                 setInv(forForm(d.invoice));
+                setOriginal(id ? d.invoice : null);
                 setView(d.view);
             },
             e => setLoadError(errMsg(e)),
         );
     }, [id]);
+
+    // Another device changed the data folder: tell the user if it was this invoice.
+    useEffect(() => {
+        if (!dataVersion || !id || !original) return;
+        Svc.GetInvoice(id).then(
+            d => setChangedElsewhere(JSON.stringify(d.invoice) !== JSON.stringify(original)),
+            () => setChangedElsewhere(true),
+        );
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dataVersion]);
 
     // Recompute SOLL/IST shortly after every change, without touching the input.
     function update(next: InvoiceDTO) {
@@ -93,7 +109,7 @@ export default function InvoiceForm() {
         setSaving(true);
         setSaveError("");
         try {
-            const d = await Svc.SaveInvoice(inv);
+            const d = await Svc.SaveInvoice(inv, original);
             toast.show("Rechnung gespeichert");
             setYear(d.view.year);
             if (next === "new") {
@@ -101,6 +117,7 @@ export default function InvoiceForm() {
                 else {
                     const blank = await Svc.NewInvoice();
                     setInv(forForm(blank.invoice));
+                    setOriginal(null);
                     setView(blank.view);
                 }
             } else {
@@ -132,6 +149,12 @@ export default function InvoiceForm() {
                 {view.year > 0 && <Badge>Leistungsjahr {view.year}</Badge>}
             </div>
             {saveError && <ErrorNotice error={saveError}/>}
+            {changedElsewhere && (
+                <Notice kind="warn">
+                    Diese Rechnung wurde inzwischen auf einem anderen Gerät geändert. Beim Speichern werden nur die hier
+                    geänderten Felder übernommen, die übrigen Änderungen bleiben erhalten.
+                </Notice>
+            )}
             {inputError && <Notice kind="warn"><span style={{whiteSpace: "pre-line"}}>{inputError}</span></Notice>}
 
             <fieldset className="panel">

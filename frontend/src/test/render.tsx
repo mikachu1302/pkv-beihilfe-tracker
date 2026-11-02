@@ -8,12 +8,12 @@ import {FeedbackProvider} from "../components/feedback";
 
 export const testStatus: StatusDTO = {
     configured: true, needsSetup: false, dataDir: "/daten", version: "test", deviceId: "abc123", error: "",
-    issues: [], problems: [],
+    issues: [], problems: [], warnings: [],
 };
 
 /** Renders an element inside router, feedback and app-state providers. */
 export function renderAt(path: string, routePattern: string, element: ReactElement, app?: Partial<AppState>) {
-    const state: AppState = {status: testStatus, reloadStatus: () => {}, year: 2026, setYear: () => {}, ...app};
+    const state: AppState = {status: testStatus, reloadStatus: () => {}, year: 2026, setYear: () => {}, dataVersion: 0, ...app};
     return render(
         <FeedbackProvider>
             <AppContext.Provider value={state}>

@@ -10,9 +10,9 @@ import {useBackend} from "../lib/useBackend";
 
 /** Overview of all Leistungsjahre: refunds per payer and own share. */
 export default function Overview() {
-    const {setYear} = useApp();
+    const {setYear, dataVersion} = useApp();
     const navigate = useNavigate();
-    const ov = useBackend(() => Svc.Overview(), []);
+    const ov = useBackend(() => Svc.Overview(), [dataVersion]);
     if (ov.error) return <ErrorNotice error={ov.error}/>;
     if (!ov.data) return <Loading/>;
     const years = (ov.data.years ?? []).filter(y => y.invoices > 0 || num(y.allowances) > 0);

@@ -4,84 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"maps"
-	"slices"
 	"strings"
+
+	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/leaf"
 )
 
-// A record's data is flattened into leaves: every value that is not an
-// object (strings, numbers, booleans, null, arrays) gets a path such as
-// "/claims/bh/submitted/date". Each leaf has a timestamp in the clock; a merge
-// takes, leaf by leaf, the value with the newer timestamp. Arrays are leaves
-// as a whole.
-
-// flatten returns the leaves of a JSON object with their compact JSON values.
-func flatten(data json.RawMessage) (map[string]json.RawMessage, error) {
-	out := map[string]json.RawMessage{}
-	if len(data) == 0 {
-		return out, nil
-	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.UseNumber()
-	var v any
-	if err := dec.Decode(&v); err != nil {
-		return nil, err
-	}
-	obj, ok := v.(map[string]any)
-	if !ok {
-		return nil, errNotObject
-	}
-	return out, walk("", obj, out)
-}
-
-func walk(prefix string, obj map[string]any, out map[string]json.RawMessage) error {
-	for k, v := range obj {
-		p := prefix + "/" + escape(k)
-		if child, ok := v.(map[string]any); ok {
-			if err := walk(p, child, out); err != nil {
-				return err
-			}
-			continue
-		}
-		raw, err := json.Marshal(v)
-		if err != nil {
-			return err
-		}
-		out[p] = raw
-	}
-	return nil
-}
-
-// unflatten rebuilds a JSON object from leaves.
-func unflatten(leaves map[string]json.RawMessage) (json.RawMessage, error) {
-	root := map[string]any{}
-	for _, p := range slices.Sorted(maps.Keys(leaves)) {
-		parts := splitPath(p)
-		node := root
-		for i, part := range parts {
-			if i == len(parts)-1 {
-				node[part] = leaves[p]
-				break
-			}
-			child, ok := node[part].(map[string]any)
-			if !ok {
-				child = map[string]any{}
-				node[part] = child
-			}
-			node = child
-		}
-	}
-	return json.Marshal(root)
-}
-
-func escape(k string) string { return strings.NewReplacer("~", "~0", "/", "~1").Replace(k) }
-
-func splitPath(p string) []string {
-	parts := strings.Split(strings.TrimPrefix(p, "/"), "/")
-	for i, s := range parts {
-		parts[i] = strings.NewReplacer("~1", "/", "~0", "~").Replace(s)
-	}
-	return parts
-}
+// Every leaf of a record (see package leaf) has a timestamp in the clock; a
+// merge takes, leaf by leaf, the value with the newer timestamp. Arrays are
+// leaves as a whole.
 
 // compareStamps orders clock values "2006-01-02T15:04:05.000Z@device". The
 // time part has a fixed width, so string order is time order; the device ID
@@ -90,11 +20,11 @@ func compareStamps(a, b string) int { return strings.Compare(a, b) }
 
 // stamp returns base updated to data: every leaf that differs from base gets ts.
 func stamp(base envelope, kind Kind, data json.RawMessage, ts string) (envelope, error) {
-	newLeaves, err := flatten(data)
+	newLeaves, err := leaf.Flatten(data)
 	if err != nil {
 		return envelope{}, err
 	}
-	oldLeaves, err := flatten(base.Data)
+	oldLeaves, err := leaf.Flatten(base.Data)
 	if err != nil {
 		return envelope{}, err
 	}
@@ -117,11 +47,11 @@ func stamp(base envelope, kind Kind, data json.RawMessage, ts string) (envelope,
 
 // merge combines two versions of the same record leaf by leaf.
 func merge(a, b envelope) (envelope, error) {
-	la, err := flatten(a.Data)
+	la, err := leaf.Flatten(a.Data)
 	if err != nil {
 		return envelope{}, err
 	}
-	lb, err := flatten(b.Data)
+	lb, err := leaf.Flatten(b.Data)
 	if err != nil {
 		return envelope{}, err
 	}
@@ -166,7 +96,7 @@ func merge(a, b envelope) (envelope, error) {
 			}
 		}
 	}
-	data, err := unflatten(leaves)
+	data, err := leaf.Unflatten(leaves)
 	if err != nil {
 		return envelope{}, err
 	}

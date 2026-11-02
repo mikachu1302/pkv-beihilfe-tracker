@@ -1,6 +1,6 @@
 import {useEffect, useState} from "react";
 import {Desktop, Svc} from "../api";
-import type {CoverageDTO, PayerDTO, ProblemDTO, SettingsDTO, YearSettingDTO} from "../api";
+import type {BackupStatusDTO, CoverageDTO, PayerDTO, ProblemDTO, SettingsDTO, YearSettingDTO} from "../api";
 import {useApp} from "../App";
 import {useToast} from "../components/feedback";
 import {ErrorNotice, Field, Loading, Notice} from "../components/ui";
@@ -87,6 +87,7 @@ export default function Settings() {
         <>
             <div className="page-head"><h1>Einstellungen</h1></div>
             <DataFolder dir={status.dataDir} onChanged={reloadStatus}/>
+            <Backups onChanged={reloadStatus}/>
             {error && <ErrorNotice error={error}/>}
             {warnings.length > 0 && <Notice kind="warn"><ul>{warnings.map(w => <li key={w.text}>{w.text}</li>)}</ul></Notice>}
 
@@ -186,6 +187,66 @@ export default function Settings() {
                 <button onClick={() => loaded.data && setS(forForm(loaded.data))}>Zurücksetzen</button>
             </div>
         </>
+    );
+}
+
+export function Backups({onChanged}: {onChanged: () => void}) {
+    const toast = useToast();
+    const loaded = useBackend(() => Svc.BackupStatus(), []);
+    const [st, setSt] = useState<BackupStatusDTO | null>(null);
+    const [busy, setBusy] = useState(false);
+    useEffect(() => {
+        if (loaded.data) setSt(loaded.data);
+    }, [loaded.data]);
+
+    async function run(action: () => Promise<BackupStatusDTO>, done: string) {
+        setBusy(true);
+        try {
+            setSt(await action());
+            toast.show(done);
+            onChanged();
+        } catch (e) {
+            toast.error(e);
+            loaded.reload();
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    async function choose() {
+        const d = await Desktop.ChooseFolder("Sicherungsordner wählen").catch(toast.error);
+        if (d) await run(() => Svc.SetBackupDir(d), "Sicherungsordner gesetzt, erste Sicherung erstellt");
+    }
+
+    const mb = (bytes: number) => `${(bytes / 1024 / 1024).toLocaleString("de-DE", {maximumFractionDigits: 1})} MB`;
+    return (
+        <section className="panel" aria-label="Sicherung">
+            <h2 style={{marginTop: 0}}>Sicherung</h2>
+            <p className="muted small">
+                Einmal täglich beim Start legt die App eine Zip-Kopie des Datenordners in einem zweiten Ordner ab
+                (z. B. USB-Stick, NAS oder ein anderer Cloud-Ordner); die letzten 20 werden behalten. Wichtig, wenn der
+                Datenordner nicht in einer Cloud liegt. Zum Wiederherstellen eine Sicherung in einen leeren Ordner
+                entpacken und diesen als Datenordner wählen.
+            </p>
+            {st?.error && <Notice kind="bad">{st.error}</Notice>}
+            {st && (st.dir ? (
+                <div className="row">
+                    <code className="mono" style={{flex: 1, wordBreak: "break-all"}}>{st.dir}</code>
+                    <span className="muted small">
+                        {st.last ? `Letzte Sicherung ${st.last.split(" ")[0].split("-").reverse().join(".")} ${st.last.split(" ")[1]} (${mb(st.lastSize)}), ${st.count} vorhanden` : "Noch keine Sicherung"}
+                    </span>
+                    <button disabled={busy} onClick={() => run(() => Svc.BackupNow(), "Sicherung erstellt")}>Jetzt sichern</button>
+                    <button onClick={() => Desktop.OpenPath(st.dir).catch(toast.error)}>Öffnen</button>
+                    <button disabled={busy} onClick={choose}>Ändern …</button>
+                    <button className="link" disabled={busy} onClick={() => run(() => Svc.SetBackupDir(""), "Automatische Sicherung ausgeschaltet")}>Ausschalten</button>
+                </div>
+            ) : (
+                <div className="row">
+                    <span className="muted">Keine Sicherung eingerichtet.</span>
+                    <button className="primary" disabled={busy} onClick={choose}>Sicherungsordner wählen …</button>
+                </div>
+            ))}
+        </section>
     );
 }
 

@@ -45,13 +45,13 @@ interface Pop {
 }
 
 export default function Invoices() {
-    const {year, setYear} = useApp();
+    const {year, setYear, dataVersion} = useApp();
     const navigate = useNavigate();
     const toast = useToast();
     const confirm = useConfirm();
-    const years = useBackend(() => Svc.Years(), []);
-    const settings = useBackend(() => Svc.GetSettings(), []);
-    const list = useBackend(() => Svc.ListInvoices(year), [year]);
+    const years = useBackend(() => Svc.Years(), [dataVersion]);
+    const settings = useBackend(() => Svc.GetSettings(), [dataVersion]);
+    const list = useBackend(() => Svc.ListInvoices(year), [year, dataVersion]);
     const [rows, setRows] = useState<InvoiceRowDTO[]>([]);
     const [filter, setFilter] = useState<Filter>("all");
     const [query, setQuery] = useState("");

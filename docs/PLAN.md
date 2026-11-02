@@ -1,6 +1,6 @@
 # pkv-beihilfe-tracker – Technical Plan
 
-Status: M1 (core) and M2 (desktop app) implemented · 2026-11-02 – section 16 lists what changed during implementation
+Status: M1 (core), M2 (desktop app) and M3 (live data folder) implemented · 2026-11-02 – section 16 lists what changed during implementation
 
 ## 1. Goal
 
@@ -221,7 +221,7 @@ OCR on the device, nothing leaves the data folder. Real data never goes into the
 |---|---|---|
 | M1 | Core: money/date types, model, calc (SOLL/IST, years, PKV vs. BRE, deadlines, warnings), matching, store (file per record, atomic writes, per-leaf merge, conflict copies), spreadsheet import; tests with synthetic data; CI on three OS | done |
 | M2 | Desktop app: Wails + React, first start (data folder, payers, coverage), invoice list with checkboxes, detail form, dashboard, overview, spreadsheet import with preview → replaces the spreadsheet | done |
-| M3 | Live data folder: file watcher, reload and merge while running, backups (zip snapshots to a second location, important without cloud) | |
+| M3 | Live data folder: file watcher, reload and merge while running, backups (zip snapshots to a second location, important without cloud) | done |
 | M4 | Capture: inbox (`Eingang/`, drag & drop), Tesseract.js, pdf.js, GiroCode, invoice parser, phone upload via QR code | |
 | M5 | Refund documents: extraction, layout profiles, checksum, matching review, aliases | |
 | M6 | Submissions and PDF bundle, exports (Excel/CSV/PDF), reminders (deadlines, due dates), release builds for three OS | |
@@ -248,4 +248,15 @@ OCR on the device, nothing leaves the data folder. Real data never goes into the
   screenshots; `cmd/demodata` creates a demo data folder.
 - Own app icon (`build/appicon.svg`); the template's macOS vector icon was removed so the
   `.icns` is used.
-- The linter's ST1005 rule is off for `internal/service`: its errors are German UI texts.
+- The linter's ST1005 rule is off for `internal/service` and `internal/backup`: their errors are
+  German UI texts.
+- **M3:** `internal/watch` (fsnotify) watches the data folder, its year and record folders, adds
+  new folders, debounces bursts (0.8 s) and ignores the app's own writes (the store remembers size
+  and mtime of what it wrote). After a reload the frontend gets a `data-changed` event: lists and
+  dashboard refresh, a toast tells the user.
+- An open invoice form keeps its original; saving sends both and the service applies only the
+  fields edited in the form to the current version (`leaf.Rebase`, three-way). The form shows a
+  notice when its invoice was changed elsewhere.
+- `internal/backup`: zip snapshots (without hidden files) to a device-local backup folder, once a
+  day on start and on demand, the newest 20 are kept; a folder inside the data folder is refused.
+  Restore = unzip into an empty folder and choose it as data folder.

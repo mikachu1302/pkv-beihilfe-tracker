@@ -302,34 +302,35 @@ func TestAddDocument(t *testing.T) {
 	}
 }
 
-func TestFlattenRoundTrip(t *testing.T) {
-	in := json.RawMessage(`{"a":{"b/c":1,"d":{"e":[1,{"f":2}]}},"g":null,"h":"x~y"}`)
-	leaves, err := flatten(in)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := leaves["/a/b~1c"]; !ok || string(leaves["/a/d/e"]) != `[1,{"f":2}]` {
-		t.Errorf("leaves %v", leaves)
-	}
-	out, _ := unflatten(leaves)
-	var x, y any
-	json.Unmarshal(in, &x)
-	json.Unmarshal(out, &y)
-	if a, b := mustJSON(x), mustJSON(y); a != b {
-		t.Errorf("round trip %s != %s", a, b)
-	}
-	if _, err := flatten(json.RawMessage(`[1]`)); err == nil {
-		t.Error("non-object accepted")
-	}
-}
-
-func mustJSON(v any) string {
-	b, _ := json.Marshal(v)
-	return string(b)
-}
-
 func TestOpenRejectsBadDevice(t *testing.T) {
 	if _, err := Open(t.TempDir(), "a@b"); err == nil {
 		t.Error("device with @ accepted")
+	}
+}
+
+func TestIsOwnChange(t *testing.T) {
+	root := t.TempDir()
+	s := open(t, root, "a", "2026-11-02T10:00:00Z")
+	inv := sampleInvoice()
+	s.SaveInvoice(inv)
+	path := filepath.Join(root, "2026/rechnungen", inv.ID+".json")
+	if !s.IsOwnChange(path) {
+		t.Fatal("own write not recognised")
+	}
+	// A sync tool replaces the file with another device's version.
+	time.Sleep(10 * time.Millisecond)
+	b, _ := os.ReadFile(path)
+	os.WriteFile(path, append(b, ' '), 0o644)
+	if s.IsOwnChange(path) {
+		t.Error("external change taken for our own")
+	}
+	if s.IsOwnChange(filepath.Join(root, "2026/rechnungen/fremd.json")) {
+		t.Error("unknown file taken for our own")
+	}
+	// Moving to another year removes the old file: that removal is ours too.
+	inv.ServiceFrom = d("2025-12-30")
+	s.SaveInvoice(inv)
+	if !s.IsOwnChange(path) {
+		t.Error("own removal not recognised")
 	}
 }

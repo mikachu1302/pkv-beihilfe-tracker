@@ -4,10 +4,15 @@ import (
 	"errors"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/xuri/excelize/v2"
+
+	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/civil"
+	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/model"
+	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/store"
 )
 
 // newTestService returns a service with a fresh config and data folder,
@@ -16,6 +21,8 @@ func newTestService(t *testing.T) *Service {
 	t.Helper()
 	s := NewWithConfigDir(t.TempDir())
 	s.now = func() time.Time { return time.Date(2026, 11, 2, 9, 0, 0, 0, time.Local) }
+	s.watchDebounce = 50 * time.Millisecond
+	t.Cleanup(func() { _ = s.ServiceShutdown() })
 	st, err := s.SetDataDir(filepath.Join(t.TempDir(), "daten"))
 	if err != nil || !st.Configured || !st.NeedsSetup {
 		t.Fatalf("SetDataDir: %+v, %v", st, err)
@@ -62,13 +69,13 @@ func TestSetupCreatesPayers(t *testing.T) {
 
 func TestInvoiceLifecycle(t *testing.T) {
 	s := newTestService(t)
-	if _, err := s.SaveInvoice(InvoiceDTO{Amount: "x"}); err == nil || !strings.Contains(err.Error(), "kein gültiger Betrag") {
+	if _, err := s.SaveInvoice(InvoiceDTO{Amount: "x"}, nil); err == nil || !strings.Contains(err.Error(), "kein gültiger Betrag") {
 		t.Fatalf("invalid input: %v", err)
 	}
-	if _, err := s.SaveInvoice(InvoiceDTO{}); err == nil || !strings.Contains(err.Error(), "Behandler fehlt") {
+	if _, err := s.SaveInvoice(InvoiceDTO{}, nil); err == nil || !strings.Contains(err.Error(), "Behandler fehlt") {
 		t.Fatalf("missing fields: %v", err)
 	}
-	det, err := s.SaveInvoice(sampleInvoice())
+	det, err := s.SaveInvoice(sampleInvoice(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +127,7 @@ func TestInvoiceLifecycle(t *testing.T) {
 	in.Note = "Kontrolle"
 	in.Claims[1].Held = true
 	in.Claims[1].Refunds = append(in.Claims[1].Refunds, RefundDTO{}) // empty new row is ignored
-	saved, err := s.SaveInvoice(in)
+	saved, err := s.SaveInvoice(in, nil)
 	if err != nil || saved.Invoice.Note != "Kontrolle" || claim(saved.View, "muster-pkv").Status != "held" ||
 		claim(saved.View, "beihilfe-bund").Actual != "180.20" {
 		t.Fatalf("round trip: %+v, %v", saved, err)
@@ -163,7 +170,7 @@ func TestBulkSubmitAndDashboard(t *testing.T) {
 	for _, a := range []string{"1000", "500", "300"} {
 		in := sampleInvoice()
 		in.Amount = a
-		det, err := s.SaveInvoice(in)
+		det, err := s.SaveInvoice(in, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -267,7 +274,7 @@ func TestSpreadsheetImport(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The same invoice already exists (other spelling) → flagged as duplicate.
-	if _, err := s.SaveInvoice(InvoiceDTO{Provider: "dr.  MUSTER", InvoiceDate: "2026-03-14", Amount: "286.40"}); err != nil {
+	if _, err := s.SaveInvoice(InvoiceDTO{Provider: "dr.  MUSTER", InvoiceDate: "2026-03-14", Amount: "286.40"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	pv, err := s.PreviewSpreadsheet(path, "beihilfe-bund", "muster-pkv")
@@ -296,5 +303,121 @@ func TestNoDataDir(t *testing.T) {
 	}
 	if _, err := s.ListInvoices(0); !errors.Is(err, ErrNoDataDir) {
 		t.Errorf("err = %v", err)
+	}
+}
+
+type fakeEmitter struct {
+	mu     sync.Mutex
+	events []string
+}
+
+func (f *fakeEmitter) Emit(name string, _ ...any) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.events = append(f.events, name)
+	return true
+}
+
+func (f *fakeEmitter) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.events)
+}
+
+// otherDevice opens the same data folder as a second device would (through a sync tool).
+func otherDevice(t *testing.T, s *Service) (*store.Store, *store.Data) {
+	t.Helper()
+	st, err := store.Open(s.st.Root(), "other1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _, err := st.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st, data
+}
+
+func eventually(t *testing.T, cond func() bool) {
+	t.Helper()
+	for i := 0; i < 100; i++ {
+		if cond() {
+			return
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	t.Fatal("condition not met in time")
+}
+
+func TestExternalChangeIsPickedUp(t *testing.T) {
+	s := newTestService(t)
+	em := &fakeEmitter{}
+	s.SetEmitter(em)
+	if _, err := s.SaveInvoice(sampleInvoice(), nil); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(150 * time.Millisecond)
+	if em.count() != 0 {
+		t.Fatalf("own write reported as external change: %v", em.events)
+	}
+	other, _ := otherDevice(t, s)
+	if _, err := other.SaveInvoice(model.Invoice{ID: "20261102-0000beef", Provider: "Labor Nord",
+		InvoiceDate: civil.MustParse("2026-10-01"), Amount: 4200}); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, func() bool {
+		rows, _ := s.ListInvoices(2026)
+		return len(rows) == 2 && em.count() > 0
+	})
+}
+
+func TestSaveKeepsChangesFromAnotherDevice(t *testing.T) {
+	s := newTestService(t)
+	det, _ := s.SaveInvoice(sampleInvoice(), nil)
+	original := det.Invoice
+
+	// Meanwhile another device renames the provider and ticks "eingereicht".
+	other, data := otherDevice(t, s)
+	inv := data.Invoices[0]
+	inv.Provider = "Dr. Muster-Neu"
+	inv.Claims = map[string]model.Claim{"beihilfe-bund": {Submitted: model.Mark{Date: civil.MustParse("2026-11-05")}}}
+	if _, err := other.SaveInvoice(inv); err != nil {
+		t.Fatal(err)
+	}
+	s.externalChange() // what the watcher does
+
+	// The form, still showing the old state, only changed the note.
+	edited := original
+	edited.Note = "Rückfrage gestellt"
+	saved, err := s.SaveInvoice(edited, &original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Invoice.Provider != "Dr. Muster-Neu" || saved.Invoice.Note != "Rückfrage gestellt" ||
+		claim(saved.View, "beihilfe-bund").Submitted.Date != "2026-11-05" {
+		t.Errorf("merged: %+v", saved.Invoice)
+	}
+}
+
+func TestBackups(t *testing.T) {
+	s := newTestService(t)
+	s.SaveInvoice(sampleInvoice(), nil)
+	if _, err := s.SetBackupDir(filepath.Join(s.st.Root(), "sicherung")); err == nil {
+		t.Error("backup folder inside the data folder accepted")
+	}
+	dir := filepath.Join(t.TempDir(), "sicherung")
+	st, err := s.SetBackupDir(dir)
+	if err != nil || st.Count != 1 || st.Last != "2026-11-02 09:00" || st.Dir != dir {
+		t.Fatalf("set: %+v, %v", st, err)
+	}
+	s.now = func() time.Time { return time.Date(2026, 11, 3, 9, 0, 0, 0, time.Local) }
+	if st, err := s.BackupNow(); err != nil || st.Count != 2 {
+		t.Fatalf("now: %+v, %v", st, err)
+	}
+	if st, _ := s.SetBackupDir(""); st.Dir != "" {
+		t.Errorf("cleared: %+v", st)
+	}
+	if _, err := s.BackupNow(); err == nil {
+		t.Error("backup without folder accepted")
 	}
 }

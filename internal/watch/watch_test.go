@@ -1,0 +1,103 @@
+package watch
+
+import (
+	"os"
+	"path/filepath"
+	"sync/atomic"
+	"testing"
+	"time"
+)
+
+const debounce = 60 * time.Millisecond
+
+func start(t *testing.T, root string, own func(string) bool) (*atomic.Int32, chan struct{}) {
+	t.Helper()
+	var n atomic.Int32
+	ch := make(chan struct{}, 10)
+	w, err := Start(root, debounce, own, func() {
+		n.Add(1)
+		ch <- struct{}{}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { w.Close() })
+	return &n, ch
+}
+
+func wait(t *testing.T, ch chan struct{}) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(3 * time.Second):
+		t.Fatal("no change reported")
+	}
+}
+
+func quiet(t *testing.T, ch chan struct{}) {
+	t.Helper()
+	select {
+	case <-ch:
+		t.Fatal("unexpected change reported")
+	case <-time.After(4 * debounce):
+	}
+}
+
+func TestReportsExternalChangesOnce(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "2026", "rechnungen")
+	os.MkdirAll(dir, 0o755)
+	n, ch := start(t, root, nil)
+	for i := 0; i < 5; i++ { // a burst from a sync tool
+		os.WriteFile(filepath.Join(dir, "a.json"), []byte(`{}`), 0o644)
+	}
+	wait(t, ch)
+	quiet(t, ch)
+	if n.Load() != 1 {
+		t.Errorf("reported %d times, want once per burst", n.Load())
+	}
+	os.Remove(filepath.Join(dir, "a.json"))
+	wait(t, ch)
+}
+
+func TestIgnoresOwnWritesTempFilesAndOtherFiles(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "2026", "rechnungen")
+	os.MkdirAll(dir, 0o755)
+	ownPath := filepath.Join(dir, "mine.json")
+	_, ch := start(t, root, func(p string) bool { return p == ownPath })
+	os.WriteFile(ownPath, []byte(`{}`), 0o644)
+	os.WriteFile(filepath.Join(dir, ".tmp-123"), []byte(`x`), 0o644)
+	os.WriteFile(filepath.Join(root, "notizen.txt"), []byte(`x`), 0o644)
+	quiet(t, ch)
+}
+
+func TestFollowsNewFolders(t *testing.T) {
+	root := t.TempDir()
+	_, ch := start(t, root, nil)
+	dir := filepath.Join(root, "2027", "rechnungen")
+	os.MkdirAll(dir, 0o755)
+	quiet(t, ch) // an empty folder is no change
+	os.WriteFile(filepath.Join(dir, "b.json"), []byte(`{}`), 0o644)
+	wait(t, ch)
+}
+
+func TestNewFolderWithFiles(t *testing.T) {
+	root := t.TempDir()
+	mine := filepath.Join(root, "2028", "rechnungen", "mine.json")
+	_, ch := start(t, root, func(p string) bool { return p == mine })
+
+	// A sync tool moves in a whole year folder with another device's file.
+	src := filepath.Join(t.TempDir(), "2027")
+	os.MkdirAll(filepath.Join(src, "rechnungen"), 0o755)
+	os.WriteFile(filepath.Join(src, "rechnungen", "x.json"), []byte(`{}`), 0o644)
+	if err := os.Rename(src, filepath.Join(root, "2027")); err != nil {
+		t.Skip("cannot move across file systems:", err)
+	}
+	wait(t, ch)
+
+	// The app itself creates a year folder with its own file: no change.
+	os.MkdirAll(filepath.Dir(mine), 0o755)
+	os.WriteFile(mine, []byte(`{}`), 0o644)
+	quiet(t, ch)
+}

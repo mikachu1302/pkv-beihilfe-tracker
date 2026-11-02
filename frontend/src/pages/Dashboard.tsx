@@ -19,9 +19,9 @@ const BUCKETS: {key: "refunded" | "submitted" | "open" | "held" | "skipped"; lab
 ];
 
 export default function Dashboard() {
-    const {year, setYear} = useApp();
-    const years = useBackend(() => Svc.Years(), []);
-    const dash = useBackend(() => Svc.Dashboard(year), [year]);
+    const {year, setYear, dataVersion} = useApp();
+    const years = useBackend(() => Svc.Years(), [dataVersion]);
+    const dash = useBackend(() => Svc.Dashboard(year), [year, dataVersion]);
     const yearList = years.data ?? [year];
     const y = dash.data;
     return (
@@ -185,7 +185,8 @@ function YearValue({label, year, p, field, hint, onSaved}: {
 function Allowances({year, payers, onChanged}: {year: number; payers: PayerYearDTO[]; onChanged: () => void}) {
     const toast = useToast();
     const confirm = useConfirm();
-    const list = useBackend(() => Svc.ListAllowances(year), [year]);
+    const {dataVersion} = useApp();
+    const list = useBackend(() => Svc.ListAllowances(year), [year, dataVersion]);
     const pkvs = payers.filter(p => p.kind === "pkv");
     const [draft, setDraft] = useState<AllowanceDTO | null>(null);
 
