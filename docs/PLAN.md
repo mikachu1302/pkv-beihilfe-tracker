@@ -110,8 +110,9 @@ Record file:
   reported and never overwritten: saving such a record fails until the file is fixed, and
   conflict copies of it are left alone.
 - An older app version drops fields it does not know when it saves a record. A new field
-  therefore needs a schema bump (`store.SchemaVersion`), which makes older versions leave
-  such files alone.
+  whose loss would lose user data therefore needs a schema bump (`store.SchemaVersion`), which
+  makes older versions leave such files alone. Metadata that can be rebuilt (such as the
+  import origin of an invoice) does not.
 - Users should set the data folder to "always keep on this device" (no placeholder files).
 
 ## 6. Data model (`internal/model`)
@@ -226,8 +227,18 @@ table are ignored, and so are rows with neither a date nor a provider (totals be
 table); a refund of 0 counts as empty. Dates come from raw cell values. Each row may produce
 warnings (dates before the invoice, implausible years, refunds above the amount). The UI
 shows a preview before saving (M2); the records keep their IDs from the preview, so saving
-again after an error does not duplicate them. Cells that cannot be read are kept in the
-invoice note ("In Excel nicht lesbar: …"); the other findings are plausibility rules the app
+again after an error does not duplicate them. Importing the corrected file again compares instead of duplicating: each
+row is matched to an existing invoice (recorded origin file/sheet/row, else provider, dates and
+amount; matches by similarity only are marked for checking) and is shown as new, changed (with
+the fields that change) or unchanged; invoices imported from the file before whose row is gone
+are offered for deletion (not preselected). A changed row only sets the spreadsheet fields
+(provider, dates, amount, paid, note, submitted, refunds from the spreadsheet); refunds from
+Bescheide, documents and app-only marks stay. Every imported invoice keeps its origin and the
+values it had in the file (model.ImportSource), so the next import takes over only what was
+corrected in the file and keeps what was changed in the app (three-way; a value changed on both
+sides is shown as a conflict). This optional field needs no schema bump: an older app version
+drops it, and the next import falls back to matching by similarity. Cells that cannot be read
+are kept in the invoice note ("In Excel nicht lesbar: …"); the other findings are plausibility rules the app
 checks all the time (section 7), shown as ⚠ in the list (filter "Mit Hinweisen") and in the
 invoice form until they are fixed.
 

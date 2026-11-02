@@ -37,9 +37,10 @@ import (
 )
 
 // SchemaVersion is the current record file format. Older app versions drop
-// fields they do not know when they save a record, so adding a field to a
-// record type needs a new version: files with a newer version are left alone
-// by older apps (see Load).
+// fields they do not know when they save a record, so adding a field whose
+// loss would lose user data needs a new version: files with a newer version
+// are left alone by older apps (see Load). Rebuildable metadata such as
+// model.Invoice.Source does not.
 const SchemaVersion = 1
 
 // Names in the data folder.

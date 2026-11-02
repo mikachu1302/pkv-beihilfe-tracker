@@ -56,6 +56,9 @@ type Result struct {
 	AllowanceOf []int `json:"allowanceOf"`
 }
 
+// RefundNote marks refunds (and allowances) taken over from the spreadsheet.
+const RefundNote = "aus Excel übernommen"
+
 type field int
 
 const (
@@ -297,7 +300,7 @@ func importRow(res *Result, sheet string, row []string, rowNum int, cols columns
 		}
 		c := model.Claim{Submitted: model.Mark{Date: sub}}
 		if hasRef && ref != 0 { // a 0 is a placeholder, not a refund of 0 €
-			c.Refunds = []model.Refund{{ID: model.NewID(now), Amount: ref, Note: "aus Excel übernommen"}}
+			c.Refunds = []model.Refund{{ID: model.NewID(now), Amount: ref, Note: RefundNote}}
 			refunded += ref
 			rounding++
 		}
@@ -323,7 +326,7 @@ func importRow(res *Result, sheet string, row []string, rowNum int, cols columns
 		res.AllowanceOf = append(res.AllowanceOf, len(res.Invoices)-1)
 		res.Allowances = append(res.Allowances, model.Allowance{
 			ID: model.NewID(now), PayerID: opt.PKVPayerID, Kind: model.AllowanceHospitalDay,
-			Date: d, Amount: a, Received: model.Mark{Date: d}, Note: "aus Excel übernommen",
+			Date: d, Amount: a, Received: model.Mark{Date: d}, Note: RefundNote,
 		})
 	}
 }

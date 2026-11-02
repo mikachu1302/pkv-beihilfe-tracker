@@ -282,7 +282,8 @@ func TestSpreadsheetImport(t *testing.T) {
 	if err := f.SaveAs(path); err != nil {
 		t.Fatal(err)
 	}
-	// The same invoice already exists (other spelling) → flagged as duplicate.
+	// The same invoice already exists (entered by hand, other spelling): it is
+	// recognised, and the import would add what the spreadsheet knows more.
 	if _, err := s.SaveInvoice(InvoiceDTO{Provider: "dr.  MUSTER", InvoiceDate: "2026-03-14", Amount: "286.40"}, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -290,8 +291,12 @@ func TestSpreadsheetImport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(pv.Rows) != 2 || pv.Duplicates != 1 || !pv.Rows[0].Duplicate || pv.Allowances != 1 || pv.Rows[0].Status[0] != "Beihilfe Bund: eingereicht 02.04.2026, erstattet 180,20 €" {
+	if len(pv.Rows) != 2 || pv.New != 1 || pv.Changed != 1 || pv.Rows[0].State != "changed" || pv.Rows[0].Uncertain ||
+		pv.Allowances != 1 || pv.Rows[0].Status[0] != "Beihilfe Bund: eingereicht 02.04.2026, erstattet 180,20 €" {
 		t.Fatalf("preview: %+v", pv)
+	}
+	if len(pv.Rows[0].Changes) != 3 || pv.Rows[0].Changes[1].Label != "Beihilfe Bund eingereicht" || pv.Rows[0].Changes[1].To != "02.04.2026" {
+		t.Fatalf("changes: %+v", pv.Rows[0].Changes)
 	}
 	res, err := s.CommitSpreadsheet(pv.Token, []string{"1"})
 	if err != nil || res.Invoices != 1 || res.Allowances != 1 || res.Skipped != 1 {
@@ -867,5 +872,115 @@ func TestPayerNameIsMatchedAsWord(t *testing.T) {
 	}
 	if got := guessPayer(set, "Ihre Beihilfe, Bescheid vom"); got != "bh" {
 		t.Errorf("Beihilfe → %q", got)
+	}
+}
+
+// writeSheet saves rows (header first) as a spreadsheet.
+func writeSheet(t *testing.T, path string, rows [][]any) {
+	t.Helper()
+	f := excelize.NewFile()
+	defer f.Close()
+	for i, r := range rows {
+		cell, _ := excelize.CoordinatesToCellName(1, i+1)
+		f.SetSheetRow("Sheet1", cell, &r)
+	}
+	if err := f.SaveAs(path); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSpreadsheetImportAgain(t *testing.T) {
+	s := newTestService(t)
+	path := filepath.Join(t.TempDir(), "Abrechnung.xlsx")
+	header := []any{"Rechnungsdatum", "Behandler", "Gesamtbetrag", "Eingereicht Krankenkasse", "Betrag Erstattet Krankenkasse"}
+	writeSheet(t, path, [][]any{header,
+		{"10.02.2026", "Labor Nord", 13725.22, nil, nil}, // typo in the amount
+		{"11.02.2026", "Praxis Süd", 80, nil, nil},
+		{"12.02.2026", "Apotheke West", 20, nil, nil},
+		{"13.02.2026", "Optik Ost", 300, nil, nil},
+	})
+	pv, err := s.PreviewSpreadsheet(path, "beihilfe-bund", "muster-pkv")
+	if err != nil || pv.New != 4 {
+		t.Fatalf("first preview: %+v, %v", pv, err)
+	}
+	if _, err := s.CommitSpreadsheet(pv.Token, []string{"0", "1", "2", "3"}); err != nil {
+		t.Fatal(err)
+	}
+	list, _ := s.ListInvoices(2026)
+	id := map[string]string{}
+	for _, r := range list {
+		id[r.Provider] = r.ID
+	}
+	// In the app: Praxis Süd submitted to the PKV, the optician's amount corrected.
+	if _, err := s.SetMark(MarkChangeDTO{InvoiceID: id["Praxis Süd"], PayerID: "muster-pkv", Mark: MarkSubmitted, On: true, Date: "2026-03-01"}); err != nil {
+		t.Fatal(err)
+	}
+	det, _ := s.GetInvoice(id["Optik Ost"])
+	edit := det.Invoice
+	edit.Amount = "310.00"
+	if _, err := s.SaveInvoice(edit, &det.Invoice); err != nil {
+		t.Fatal(err)
+	}
+
+	// The corrected file: amount fixed, a row inserted on top (rows move),
+	// the pharmacy removed, the optician's amount changed in the file too.
+	writeSheet(t, path, [][]any{header,
+		{"01.02.2026", "Physio Mitte", 120, nil, nil},
+		{"10.02.2026", "Labor Nord", 137.25, nil, nil},
+		{"11.02.2026", "Praxis Süd", 80, nil, nil},
+		{"13.02.2026", "Optik Ost", 320, nil, nil},
+	})
+	pv, err = s.PreviewSpreadsheet(path, "beihilfe-bund", "muster-pkv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := map[string]ImportRowDTO{}
+	for _, r := range pv.Rows {
+		state[r.Provider] = r
+	}
+	if pv.New != 1 || pv.Changed != 2 || pv.Unchanged != 1 || state["Physio Mitte"].State != "new" {
+		t.Fatalf("second preview: new %d changed %d unchanged %d %+v", pv.New, pv.Changed, pv.Unchanged, pv.Rows)
+	}
+	lab := state["Labor Nord"]
+	if lab.State != "changed" || lab.InvoiceID != id["Labor Nord"] || lab.Uncertain || len(lab.Changes) != 1 ||
+		lab.Changes[0].From != "13.725,22 €" || lab.Changes[0].To != "137,25 €" || lab.Changes[0].Conflict {
+		t.Errorf("corrected row: %+v", lab)
+	}
+	// Submitted in the app only: not a change from the file.
+	if r := state["Praxis Süd"]; r.State != "unchanged" {
+		t.Errorf("row changed in the app only: %+v", r)
+	}
+	if r := state["Optik Ost"]; r.State != "changed" || len(r.Changes) != 1 || !r.Changes[0].Conflict || r.Changes[0].From != "310,00 €" {
+		t.Errorf("changed on both sides: %+v", r)
+	}
+	if len(pv.Removed) != 1 || pv.Removed[0].InvoiceID != id["Apotheke West"] {
+		t.Fatalf("removed: %+v", pv.Removed)
+	}
+
+	keys := []string{pv.Removed[0].Key}
+	for _, r := range pv.Rows {
+		if r.State != "unchanged" {
+			keys = append(keys, r.Key)
+		}
+	}
+	res, err := s.CommitSpreadsheet(pv.Token, keys)
+	if err != nil || res.Invoices != 1 || res.Updated != 2 || res.Deleted != 1 {
+		t.Fatalf("commit: %+v, %v", res, err)
+	}
+	got, _ := s.GetInvoice(id["Labor Nord"])
+	if got.Invoice.Amount != "137.25" {
+		t.Errorf("amount not corrected: %s", got.Invoice.Amount)
+	}
+	got, _ = s.GetInvoice(id["Praxis Süd"])
+	if c := claim(got.View, "muster-pkv"); c.Submitted.Date != "2026-03-01" {
+		t.Errorf("change made in the app lost: %+v", c)
+	}
+	if _, err := s.GetInvoice(id["Apotheke West"]); err == nil {
+		t.Error("removed row not deleted")
+	}
+	// Importing the same file once more changes nothing.
+	pv, _ = s.PreviewSpreadsheet(path, "beihilfe-bund", "muster-pkv")
+	if pv.New != 0 || pv.Changed != 0 || pv.Unchanged != 4 || len(pv.Removed) != 0 {
+		t.Errorf("third preview: %+v", pv)
 	}
 }

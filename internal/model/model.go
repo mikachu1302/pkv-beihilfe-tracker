@@ -319,6 +319,25 @@ type Invoice struct {
 	Claims      map[string]Claim `json:"claims,omitempty"`      // by payer ID
 	Attachments []string         `json:"attachments,omitempty"` // file names in belege/
 	Note        string           `json:"note,omitempty"`
+
+	// Source is set for invoices imported from a spreadsheet.
+	Source *ImportSource `json:"source,omitempty"`
+}
+
+// ImportSource records where an invoice came from in a spreadsheet and the
+// values it had there at the last import. Importing the corrected file
+// again compares with them: a value that changed in the file is taken
+// over, one that was only changed in the app is kept.
+//
+// Losing it is harmless (an older app version drops unknown fields): the
+// next import then matches the invoice by provider, dates and amount.
+type ImportSource struct {
+	File  string `json:"file"` // file name without folder
+	Sheet string `json:"sheet"`
+	Row   int    `json:"row"`
+	// Values by field: provider, invoiceDate, serviceFrom, amount, paid, note,
+	// "submitted:<payer>", "refund:<payer>" – dates as 2006-01-02, amounts as 12.34.
+	Values map[string]string `json:"values"`
 }
 
 // ServiceDate is the first day of treatment, or the invoice date if unknown.

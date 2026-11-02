@@ -2,7 +2,7 @@ import {useEffect, useState} from "react";
 import {Desktop, Svc} from "../api";
 import type {ImportPreviewDTO, ImportRowDTO} from "../api";
 import {useToast} from "../components/feedback";
-import {ErrorNotice, Field, Loading, Notice} from "../components/ui";
+import {Badge, ErrorNotice, Field, Loading, Notice} from "../components/ui";
 import {date, errMsg, eur, plural} from "../lib/format";
 import {useBackend} from "../lib/useBackend";
 
@@ -17,6 +17,7 @@ export default function Import() {
     const [pkv, setPkv] = useState("");
     const [preview, setPreview] = useState<ImportPreviewDTO | null>(null);
     const [include, setInclude] = useState<Set<string>>(new Set());
+    const [showUnchanged, setShowUnchanged] = useState(false);
     const [error, setError] = useState("");
     const [busy, setBusy] = useState(false);
 
@@ -35,7 +36,9 @@ export default function Import() {
             setBusy(true);
             const pv = await Svc.PreviewSpreadsheet(path, bh, pkv);
             setPreview(pv);
-            setInclude(new Set((pv.rows ?? []).filter(r => !r.duplicate).map(r => r.key)));
+            // New rows and certain changes are taken over; matches by similarity
+            // only and deletions wait for the user.
+            setInclude(new Set((pv.rows ?? []).filter(r => r.state === "new" || r.state === "changed" && !r.uncertain).map(r => r.key)));
         } catch (e) {
             setError(errMsg(e));
         } finally {
@@ -48,9 +51,13 @@ export default function Import() {
         setBusy(true);
         try {
             const res = await Svc.CommitSpreadsheet(preview.token, [...include]);
-            toast.show(`${plural(res.invoices, "Rechnung", "Rechnungen")} importiert` +
-                (res.allowances ? `, ${plural(res.allowances, "Leistung", "Leistungen")} ohne Rechnung` : "") +
-                (res.skipped ? `, ${res.skipped} übersprungen` : ""));
+            const done = [
+                res.invoices && `${plural(res.invoices, "Rechnung", "Rechnungen")} neu`,
+                res.updated && `${res.updated} aktualisiert`,
+                res.deleted && `${res.deleted} gelöscht`,
+                res.allowances && `${plural(res.allowances, "Leistung", "Leistungen")} ohne Rechnung`,
+            ].filter(Boolean);
+            toast.show(done.length ? `Übernommen: ${done.join(", ")}` : "Nichts zu übernehmen");
             setPreview(null);
         } catch (e) {
             setError(errMsg(e));
@@ -67,9 +74,15 @@ export default function Import() {
 
     if (settings.error) return <ErrorNotice error={settings.error}/>;
     if (!settings.data) return <Loading/>;
-    const rows = preview?.rows ?? [];
+    const allRows = preview?.rows ?? [];
+    const rows = showUnchanged ? allRows : allRows.filter(r => r.state !== "unchanged");
+    const selectable = rows.filter(r => r.state !== "unchanged");
+    const removed = preview?.removed ?? [];
+    const chosen = (state: string) => allRows.filter(r => r.state === state && include.has(r.key)).length;
+    const chosenRemoved = removed.filter(r => include.has(r.key)).length;
+    const total = chosen("new") + chosen("changed") + chosenRemoved;
     // The import reads every sheet with a table: name the sheet when there is more than one.
-    const sheets = new Set(rows.map(r => r.sheet)).size > 1;
+    const sheets = new Set(allRows.map(r => r.sheet)).size > 1;
     const where = (r: ImportRowDTO) => (sheets ? `${r.sheet}, Zeile ${r.row}` : `Zeile ${r.row}`);
     return (
         <>
@@ -102,44 +115,91 @@ export default function Import() {
             {preview && (
                 <>
                     <div className="panel">
-                        <strong>{preview.file}</strong> · {sheets ? "Blätter" : "Blatt"} „{preview.sheet}“ · {plural(rows.length, "Rechnung", "Rechnungen")}
+                        <strong>{preview.file}</strong> · {sheets ? "Blätter" : "Blatt"} „{preview.sheet}“ · {plural(allRows.length, "Rechnung", "Rechnungen")}
                         {" "}({(preview.years ?? []).map(y => `${y.year || "ohne Datum"}: ${y.count}`).join(", ")})
                         {preview.allowances > 0 && <> · {plural(preview.allowances, "Leistung", "Leistungen")} ohne Rechnung</>}
-                        {preview.duplicates > 0 && <Notice kind="warn">{plural(preview.duplicates, "Rechnung ist", "Rechnungen sind")} schon vorhanden (gleiches Datum, Betrag und Behandler) und nicht ausgewählt.</Notice>}
+                        <div className="chips" style={{marginTop: 8}}>
+                            <Badge kind="good">{preview.new} neu</Badge>
+                            <Badge kind="warn">{preview.changed} geändert</Badge>
+                            <Badge>{preview.unchanged} unverändert</Badge>
+                            {removed.length > 0 && <Badge kind="bad">{removed.length} nicht mehr in der Excel</Badge>}
+                        </div>
+                        {preview.changed > 0 && <p className="muted small" style={{marginBottom: 0}}>
+                            Geänderte Zeilen aktualisieren die vorhandene Rechnung – nur die aufgeführten Felder. Erstattungen aus Bescheiden,
+                            Belege, Notizen aus der App und Klärungsbedarf bleiben erhalten.
+                        </p>}
                         {preview.warnings > 0 && <Notice kind="warn">{plural(preview.warnings, "Hinweis", "Hinweise")} zu einzelnen Zeilen – bitte prüfen (Tippfehler bei Daten, Erstattungen über dem Rechnungsbetrag). Korrigieren lässt sich alles auch nach dem Import.</Notice>}
                     </div>
-                    <div className="table-wrap">
-                        <table>
-                            <thead>
-                            <tr>
-                                <th className="check-col">
-                                    <input type="checkbox" aria-label="Alle auswählen" checked={include.size === rows.length}
-                                           onChange={() => setInclude(include.size === rows.length ? new Set() : new Set(rows.map(r => r.key)))}/>
-                                </th>
-                                <th>{sheets ? "Blatt / Zeile" : "Zeile"}</th><th>Rechnungsdatum</th><th>Behandler</th><th className="num">Betrag</th><th>Status</th><th>Hinweise</th>
-                            </tr>
-                            </thead>
-                            <tbody>
-                            {rows.map(r => (
-                                <tr key={r.key}>
-                                    <td><input type="checkbox" aria-label={`${where(r)} importieren`} checked={include.has(r.key)} onChange={() => toggle(r.key)}/></td>
-                                    <td className="muted">{sheets ? `${r.sheet} · ${r.row}` : r.row}</td>
-                                    <td>{date(r.invoiceDate)}</td>
-                                    <td>{r.provider}{r.note && <div className="sub">{r.note}</div>}</td>
-                                    <td className="num">{eur(r.amount)}</td>
-                                    <td className="small">{(r.status ?? []).map(s => <div key={s}>{s}</div>)}</td>
-                                    <td className="small">
-                                        {r.duplicate && <div className="neg">schon vorhanden</div>}
-                                        {(r.warnings ?? []).map(w => <div key={w}>{w}</div>)}
-                                    </td>
+                    {preview.unchanged > 0 && (
+                        <label className="inline" style={{margin: "0 0 8px"}}>
+                            <input type="checkbox" checked={showUnchanged} onChange={e => setShowUnchanged(e.target.checked)}/>
+                            Unveränderte Zeilen zeigen ({preview.unchanged})
+                        </label>
+                    )}
+                    {rows.length > 0 && (
+                        <div className="table-wrap">
+                            <table>
+                                <thead>
+                                <tr>
+                                    <th className="check-col">
+                                        <input type="checkbox" aria-label="Alle auswählen"
+                                               checked={selectable.length > 0 && selectable.every(r => include.has(r.key))}
+                                               onChange={() => setInclude(s => {
+                                                   const all = selectable.every(r => s.has(r.key));
+                                                   const n = new Set(s);
+                                                   selectable.forEach(r => (all ? n.delete(r.key) : n.add(r.key)));
+                                                   return n;
+                                               })}/>
+                                    </th>
+                                    <th>{sheets ? "Blatt / Zeile" : "Zeile"}</th><th>Rechnungsdatum</th><th>Behandler</th><th className="num">Betrag</th>
+                                    <th>Abgleich</th><th>Status in der Excel</th><th>Hinweise</th>
                                 </tr>
+                                </thead>
+                                <tbody>
+                                {rows.map(r => (
+                                    <tr key={r.key} className={r.state === "unchanged" ? "muted" : ""}>
+                                        <td>
+                                            <input type="checkbox" aria-label={`${where(r)} übernehmen`} disabled={r.state === "unchanged"}
+                                                   checked={include.has(r.key)} onChange={() => toggle(r.key)}/>
+                                        </td>
+                                        <td className="muted">{sheets ? `${r.sheet} · ${r.row}` : r.row}</td>
+                                        <td>{date(r.invoiceDate)}</td>
+                                        <td>{r.provider}{r.note && <div className="sub">{r.note}</div>}</td>
+                                        <td className="num">{eur(r.amount)}</td>
+                                        <td className="small">
+                                            <StateBadge state={r.state}/>
+                                            {r.uncertain && <div className="neg">Zuordnung bitte prüfen</div>}
+                                            {(r.changes ?? []).map(c => (
+                                                <div key={c.label}>
+                                                    {c.label}: {c.from} → <strong>{c.to}</strong>
+                                                    {c.conflict && <span className="neg" title="Der Wert wurde auch in der App geändert und wird überschrieben"> (in der App geändert)</span>}
+                                                </div>
+                                            ))}
+                                        </td>
+                                        <td className="small">{(r.status ?? []).map(s => <div key={s}>{s}</div>)}</td>
+                                        <td className="small">{(r.warnings ?? []).map(w => <div key={w}>{w}</div>)}</td>
+                                    </tr>
+                                ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                    {removed.length > 0 && (
+                        <div className="panel" style={{marginTop: 12}}>
+                            <strong>Nicht mehr in der Excel</strong>
+                            <p className="muted small">Früher aus dieser Datei importiert, dort aber nicht mehr vorhanden. Nur ausgewählte werden gelöscht.</p>
+                            {removed.map(r => (
+                                <label key={r.key} className="inline" style={{display: "flex"}}>
+                                    <input type="checkbox" checked={include.has(r.key)} onChange={() => toggle(r.key)}/>
+                                    löschen: {r.label} <span className="muted small">({sheets ? `${r.sheet}, ` : ""}früher Zeile {r.row})</span>
+                                </label>
                             ))}
-                            </tbody>
-                        </table>
-                    </div>
+                        </div>
+                    )}
                     <div className="actions">
-                        <button className="primary" disabled={busy || include.size === 0} onClick={commit}>
-                            {plural(include.size, "Rechnung", "Rechnungen")} importieren
+                        <button className="primary" disabled={busy || total === 0} onClick={commit}>
+                            Übernehmen{total > 0 && ` (${[chosen("new") && `${chosen("new")} neu`, chosen("changed") && `${chosen("changed")} geändert`,
+                                chosenRemoved && `${chosenRemoved} löschen`].filter(Boolean).join(", ")})`}
                         </button>
                         <button onClick={() => setPreview(null)}>Verwerfen</button>
                     </div>
@@ -147,4 +207,15 @@ export default function Import() {
             )}
         </>
     );
+}
+
+function StateBadge({state}: {state: string}) {
+    switch (state) {
+        case "new":
+            return <Badge kind="good">neu</Badge>;
+        case "changed":
+            return <Badge kind="warn">geändert</Badge>;
+        default:
+            return <Badge>unverändert</Badge>;
+    }
 }

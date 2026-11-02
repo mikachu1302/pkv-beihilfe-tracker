@@ -139,6 +139,7 @@ func (s *Service) SaveInvoice(d InvoiceDTO, original *InvoiceDTO) (InvoiceDetail
 		if err != nil {
 			return InvoiceDetailDTO{}, err
 		}
+		inv.Source = cur.Source // not part of the form
 		if original != nil && original.ID == inv.ID {
 			base, err := fromDTO(*original, &data.Settings, s.newID)
 			if err != nil {
