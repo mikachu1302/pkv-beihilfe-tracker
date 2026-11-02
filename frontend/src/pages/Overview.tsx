@@ -76,14 +76,21 @@ export default function Overview() {
                         <table>
                             <thead>
                             <tr>
-                                <th>Jahr</th>
-                                <th className="num">Rechnungen</th>
-                                <th className="num">Rechnungsbeträge</th>
+                                <th rowSpan={2}>Jahr</th>
+                                <th rowSpan={2} className="num">Rechnungen</th>
+                                <th rowSpan={2} className="num">Rechnungs&shy;beträge</th>
+                                {payers.map(p => <th key={p.id} colSpan={3} className="payer-group">{p.name}</th>)}
+                                <th rowSpan={2} className="num" title="Rechnungsbeträge minus Erstattungen">Nicht erstattet</th>
+                                <th rowSpan={2} className="num" title="Krankenhaustagegeld und andere Leistungen ohne Rechnung">Tagegeld u. Ä.</th>
+                            </tr>
+                            <tr>
                                 {payers.map(p => (
-                                    <th key={p.id} className="num" colSpan={2}>{p.name}<br/>SOLL / IST · <span title={OUTSTANDING_HINT}>Ausstand</span></th>
+                                    <Fragment key={p.id}>
+                                        <th className="num payer-first">SOLL</th>
+                                        <th className="num">IST</th>
+                                        <th className="num" title={OUTSTANDING_HINT}>Ausstand</th>
+                                    </Fragment>
                                 ))}
-                                <th className="num" title="Rechnungsbeträge minus Erstattungen">Nicht erstattet</th>
-                                <th className="num">Krankenhaustagegeld u. Ä.</th>
                             </tr>
                             </thead>
                             <tbody>
@@ -114,7 +121,8 @@ export default function Overview() {
                                 <td className="num muted">{avg(total.billed)}</td>
                                 {payers.map(p => (
                                     <Fragment key={p.id}>
-                                        <td className="num muted">{avg(payerOf(total, p.id)?.expected ?? "0")} / {avg(payerOf(total, p.id)?.actual ?? "0")}</td>
+                                        <td className="num muted payer-first">{avg(payerOf(total, p.id)?.expected ?? "0")}</td>
+                                        <td className="num muted">{avg(payerOf(total, p.id)?.actual ?? "0")}</td>
                                         <td className="num muted">–</td>
                                     </Fragment>
                                 ))}
@@ -134,11 +142,12 @@ const OUTSTANDING_HINT = "SOLL − IST der eingereichten und noch einzureichende
 
 /** SOLL / IST and the outstanding amount of one payer in one year (or the total). */
 function PayerCells({py}: {py?: PayerYearDTO}) {
-    if (!py) return <><td className="num">–</td><td className="num">–</td></>;
+    if (!py) return <><td className="num payer-first">–</td><td className="num">–</td><td className="num">–</td></>;
     const out = num(py.outstanding.total);
     return (
         <>
-            <td className="num">{eur(py.expected)} / {eur(py.actual)}</td>
+            <td className="num payer-first">{eur(py.expected)}</td>
+            <td className="num">{eur(py.actual)}</td>
             <td className="num" title={OUTSTANDING_HINT}>{out === 0 ? "–" : eur(py.outstanding.total)}</td>
         </>
     );

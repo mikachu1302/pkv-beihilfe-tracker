@@ -354,3 +354,7 @@ table.shortcuts { width: 100%; border-collapse: collapse; }
 table.shortcuts td { padding: 6px 8px 6px 0; vertical-align: top; }
 table.shortcuts td:first-child { white-space: nowrap; }
 .nav-help { color: inherit; font-size: inherit; padding: 0; margin-top: 4px; opacity: .9; }
+
+/* "Alle Jahre": payer column groups */
+th.payer-group { text-align: center; border-left: 1px solid var(--border); border-bottom: none; padding-bottom: 0; }
+th.payer-first, td.payer-first { border-left: 1px solid var(--border); }
