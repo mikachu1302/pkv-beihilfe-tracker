@@ -302,7 +302,14 @@ function ClaimCard({claim: c, view: v, onChange}: {claim: ClaimDTO; view: ClaimV
                 <dt>IST</dt><dd><strong>{v.status === "refunded" ? eur(v.actual) : "–"}</strong></dd>
                 {v.status === "refunded" && <><dt>Differenz</dt><dd className={diff < 0 ? "neg" : diff > 0 ? "pos" : ""}>{eur(v.diff)}</dd></>}
             </dl>
-            {v.suggestClarify && <Notice kind="warn">IST weicht vom SOLL ab – Klärungsbedarf markieren?</Notice>}
+            {v.suggestClarify && (
+                <Notice kind="warn">
+                    IST weicht vom SOLL ab – Klärungsbedarf markieren oder{" "}
+                    <button className="link" onClick={() => onChange({expected: toInput(v.actual), clarify: {...c.clarify, done: false}})}>
+                        Abweichung akzeptieren (SOLL = IST)
+                    </button>?
+                </Notice>
+            )}
             {v.deadline && <div className={`small ${v.deadlineDays < 0 ? "neg" : "muted"}`} style={{marginTop: 6}}>
                 Antragsfrist {v.deadlineDays < 0 ? "abgelaufen am" : "bis"} {date(v.deadline)}
             </div>}

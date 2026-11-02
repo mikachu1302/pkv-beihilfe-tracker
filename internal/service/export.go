@@ -94,6 +94,7 @@ type ReminderDTO struct {
 	Kind      string `json:"kind"` // deadline, payment, refund, clarify, deviation, premium, inbox
 	Text      string `json:"text"`
 	InvoiceID string `json:"invoiceId"`
+	PayerID   string `json:"payerId"`
 	Year      int    `json:"year"`
 	Urgent    bool   `json:"urgent"`
 }
@@ -149,7 +150,7 @@ func (s *Service) Reminders() ([]ReminderDTO, error) {
 				add(ReminderDTO{Kind: "clarify", Text: fmt.Sprintf("Klärungsbedarf bei %s%s: %s", c.PayerName, note, label), InvoiceID: inv.ID, Year: v.Year})
 			} else if c.SuggestClarify {
 				add(ReminderDTO{Kind: "deviation", Text: fmt.Sprintf("%s hat %s € statt %s € erstattet: %s", c.PayerName, c.Actual.DE(), c.Expected.DE(), label),
-					InvoiceID: inv.ID, Year: v.Year})
+					InvoiceID: inv.ID, PayerID: c.PayerID, Year: v.Year})
 			}
 			if c.Kind == model.PKV && c.Status == calc.StatusHeld {
 				heldYears[[2]any{v.Year, c.PayerID}] = true

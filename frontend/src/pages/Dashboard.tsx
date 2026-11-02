@@ -56,7 +56,17 @@ export default function Dashboard() {
 /** "Zu erledigen": deadlines, payments, open refunds, Klärungsbedarf, BRE decision, inbox. */
 function Reminders() {
     const {dataVersion, setYear} = useApp();
+    const toast = useToast();
     const list = useBackend(() => Svc.Reminders(), [dataVersion]);
+    async function accept(r: ReminderDTO) {
+        try {
+            await Svc.SetMark({invoiceId: r.invoiceId, payerId: r.payerId, mark: "acceptDeviation", on: true, date: "", note: "", amount: ""});
+            toast.show("Abweichung akzeptiert");
+            list.reload();
+        } catch (e) {
+            toast.error(e);
+        }
+    }
     const [all, setAll] = useState(false);
     const items = list.data ?? [];
     if (items.length === 0) return null;
@@ -74,7 +84,10 @@ function Reminders() {
                 {shown.map((r, i) => (
                     <li key={i} className={r.urgent ? "urgent" : ""}>
                         <span>{r.urgent && <strong>Dringend: </strong>}{r.text}</span>
-                        {link(r)}
+                        <span className="row" style={{flexWrap: "nowrap", gap: 10}}>
+                            {r.kind === "deviation" && <button className="link" title="SOLL = IST setzen, z. B. bei Höchstbeträgen" onClick={() => accept(r)}>akzeptieren</button>}
+                            {link(r)}
+                        </span>
                     </li>
                 ))}
             </ul>

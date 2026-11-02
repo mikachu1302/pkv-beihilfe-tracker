@@ -713,3 +713,24 @@ func tinyPNG() []byte {
 	_ = png.Encode(&buf, img)
 	return buf.Bytes()
 }
+
+func TestAcceptDeviation(t *testing.T) {
+	s := newTestService(t)
+	det, _ := s.SaveInvoice(sampleInvoice(), nil)
+	id := det.Invoice.ID
+	if _, err := s.SetMark(MarkChangeDTO{InvoiceID: id, PayerID: "beihilfe-bund", Mark: MarkAcceptDeviation, On: true}); err == nil {
+		t.Error("accepting without a refund must fail")
+	}
+	s.SetMark(MarkChangeDTO{InvoiceID: id, PayerID: "beihilfe-bund", Mark: MarkRefunded, On: true, Amount: "150"})
+	s.SetMark(MarkChangeDTO{InvoiceID: id, PayerID: "beihilfe-bund", Mark: MarkClarify, On: true, Note: "Höchstbetrag?"})
+	row, err := s.SetMark(MarkChangeDTO{InvoiceID: id, PayerID: "beihilfe-bund", Mark: MarkAcceptDeviation, On: true})
+	if c := claim(row, "beihilfe-bund"); err != nil || c.Expected != "150.00" || c.Diff != "0.00" || c.SuggestClarify || c.Clarify.Done {
+		t.Errorf("accepted: %+v %v", c, err)
+	}
+	rem, _ := s.Reminders()
+	for _, r := range rem {
+		if r.InvoiceID == id && (r.Kind == "deviation" || r.Kind == "clarify") {
+			t.Errorf("reminder left: %+v", r)
+		}
+	}
+}

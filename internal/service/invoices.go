@@ -11,6 +11,7 @@ import (
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/civil"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/leaf"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/model"
+	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/money"
 )
 
 // ListInvoices returns the invoices of a Leistungsjahr (0 = all), oldest first.
@@ -214,6 +215,9 @@ const (
 	MarkHeld               = "held"
 	MarkSkip               = "skip"
 	MarkKeepsPremiumRefund = "keepsPremiumRefund"
+	// MarkAcceptDeviation accepts what the payer refunded: SOLL becomes IST
+	// (e.g. a capped amount) and Klärungsbedarf is cleared.
+	MarkAcceptDeviation = "acceptDeviation"
 )
 
 // MarkChangeDTO ticks or unticks one checkbox of an invoice.
@@ -280,6 +284,16 @@ func (s *Service) SetMark(ch MarkChangeDTO) (InvoiceRowDTO, error) {
 			c.Skip = ch.On
 		case MarkKeepsPremiumRefund:
 			c.KeepsPremiumRefund = ch.On
+		case MarkAcceptDeviation:
+			var actual money.Cents
+			for _, r := range c.Refunds {
+				actual += r.Amount
+			}
+			if len(c.Refunds) == 0 {
+				return InvoiceRowDTO{}, errors.New("noch keine Erstattung erfasst")
+			}
+			c.Expected = &actual
+			c.Clarify = model.Mark{}
 		default:
 			return InvoiceRowDTO{}, fmt.Errorf("unbekanntes Häkchen %q", ch.Mark)
 		}
