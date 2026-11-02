@@ -262,3 +262,18 @@ func TestYearsSplitAndTotal(t *testing.T) {
 		t.Errorf("payer order: %+v", tot.Payers)
 	}
 }
+
+func TestOutstanding(t *testing.T) {
+	p := PayerYear{
+		Refunded:  Bucket{Count: 2, Expected: 30000, Actual: 29000}, // 10 € less than SOLL
+		Submitted: Bucket{Count: 1, Expected: 5000},
+		Open:      Bucket{Count: 1, Expected: 2000},
+		Held:      Bucket{Count: 1, Expected: 8000}, // not owed: held back
+		Skipped:   Bucket{Count: 1, Expected: 1000}, // not owed: not submitted
+	}
+	got := p.Outstanding()
+	want := Outstanding{Expected: 37000, Actual: 29000, Total: 8000, Submitted: 5000, Open: 2000, Refunded: 1000}
+	if got != want {
+		t.Errorf("Outstanding = %+v, want %+v", got, want)
+	}
+}

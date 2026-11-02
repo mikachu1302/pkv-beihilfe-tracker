@@ -1,7 +1,7 @@
 import {useEffect, useMemo, useState} from "react";
 import {Link, useNavigate} from "react-router";
 import {Desktop, Svc} from "../api";
-import type {ClaimViewDTO, InvoiceRowDTO, MarkChangeDTO, PayerDTO} from "../api";
+import type {ClaimViewDTO, InvoiceRowDTO, MarkChangeDTO, PayerDTO, YearDTO} from "../api";
 import {useApp} from "../App";
 import {useConfirm, useToast} from "../components/feedback";
 import {MarkBox} from "../components/MarkBox";
@@ -82,6 +82,14 @@ export default function Invoices() {
     const visible = rows.filter(r => matchesFilter(r, filter) &&
         (!q || `${r.provider} ${r.reference} ${r.note}`.toLowerCase().includes(q)));
 
+    /** Opens the invoice when a row is clicked anywhere but on its checkboxes, buttons or links. */
+    function openFromRow(e: React.MouseEvent, id: string) {
+        const target = e.target as HTMLElement;
+        if (target.closest("input, button, a, label, select, textarea, .popover, [role=dialog]")) return;
+        if (window.getSelection()?.toString()) return; // the user is selecting text
+        navigate(`/rechnung/${encodeURIComponent(id)}`);
+    }
+
     async function change(ch: MarkChangeDTO) {
         try {
             const row = await Svc.SetMark(ch);
@@ -134,6 +142,7 @@ export default function Invoices() {
                 <button onClick={() => exportExcel(toast, year)}>Excel</button>
                 <button className="primary" onClick={() => navigate("/rechnung/neu")}>Neue Rechnung</button>
             </div>
+            <OutstandingCards year={year}/>
             <div className="chips" style={{marginBottom: 12}}>
                 {FILTERS.map(([f, label]) => {
                     const count = f === "warnings" ? rows.filter(r => matchesFilter(r, f)).length : 0;
@@ -169,7 +178,8 @@ export default function Invoices() {
                         </thead>
                         <tbody>
                         {visible.map(r => (
-                            <tr key={r.id} className={selected.has(r.id) ? "sel" : ""}>
+                            <tr key={r.id} className={`clickable ${selected.has(r.id) ? "sel" : ""}`}
+                                onClick={e => openFromRow(e, r.id)}>
                                 <td><input type="checkbox" aria-label={`${r.provider} auswählen`} checked={selected.has(r.id)} onChange={() => toggleOne(r.id)}/></td>
                                 <td>
                                     {date(r.serviceDate)}
@@ -177,8 +187,13 @@ export default function Invoices() {
                                 </td>
                                 <td>
                                     <Link className="provider-link" to={`/rechnung/${encodeURIComponent(r.id)}`}>{r.provider || "(ohne Namen)"}</Link>
+                                    {"\u00a0"}<Link className="edit-link" to={`/rechnung/${encodeURIComponent(r.id)}`}
+                                               aria-label={`${r.provider || "Rechnung"} bearbeiten`} title="Rechnung öffnen und bearbeiten">✎</Link>
                                     {(r.warnings ?? []).length > 0 && (
                                         <> <Badge kind="warn" title={(r.warnings ?? []).map(w => w.text).join("\n")}>⚠ {(r.warnings ?? []).length}</Badge></>
+                                    )}
+                                    {r.note.trim() !== "" && (
+                                        <> <span className="badge note-badge" title={r.note} aria-label={`Notiz: ${r.note}`}>Notiz</span></>
                                     )}
                                     <div className="sub">{[CATEGORY_LABELS[r.category], r.reference].filter(Boolean).join(" · ")}</div>
                                 </td>
@@ -373,6 +388,39 @@ function BulkBar({ids, payers, onDone}: {ids: string[]; payers: PayerDTO[]; onDo
             <input aria-label="Weg" placeholder="Weg (App, Post …)" value={channel} onChange={e => setChannel(e.target.value)}/>
             <button className="primary" disabled={!payerId} onClick={submit}>Als eingereicht markieren</button>
             <button disabled={!payerId} onClick={bundle} title="Deckblatt und alle Belege in einer PDF – z. B. zum Hochladen in die Beihilfe-App">PDF-Paket</button>
+        </div>
+    );
+}
+
+/**
+ * What each payer still owes: SOLL − IST of the claims that are submitted or
+ * still to be submitted, for the chosen year or all years (calc.Outstanding).
+ */
+function OutstandingCards({year}: {year: number}) {
+    const {dataVersion} = useApp();
+    const figures = useBackend<YearDTO>(() => (year === 0 ? Svc.Overview().then(o => o.total) : Svc.Dashboard(year)), [year, dataVersion]);
+    const payers = (figures.data?.payers ?? []).filter(p => p.claims > 0);
+    if (payers.length === 0) return null;
+    const period = year === 0 ? "alle Jahre" : String(year);
+    return (
+        <div className="cards outstanding">
+            {payers.map(p => {
+                const o = p.outstanding;
+                const parts = [
+                    num(o.submitted) !== 0 && `eingereicht, offen ${eur(o.submitted)}`,
+                    num(o.open) !== 0 && `noch nicht eingereicht ${eur(o.open)}`,
+                    num(o.refunded) !== 0 && `Abweichung bei erstatteten ${eur(o.refunded)}`,
+                ].filter(Boolean);
+                return (
+                    <div key={p.payerId} className="card">
+                        <div className="label">{p.payerName} · Ausstand {period}</div>
+                        <div className="value">{eur(o.total)}</div>
+                        <div className="note">SOLL {eur(o.expected)} − IST {eur(o.actual)}</div>
+                        {parts.length > 0 && <div className="note">davon {parts.join(" · ")}</div>}
+                        {num(o.held) !== 0 && <div className="note">zurückgehalten {eur(o.held)} – nicht eingerechnet</div>}
+                    </div>
+                );
+            })}
         </div>
     );
 }

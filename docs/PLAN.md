@@ -201,8 +201,12 @@ ServiceYear = Leistungsjahr · PremiumRefund = Beitragsrückerstattung.
 
 ## 10. UI (M2+)
 
-- **Rechnungen**: table per year with checkboxes per payer; filters (open, submitted,
-  Klärungsbedarf, deadline); bulk "eingereicht heute" creates a submission.
+- **Rechnungen**: table per year or all years with checkboxes per payer; filters (open,
+  submitted, Klärungsbedarf, deadline, unpaid, with hints); bulk "eingereicht heute" creates a
+  submission. Above the table one card per payer shows the Ausstand (SOLL − IST of claims
+  submitted or still to be submitted; held-back and skipped claims are not owed). A row opens
+  the invoice when clicked anywhere outside its controls (also ✎ next to the name); notes show
+  as a "Notiz" badge with the text on hover.
 - **Rechnung**: detail form with SOLL/IST per payer, documents, refunds.
 - **Dashboard** per year; **Übersicht** of all years.
 - **Posteingang**: drafts from scans and refund documents with review.

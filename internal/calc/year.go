@@ -38,6 +38,31 @@ type PremiumRefund struct {
 	Forfeited        bool        `json:"forfeited"`        // a relevant claim was already submitted or refunded
 }
 
+// Outstanding is SOLL − IST of a payer's claims that are submitted or still
+// to be submitted. Claims held back or marked "wird nicht eingereicht" are
+// not owed and left out.
+type Outstanding struct {
+	Expected  money.Cents // SOLL of those claims
+	Actual    money.Cents // IST of those claims
+	Total     money.Cents // Expected − Actual
+	Submitted money.Cents // submitted, refund still open
+	Open      money.Cents // not submitted yet
+	Refunded  money.Cents // refunded claims: SOLL − IST (deviations)
+}
+
+// Outstanding returns what the payer still owes according to SOLL.
+func (p PayerYear) Outstanding() Outstanding {
+	o := Outstanding{
+		Expected:  p.Refunded.Expected + p.Submitted.Expected + p.Open.Expected,
+		Actual:    p.Refunded.Actual + p.Submitted.Actual + p.Open.Actual,
+		Submitted: p.Submitted.Expected - p.Submitted.Actual,
+		Open:      p.Open.Expected - p.Open.Actual,
+		Refunded:  p.Refunded.Expected - p.Refunded.Actual,
+	}
+	o.Total = o.Expected - o.Actual
+	return o
+}
+
 // PayerYear holds one payer's figures for one Leistungsjahr.
 type PayerYear struct {
 	PayerID   string          `json:"payerId"`

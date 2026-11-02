@@ -15,7 +15,9 @@ function payer(patch: Partial<PayerYearDTO>): PayerYearDTO {
         refunded: b(0, "0.00"), submitted: b(0, "0.00"), open: b(0, "0.00"), held: b(0, "0.00"), skipped: b(0, "0.00"),
         deviation: "0.00", clarify: 0, suggestClarify: 0, deadlineSoon: 0, deadlineMissed: 0, openBilled: "0.00",
         minClaimAmount: "0.00", annualDeduction: "0.00", deductible: "0.00", premiumRefund: null,
-        setting: {year: 2026, payerId: "", deductible: "", annualDeduction: "", expectedPremiumRefund: ""}, ...patch,
+        setting: {year: 2026, payerId: "", deductible: "", annualDeduction: "", expectedPremiumRefund: ""},
+        outstanding: {expected: "0.00", actual: "0.00", total: "0.00", submitted: "0.00", open: "0.00", refunded: "0.00", held: "0.00"},
+        ...patch,
     };
 }
 

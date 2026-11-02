@@ -7,6 +7,7 @@ import Invoices, {matchesFilter} from "./Invoices";
 
 const svc = vi.hoisted(() => ({
     Years: vi.fn(), GetSettings: vi.fn(), ListInvoices: vi.fn(), SetMark: vi.fn(), BulkSubmit: vi.fn(),
+    Dashboard: vi.fn(), Overview: vi.fn(),
 }));
 vi.mock("../api", () => ({Svc: svc}));
 
@@ -25,7 +26,20 @@ beforeEach(() => {
     svc.Years.mockResolvedValue([2026, 2025]);
     svc.GetSettings.mockResolvedValue(settings);
     svc.ListInvoices.mockResolvedValue(rows);
+    svc.Dashboard.mockResolvedValue(figures("2026"));
+    svc.Overview.mockResolvedValue({years: [], total: figures("alle")});
 });
+
+/** Year figures with outstanding amounts (only what the cards read). */
+function figures(tag: string) {
+    const o = (total: string) => ({expected: "500.00", actual: "300.00", total, submitted: "150.00", open: "50.00", refunded: "0.00", held: "0.00"});
+    return {
+        year: 0, payers: [
+            {payerId: "bh", payerName: "Beihilfe", claims: 3, outstanding: o(tag === "alle" ? "900.00" : "200.00")},
+            {payerId: "pkv", payerName: "Muster PKV", claims: 3, outstanding: {...o("0.00"), held: "120.00"}},
+        ],
+    };
+}
 
 describe("Invoices", () => {
     it("lists invoices with one column group per payer", async () => {
@@ -93,5 +107,45 @@ describe("Invoices", () => {
         const flagged = {...rows[0], warnings: [{code: "date_implausible", text: "Beihilfe: eingereicht am 17.09.2013 – Tippfehler?"}]};
         expect(matchesFilter(flagged, "warnings")).toBe(true);
         expect(matchesFilter({...rows[0], warnings: []}, "warnings")).toBe(false);
+    });
+
+    it("shows what each payer still owes, for one year or all years", async () => {
+        renderAt("/", "/", <Invoices/>);
+        const card = (await screen.findByText("Beihilfe · Ausstand 2026")).closest(".card") as HTMLElement;
+        expect(within(card).getByText("200,00 €")).toBeInTheDocument();
+        expect(within(card).getByText("SOLL 500,00 € − IST 300,00 €")).toBeInTheDocument();
+        expect(within(card).getByText("davon eingereicht, offen 150,00 € · noch nicht eingereicht 50,00 €")).toBeInTheDocument();
+        const pkv = screen.getByText("Muster PKV · Ausstand 2026").closest(".card") as HTMLElement;
+        expect(within(pkv).getByText("zurückgehalten 120,00 € – nicht eingerechnet")).toBeInTheDocument();
+    });
+
+    it("uses the total over all years for \"alle Jahre\"", async () => {
+        renderAt("/", "/", <Invoices/>, {year: 0});
+        expect(await screen.findByText("Beihilfe · Ausstand alle Jahre")).toBeInTheDocument();
+        expect(screen.getByText("900,00 €")).toBeInTheDocument();
+        expect(svc.Overview).toHaveBeenCalled();
+    });
+
+    it("shows the note as a hint with the text on hover", async () => {
+        svc.ListInvoices.mockResolvedValue([invoiceRow("a", "Dr. Muster", {note: "Rückfrage zur Ziffer 5"})]);
+        renderAt("/", "/", <Invoices/>);
+        const badge = await screen.findByLabelText("Notiz: Rückfrage zur Ziffer 5");
+        expect(badge).toHaveAttribute("title", "Rückfrage zur Ziffer 5");
+    });
+
+    it("opens the invoice by clicking the row, but not when ticking a box", async () => {
+        const user = userEvent.setup();
+        svc.SetMark.mockResolvedValue(rows[0]);
+        renderAt("/", "/", <Invoices/>);
+        const row = (await screen.findByText("Dr. Muster")).closest("tr")!;
+        await user.click(within(row).getByLabelText("Dr. Muster auswählen"));
+        expect(screen.queryByText("andere Seite")).not.toBeInTheDocument();
+        await user.click(within(row).getAllByRole("cell")[3]); // the amount
+        expect(await screen.findByText("andere Seite")).toBeInTheDocument();
+    });
+
+    it("has an edit link per row", async () => {
+        renderAt("/", "/", <Invoices/>);
+        expect(await screen.findByRole("link", {name: "Dr. Muster bearbeiten"})).toHaveAttribute("href", "/rechnung/a");
     });
 });

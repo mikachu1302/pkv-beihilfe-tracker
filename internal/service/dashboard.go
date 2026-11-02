@@ -52,6 +52,19 @@ type PayerYearDTO struct {
 	Deductible      string            `json:"deductible"`
 	PremiumRefund   *PremiumRefundDTO `json:"premiumRefund"`
 	Setting         YearSettingDTO    `json:"setting"` // editable per-year values
+	Outstanding     OutstandingDTO    `json:"outstanding"`
+}
+
+// OutstandingDTO is SOLL − IST of the claims that are submitted or still to be
+// submitted (see calc.Outstanding); Held is the SOLL held back, not included.
+type OutstandingDTO struct {
+	Expected  string `json:"expected"`
+	Actual    string `json:"actual"`
+	Total     string `json:"total"`
+	Submitted string `json:"submitted"`
+	Open      string `json:"open"`
+	Refunded  string `json:"refunded"`
+	Held      string `json:"held"`
 }
 
 // YearDTO holds the figures of one Leistungsjahr (Year 0 = total).
@@ -91,6 +104,9 @@ func yearDTO(set *model.Settings, y calc.Year) YearDTO {
 			OpenBilled: p.OpenBilled.String(), MinClaimAmount: p.MinClaimAmount.String(),
 			AnnualDeduction: p.AnnualDeduction.String(), Deductible: p.Deductible.String(),
 		}
+		o := p.Outstanding()
+		pd.Outstanding = OutstandingDTO{Expected: o.Expected.String(), Actual: o.Actual.String(), Total: o.Total.String(),
+			Submitted: o.Submitted.String(), Open: o.Open.String(), Refunded: o.Refunded.String(), Held: p.Held.Expected.String()}
 		if y.Year != 0 {
 			pd.Setting = yearSettingDTO(set.Year(y.Year, p.PayerID))
 		}
