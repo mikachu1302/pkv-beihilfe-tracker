@@ -1,8 +1,8 @@
-import {screen, waitFor} from "@testing-library/react";
+import {screen, waitFor, within} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import type {InvoiceDTO} from "../api";
-import {invoiceRow, noMark} from "../test/fixtures";
+import {claimView, invoiceRow, noMark} from "../test/fixtures";
 import {renderAt} from "../test/render";
 import InvoiceForm from "./InvoiceForm";
 
@@ -69,6 +69,42 @@ describe("InvoiceForm", () => {
         await user.type(await screen.findByLabelText("Behandler *"), "Dr. Muster");
         await user.click(screen.getByRole("button", {name: "Abbrechen"}));
         expect(await screen.findByRole("alertdialog")).toHaveTextContent("noch nicht gespeichert");
+    });
+
+    it("adds a refund with the open SOLL when \"erstattet\" is ticked without an amount", async () => {
+        const user = userEvent.setup();
+        const inv = {...blank, id: "a", provider: "Dr. Muster", amount: "286.40"};
+        svc.GetInvoice.mockResolvedValue({invoice: inv, view: invoiceRow("a", "Dr. Muster")});
+        svc.PreviewInvoice.mockResolvedValue({invoice: inv, view: invoiceRow("a", "Dr. Muster")});
+        renderAt("/rechnung/a", "/rechnung/:id", <InvoiceForm/>);
+        const bh = await screen.findByRole("region", {name: "Beihilfe"});
+        await user.click(within(bh).getByLabelText("erstattet"));
+        expect(within(bh).getByLabelText("Erstattungsbetrag")).toHaveValue("200,48"); // 70 % of 286,40
+        expect(within(bh).getByLabelText("erstattet")).toBeChecked();
+        await user.click(within(bh).getByLabelText("erstattet")); // untick: the manual refund goes again
+        expect(within(bh).queryByLabelText("Erstattungsbetrag")).not.toBeInTheDocument();
+    });
+
+    it("shows \"erstattet\" for refunds and warns about a tick without an amount", async () => {
+        const user = userEvent.setup();
+        const done = {done: true, date: "2026-11-02", note: ""};
+        const inv = {...blank, id: "a", provider: "Dr. Muster", amount: "286.40", claims: [
+            {...claim("bh"), refunds: [{id: "r1", amount: "22,21", date: "", docId: "", lineId: "", note: "aus Excel übernommen"}]},
+            {...claim("pkv"), refunded: done},
+        ]};
+        const view = invoiceRow("a", "Dr. Muster", {claims: [
+            claimView("bh", "Beihilfe", "beihilfe", {status: "refunded", actual: "22.21"}),
+            claimView("pkv", "Muster PKV", "pkv", {status: "refunded", refunded: done, suggestClarify: true, diff: "-85.92"}),
+        ]});
+        svc.GetInvoice.mockResolvedValue({invoice: inv, view});
+        renderAt("/rechnung/a", "/rechnung/:id", <InvoiceForm/>);
+        const bh = await screen.findByRole("region", {name: "Beihilfe"});
+        expect(within(bh).getByLabelText("erstattet")).toBeChecked();
+        const pkv = screen.getByRole("region", {name: "Muster PKV"});
+        expect(within(pkv).getByText(/kein Betrag erfasst/)).toBeInTheDocument();
+        expect(within(pkv).queryByText(/Abweichung akzeptieren/)).not.toBeInTheDocument();
+        await user.click(within(pkv).getByRole("button", {name: "Offenes SOLL als Erstattung eintragen"}));
+        expect(within(pkv).getByLabelText("Erstattungsbetrag")).toBeInTheDocument();
     });
 
     it("shows backend validation errors", async () => {

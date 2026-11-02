@@ -297,12 +297,32 @@ function ClaimCard({claim: c, view: v, onChange}: {claim: ClaimDTO; view: ClaimV
     const refunds = c.refunds ?? [];
     const setRefund = (i: number, patch: Partial<RefundDTO>) =>
         onChange({refunds: refunds.map((r, j) => (j === i ? {...r, ...patch} : r))});
-    const addRefund = () => {
+    const addRefund = (date = today()) => {
         const open = num(v.expected) - num(v.actual);
         onChange({
-            refunds: [...refunds, {id: "", amount: open > 0 ? toInput(open.toFixed(2)) : "", date: today(), docId: "", lineId: "", note: ""}],
-            refunded: c.refunded.done ? c.refunded : {...c.refunded, done: true, date: today()},
+            refunds: [...refunds, {id: "", amount: open > 0 ? toInput(open.toFixed(2)) : "", date, docId: "", lineId: "", note: ""}],
+            refunded: c.refunded.done ? c.refunded : {...c.refunded, done: true, date},
         });
+    };
+    // "erstattet" and the refunds belong together (as in the invoice list): a
+    // claim with refunds counts as refunded, and ticking it without an amount
+    // adds a refund prefilled with the open SOLL.
+    const refundedMark: MarkDTO = refunds.length > 0 && !c.refunded.done
+        ? {...c.refunded, done: true, date: c.refunded.date || latestDate(refunds)}
+        : c.refunded;
+    const setRefunded = (m: MarkDTO) => {
+        if (m.done && !refundedMark.done) {
+            if (refunds.length === 0) addRefund(m.date);
+            else onChange({refunded: m});
+            return;
+        }
+        if (!m.done) {
+            const fromDocs = refunds.filter(r => r.docId !== "");
+            onChange({refunds: fromDocs, refunded: {...c.refunded, done: false}});
+            if (fromDocs.length > 0) toast.show("Erstattungen aus einem Bescheid bleiben – zum Entfernen in der Tabelle auf ✕ klicken");
+            return;
+        }
+        onChange({refunded: m}); // date changed
     };
     const removeRefund = (i: number) => {
         const rest = refunds.filter((_, j) => j !== i);
@@ -320,7 +340,7 @@ function ClaimCard({claim: c, view: v, onChange}: {claim: ClaimDTO; view: ClaimV
                 <dt>IST</dt><dd><strong>{v.status === "refunded" ? eur(v.actual) : "–"}</strong></dd>
                 {v.status === "refunded" && <><dt>Differenz</dt><dd className={diff < 0 ? "neg" : diff > 0 ? "pos" : ""}>{eur(v.diff)}</dd></>}
             </dl>
-            {v.suggestClarify && (
+            {v.suggestClarify && refunds.length > 0 && (
                 <Notice kind="warn">
                     IST weicht vom SOLL ab – Klärungsbedarf markieren oder{" "}
                     <button className="link" onClick={() => onChange({expected: toInput(v.actual), clarify: {...c.clarify, done: false}})}>
@@ -334,7 +354,7 @@ function ClaimCard({claim: c, view: v, onChange}: {claim: ClaimDTO; view: ClaimV
 
             <div className="checks">
                 <MarkField label="eingereicht" mark={c.submitted} onChange={submitted => onChange({submitted})}/>
-                <MarkField label="erstattet" mark={c.refunded} onChange={refunded => onChange({refunded})}/>
+                <MarkField label="erstattet" mark={refundedMark} onChange={setRefunded}/>
                 <MarkField label="Klärungsbedarf" mark={c.clarify} withNote onChange={clarify => onChange({clarify})}/>
                 <label className="inline"><input type="checkbox" checked={c.held} onChange={e => onChange({held: e.target.checked})}/>zurückgehalten</label>
                 <label className="inline"><input type="checkbox" checked={c.skip} onChange={e => onChange({skip: e.target.checked})}/>wird nicht eingereicht</label>
@@ -345,6 +365,14 @@ function ClaimCard({claim: c, view: v, onChange}: {claim: ClaimDTO; view: ClaimV
                     </label>
                 )}
             </div>
+
+            {c.refunded.done && refunds.length === 0 && (
+                <Notice kind="warn">
+                    Als erstattet markiert, aber kein Betrag erfasst.{" "}
+                    <button className="link" onClick={() => addRefund(c.refunded.date || today())}>Offenes SOLL als Erstattung eintragen</button>
+                    {" "}oder das Häkchen entfernen.
+                </Notice>
+            )}
 
             <h3>Erstattungen</h3>
             {refunds.length > 0 && (
@@ -366,7 +394,7 @@ function ClaimCard({claim: c, view: v, onChange}: {claim: ClaimDTO; view: ClaimV
                     </tbody>
                 </table>
             )}
-            <button className="link" onClick={addRefund}>+ Erstattung erfassen</button>
+            <button className="link" onClick={() => addRefund()}>+ Erstattung erfassen</button>
 
             <details style={{marginTop: 10}}>
                 <summary>Abweichende Werte</summary>
@@ -384,4 +412,9 @@ function ClaimCard({claim: c, view: v, onChange}: {claim: ClaimDTO; view: ClaimV
             </details>
         </section>
     );
+}
+
+/** The latest date of the refunds (for the "erstattet" date shown when only refunds exist). */
+function latestDate(refunds: RefundDTO[]): string {
+    return refunds.map(r => r.date).filter(Boolean).sort().at(-1) ?? "";
 }

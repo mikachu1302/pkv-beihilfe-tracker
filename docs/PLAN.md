@@ -276,7 +276,9 @@ into the repo.
   accepts the German format. Every change is written immediately (no "save all").
 - Ticking "erstattet" in the list asks for the amount, prefilled with the open SOLL;
   unticking removes refunds entered by hand (refunds from documents stay). Ticking it again
-  when nothing is open only sets the tick and adds no second refund.
+  when nothing is open only sets the tick and adds no second refund. The invoice form behaves
+  the same: ticking without an amount adds a refund row with the open SOLL, a claim with
+  refunds shows as "erstattet", and a tick without any amount (older data) shows a hint.
 - "Eigenanteil" on the dashboard is shown as "noch nicht erstattet" (it includes claims held
   back or still open); the final own share counts settled invoices only.
 - Charts follow the dataviz method: thin segmented bar per payer (SOLL by status, figures in
