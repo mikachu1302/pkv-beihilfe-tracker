@@ -221,3 +221,17 @@ func TestSheetsTotalsAndZeroRefunds(t *testing.T) {
 		t.Errorf("0 imported as a refund: %+v", c)
 	}
 }
+
+func TestPaidColumnNames(t *testing.T) {
+	for _, h := range []string{"Anweisung am", "Überwiesen (am)", "Überwiesen am", "überwiesen", "Überweisung am", "Bezahlt am", "gezahlt"} {
+		if f, ok := classify(normalizeHeader(h)); !ok || f != fPaid {
+			t.Errorf("%q: field %v, ok %v", h, f, ok)
+		}
+	}
+	// About the refund, not the payment to the provider.
+	for _, h := range []string{"Beihilfe überwiesen", "Überwiesen Krankenkasse"} {
+		if f, ok := classify(normalizeHeader(h)); ok && f == fPaid {
+			t.Errorf("%q taken as paid", h)
+		}
+	}
+}

@@ -213,7 +213,8 @@ ServiceYear = Leistungsjahr · PremiumRefund = Beitragsrückerstattung.
 ## 11. Spreadsheet import (`internal/xlsximport`)
 
 Columns are recognised by header text (typos tolerated): Rechnungsdatum, Behandlungsdatum,
-Anweisung am (paid), Behandler, Bemerkung (several), Gesamtbetrag, Eingereicht/Erstattet
+Anweisung am / Überwiesen (am) / Bezahlt (paid to the provider; not when the header names
+Beihilfe or the PKV), Behandler, Bemerkung (several), Gesamtbetrag, Eingereicht/Erstattet
 Beihilfe, Eingereicht/Erstattet Krankenkasse, Krankenhaus Tagegeld. Every sheet with such a
 table is read (one sheet per year works). Computed columns and summary blocks next to the
 table are ignored, and so are rows with neither a date nor a provider (totals below the

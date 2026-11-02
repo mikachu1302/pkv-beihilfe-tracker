@@ -33,6 +33,11 @@ type Watcher struct {
 	own      func(path string) bool
 	onChange func()
 
+	// addMu orders adding folders and closing: on Windows, fsnotify's Add
+	// blocks forever when it runs after Close.
+	addMu  sync.Mutex
+	closed bool
+
 	mu      sync.Mutex
 	timer   *time.Timer
 	pending map[string]bool // changed paths since the last check (true = folder)
@@ -61,6 +66,9 @@ func Start(root string, debounce time.Duration, own func(path string) bool, onCh
 
 // Close stops watching; pending notifications are dropped.
 func (w *Watcher) Close() error {
+	w.addMu.Lock()
+	w.closed = true
+	w.addMu.Unlock()
 	close(w.done)
 	err := w.fs.Close()
 	w.wg.Wait()
@@ -90,7 +98,14 @@ func wanted(name string, depth int) bool {
 
 // addTree watches dir and the wanted sub folders below it.
 func (w *Watcher) addTree(dir string, depth int) error {
-	if err := w.fs.Add(dir); err != nil {
+	w.addMu.Lock()
+	if w.closed {
+		w.addMu.Unlock()
+		return nil
+	}
+	err := w.fs.Add(dir)
+	w.addMu.Unlock()
+	if err != nil {
 		return err
 	}
 	if depth >= 2 || depth == 1 && filepath.Base(dir) == InboxDir {

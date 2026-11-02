@@ -104,7 +104,9 @@ func classify(h string) (field, bool) {
 		return fInvoiceDate, true
 	case has("behandlungsdatum", "behandlung"):
 		return fServiceDate, true
-	case has("anweisung", "bezahlt", "ueberwiesen"):
+	// Paid to the provider: "Anweisung am", "Überwiesen (am)", "Bezahlt" …
+	// but not "Beihilfe überwiesen" – that is about the refund.
+	case has("anweisung", "bezahlt", "gezahlt", "beglichen", "ueberwiesen", "ueberweisung") && !beihilfe && !pkv:
 		return fPaid, true
 	case has("tagegeld"):
 		return fAllowance, true
@@ -255,7 +257,7 @@ func importRow(res *Result, sheet string, row []string, rowNum int, cols columns
 		InvoiceDate: invDate,
 		ServiceFrom: date(fServiceDate, "Behandlungsdatum"),
 		Amount:      amt,
-		Paid:        model.Mark{Date: date(fPaid, "Anweisung")},
+		Paid:        model.Mark{Date: date(fPaid, "Bezahlt")},
 		Note:        strings.Join(notes, " · "),
 		Claims:      map[string]model.Claim{},
 	}
@@ -299,7 +301,7 @@ func importRow(res *Result, sheet string, row []string, rowNum int, cols columns
 		}
 		checkDate(warn, sd.label+" eingereicht", sub, invDate)
 	}
-	checkDate(warn, "Anweisung", inv.Paid.Date, invDate)
+	checkDate(warn, "Bezahlt", inv.Paid.Date, invDate)
 	if hasAmount && refunded > amt+rounding {
 		warn("Erstattungen (%s €) höher als der Rechnungsbetrag (%s €)", refunded.DE(), amt.DE())
 	}
@@ -325,7 +327,7 @@ func checkDate(warn func(string, ...any), label string, d, invoiceDate civil.Dat
 	switch {
 	case d.Before(invoiceDate.AddYears(-1)) || d.After(invoiceDate.AddYears(4)):
 		warn("%s am %s – ungewöhnliches Jahr, Tippfehler?", label, d.DE())
-	case label != "Anweisung" && d.Before(invoiceDate):
+	case label != "Bezahlt" && d.Before(invoiceDate): // paying before the invoice date happens (e.g. at the pharmacy)
 		warn("%s am %s liegt vor dem Rechnungsdatum %s", label, d.DE(), invoiceDate.DE())
 	}
 }
