@@ -31,6 +31,17 @@ compared with the premium refund (Beitragsrückerstattung). The user interface i
 Status: all planned milestones (M1–M6) are done. Releases: push a tag `v1.2.3` – GitHub Actions
 builds the Windows installer, the macOS app and Linux packages. See [docs/PLAN.md](docs/PLAN.md).
 
+## Installation
+
+Installation guide (German): **[docs/INSTALLATION.md](docs/INSTALLATION.md)** – packages for Linux
+(`.rpm`, `.deb`, `.tar.gz` with `install.sh`), macOS (`.dmg`, universal) and Windows (installer)
+from the GitHub releases, an install script for Linux and macOS, and building from source.
+
+```sh
+sh scripts/install.sh   # Linux/macOS: latest release via the GitHub CLI, no root needed
+make install            # from source: Linux ~/.local, macOS ~/Applications
+```
+
 ## Build and run
 
 Requirements: Go 1.26, Node 22, the Wails CLI
@@ -41,7 +52,8 @@ WebKitGTK 4.1 development packages (Fedora: `gtk3-devel webkit2gtk4.1-devel`, De
 ```sh
 make dev                       # run with hot reload
 make build                     # bin/pkv-beihilfe-tracker for this OS
-make install                   # Linux: install to ~/.local with menu entry
+make install                   # Linux: ~/.local with menu entry · macOS: ~/Applications
+make dist-linux                # dist/…-linux-amd64.tar.gz (binary, icon, menu entry, install.sh)
 make demo DIR=/tmp/pkv-demo    # a data folder with made-up invoices to try the app
 ```
 

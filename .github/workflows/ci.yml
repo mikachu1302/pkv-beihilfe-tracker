@@ -37,6 +37,8 @@ jobs:
         run: mkdir -p frontend/dist && echo '<!doctype html>' > frontend/dist/index.html
       - name: gofmt
         run: test -z "$(gofmt -l .)" || (gofmt -l . ; exit 1)
+      - name: shellcheck (install scripts)
+        run: shellcheck build/linux/install.sh scripts/install.sh
       - run: go vet -tags gtk3 ./...
       - run: go test -race -tags gtk3 ./...
       - uses: golangci/golangci-lint-action@v8

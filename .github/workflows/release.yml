@@ -55,7 +55,8 @@ jobs:
         run: |
           wails3 task linux:create:deb
           wails3 task linux:create:rpm
-          tar -czf bin/pkv-beihilfe-tracker-linux-amd64.tar.gz -C bin pkv-beihilfe-tracker
+          make dist-linux   # tar.gz with binary, icon, menu entry and install.sh
+          cp dist/*.tar.gz bin/   # all packages in one folder: the artifact stays flat
           ls -la bin
       - name: Package (Windows)
         if: runner.os == 'Windows'
@@ -67,7 +68,12 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           wails3 task darwin:package:universal
-          ditto -c -k --keepParent bin/pkv-beihilfe-tracker.app bin/pkv-beihilfe-tracker-macos-universal.zip
+          # Readable name in Finder; renaming the bundle keeps the ad-hoc signature.
+          mkdir -p dmg
+          cp -R bin/pkv-beihilfe-tracker.app "dmg/PKV Beihilfe Tracker.app"
+          ln -s /Applications dmg/Programme
+          hdiutil create -volname "PKV Beihilfe Tracker" -srcfolder dmg -ov -format UDZO bin/pkv-beihilfe-tracker-macos-universal.dmg
+          ditto -c -k --keepParent "dmg/PKV Beihilfe Tracker.app" bin/pkv-beihilfe-tracker-macos-universal.zip
           ls -la bin
 
       - uses: actions/upload-artifact@v4
@@ -79,6 +85,7 @@ jobs:
             bin/*.rpm
             bin/*.tar.gz
             bin/*-installer.exe
+            bin/*.dmg
             bin/*.zip
 
   release:
@@ -95,7 +102,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes "Pakete für Windows (Installer), macOS (Universal-App als Zip, ad-hoc signiert) und Linux (DEB, RPM, tar.gz).
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes "Installation: siehe docs/INSTALLATION.md im Repository.
 
-          macOS: Beim ersten Start unter Systemeinstellungen → Datenschutz & Sicherheit „Dennoch öffnen“ wählen.
-          Windows: SmartScreen-Hinweis über „Weitere Informationen → Trotzdem ausführen“ bestätigen."
+          - Linux: .rpm (Fedora) oder .deb (Debian/Ubuntu); ohne Root: .tar.gz entpacken und ./install.sh ausführen.
+          - macOS: .dmg öffnen und die App in „Programme“ ziehen (Universal: Intel und Apple Silicon, ad-hoc signiert). Beim ersten Start unter Systemeinstellungen → Datenschutz & Sicherheit „Dennoch öffnen“ wählen.
+          - Windows: Installer starten; SmartScreen-Hinweis über „Weitere Informationen → Trotzdem ausführen“ bestätigen.
+          - Linux und macOS per Skript: sh scripts/install.sh (lädt dieses Release mit der GitHub-CLI)."
