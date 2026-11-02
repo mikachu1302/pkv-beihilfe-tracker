@@ -144,7 +144,7 @@ func (s *Server) receive(r *http.Request) (string, error) {
 	ctype, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	ext, ok := allowed[ctype]
 	if !ok {
-		return "", fmt.Errorf("Dateityp %q wird nicht angenommen (nur Fotos und PDF)", ctype)
+		return "", errors.New("Nur Fotos und PDF-Dateien können gesendet werden")
 	}
 	// Reserve the largest possible size up front, so parallel uploads
 	// cannot exceed the limits together; the rest is given back below.
@@ -166,10 +166,10 @@ func (s *Server) receive(r *http.Request) (string, error) {
 	head := make([]byte, 16)
 	n, err := io.ReadFull(body, head)
 	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
-		return "", errors.New("Datei ist leer oder unvollständig")
+		return "", errors.New("Die Datei ist leer oder unvollständig")
 	}
 	if !matchesType(head[:n], ctype) {
-		return "", fmt.Errorf("Inhalt passt nicht zum Dateityp %q", ctype)
+		return "", errors.New("Die Datei ist kein lesbares Foto oder PDF")
 	}
 	tmp, err := os.CreateTemp(s.dir, ".upload-*")
 	if err != nil {
@@ -184,7 +184,7 @@ func (s *Server) receive(r *http.Request) (string, error) {
 		written = 0
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {
-			return "", fmt.Errorf("Datei größer als %d MB", MaxFileSize>>20)
+			return "", fmt.Errorf("Die Datei ist größer als %d MB", MaxFileSize>>20)
 		}
 		return "", err
 	}

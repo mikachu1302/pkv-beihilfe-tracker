@@ -16,7 +16,13 @@
   label.secondary { background: var(--panel); border: 1px solid var(--muted); }
   input[type=file] { display: none; }
   ul { list-style: none; padding: 0; margin: 20px 0 0; }
-  li { background: var(--panel); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; display: flex; justify-content: space-between; gap: 8px; }
+  li { background: var(--panel); border-radius: 12px; padding: 10px; margin-bottom: 8px;
+       display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+  .thumb { width: 48px; height: 48px; border-radius: 8px; object-fit: cover; background: var(--bg);
+           display: grid; place-items: center; font-size: 12px; font-weight: 700; color: var(--muted); }
+  .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .meta { font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+  .state { font-size: 15px; font-weight: 600; white-space: nowrap; color: var(--muted); }
   .ok { color: var(--good); } .err { color: var(--bad); }
 </style>
 </head>
@@ -30,23 +36,50 @@
 </main>
 <script>
   const list = document.getElementById("list");
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text) e.textContent = text;
+    return e;
+  }
+  function size(bytes) {
+    return bytes >= 1048576 ? (bytes / 1048576).toFixed(1).replace(".", ",") + " MB" : Math.max(1, Math.round(bytes / 1024)) + " KB";
+  }
+  // One card per file: preview, name (shortened with … if long), size or error, status.
   async function send(file) {
-    const li = document.createElement("li");
-    const name = document.createElement("span");
-    name.textContent = file.name || "Foto";
-    const state = document.createElement("span");
-    state.textContent = "wird gesendet …";
-    li.append(name, state);
+    const li = el("li");
+    let thumb;
+    if (file.type.startsWith("image/")) {
+      thumb = el("img", "thumb");
+      thumb.alt = "";
+      thumb.src = URL.createObjectURL(file);
+      thumb.onload = () => URL.revokeObjectURL(thumb.src);
+      thumb.onerror = () => { // not a picture the phone can show (e.g. HEIC on some devices)
+        URL.revokeObjectURL(thumb.src);
+        thumb.replaceWith(el("div", "thumb", "Bild"));
+      };
+    } else {
+      thumb = el("div", "thumb", file.type === "application/pdf" ? "PDF" : "Datei");
+    }
+    const info = el("div");
+    const name = el("div", "name", file.name || "Foto");
+    name.title = file.name || "";
+    const meta = el("div", "meta", size(file.size));
+    info.append(name, meta);
+    const state = el("span", "state", "wird gesendet …");
+    li.append(thumb, info, state);
     list.prepend(li);
     try {
       const res = await fetch(location.pathname, {method: "POST", headers: {"Content-Type": file.type || "application/octet-stream"}, body: file});
       const text = await res.text();
-      if (!res.ok) throw new Error(text);
-      state.textContent = "✓ übertragen";
-      state.className = "ok";
+      if (!res.ok) throw new Error(text.trim());
+      state.textContent = "✓ gesendet";
+      state.className = "state ok";
     } catch (e) {
-      state.textContent = "✗ " + (e.message || "Fehler");
-      state.className = "err";
+      state.textContent = "✗ Fehler";
+      state.className = "state err";
+      meta.textContent = e.message || "Die Verbindung zum Computer ist abgebrochen.";
+      meta.className = "meta err";
     }
   }
   for (const id of ["camera", "files"]) {
