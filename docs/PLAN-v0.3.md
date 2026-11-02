@@ -18,6 +18,7 @@ light mode) and three ways to look at the invoices – without losing any data i
 | Table | **Read only**: sorting, choosing columns, sum row. Editing stays in the invoice form (double click / Enter opens it). |
 | Themes | System / Hell / Dunkel, per device, in the settings and as a quick toggle. |
 | Documents in the form | The invoice form gets "Beleg hinzufügen" (click or drop) for new and existing invoices; for a new invoice the document is recognised and fills **empty fields only**. The inbox stays for everything that arrives on its own (phone, `Eingang/` folder, Bescheide). |
+| Multi-page documents | Several photos can become one document (pages in order): merged by hand in the inbox, suggested by the app (never merged without confirmation), as a "mehrseitiger Beleg" from the phone page, and as several pages in "Beleg hinzufügen". Recognition reads all pages together; invoices and Bescheide alike. |
 | Version | All of this is v0.3.0; v0.2.0 (prescriptions, re-import, shortcuts …) ships first. |
 
 ## Views
@@ -67,6 +68,30 @@ needs the detour through the inbox. v0.3.0:
 - The inbox keeps its role: files that arrive without the user (phone, cloud folder) and refund
   documents that are spread over several invoices.
 
+## Multi-page documents
+
+Today every image is its own inbox entry: a three-page invoice photographed as three pictures
+becomes three drafts (and three invoices if all are saved). A multi-page PDF already works as one
+document (up to 4 pages are read). v0.3.0:
+
+- **Model**: a document consists of one or more files (pages, in order). An invoice already holds
+  several attachments; a grouped inbox entry keeps its pages until it is saved, then all pages are
+  attached to the one invoice (and go into the submission PDF in that order). Raise the page limit
+  for PDFs (e.g. 12 pages).
+- **Merge by hand in the inbox**: select entries → "Zu einem Beleg zusammenfassen", reorder the
+  pages by dragging, split again. Recognition runs over all pages as one text (page numbers kept):
+  header from the first page, total and IBAN usually from the last.
+- **Suggestions**: the app proposes "Diese 3 Fotos gehören wohl zusammen – zusammenfassen?" when
+  pages say "Seite 1/3" / "Seite 2 von 3", share an invoice number or provider without an own total,
+  or arrived from the phone within a short time; merging always needs a click.
+- **Phone page**: a mode "Mehrseitiger Beleg" – take the pages one after another, then "Fertig";
+  the upload is marked as one group and lands in the inbox as one entry.
+- **Invoice form**: "Beleg hinzufügen" accepts several files at once as pages of one document.
+- **Refund documents** (Bescheide are often several pages) use the same grouping; their review
+  reads the lines of all pages.
+- Storage: pages stay separate files in `belege/` (content-named as today); the grouping lives in
+  the record (order of the attachments), so syncing stays per file and conflict-free.
+
 ## Settings · Darstellung
 
 - Standardansicht: Detail (default) / Kompakt / Tabelle.
@@ -89,7 +114,9 @@ needs the detour through the inbox. v0.3.0:
    quick choice for the session only.
 6. **Documents in the invoice form**: "Beleg hinzufügen" with recognition for new invoices
    (fills empty fields only), attaching to existing invoices, removing attachments.
-7. Tests: unit tests per view (same data, sorting, column chooser, keyboard), theme contrast
+7. **Multi-page documents**: grouping in the inbox (by hand, then suggestions), the phone
+   page's multi-page mode, several pages in the form, Bescheide over several pages.
+8. Tests: unit tests per view (same data, sorting, column chooser, keyboard), theme contrast
    check, headless screenshots in both themes; docs (README, PLAN).
 
 ## Open points
