@@ -1,7 +1,7 @@
 # v0.5.0 – Local AI: reading documents and asking questions (plan)
 
-Status: draft · 2026-11-03 · server set up and tested (results below); decisions recorded; a final
-check with real documents is still advised. Next: [PLAN-v0.6.md](PLAN-v0.6.md) (checking invoices
+Status: ready to build · 2026-11-03 · server set up and tested with made-up documents (results
+below); decisions recorded. No separate test with real documents – they show up in use. Next: [PLAN-v0.6.md](PLAN-v0.6.md) (checking invoices
 against other documents).
 
 v0.5.0 brings two AI features, both **optional** (without the server everything works as today)
@@ -234,9 +234,8 @@ Examples:
 
 ## Steps
 
-1. **Real-world test** (before building): 5–10 real invoices with `scripts/ki-belegtest.py` –
-   accuracy, time per page, a 3-page document, with the phones idle and in use; smaller pages.
-   Guide: [KI-TEST.md](KI-TEST.md).
+1. ~~Test~~ done with made-up documents (see Test results); real documents are not tested
+   separately.
 2. `internal/ai` (client) and Settings · KI (address, model, key, test connection).
 3. `internal/airead` (schema, checks) and the frontend for reading (button, progress, cancel,
    badges, conflict hints); tests against an `httptest` server (answers, 401, timeouts, cancel,
@@ -253,7 +252,7 @@ Examples:
    (Qwen3-VL-4B) only if the time becomes a problem.
 2. ~~Three or more pages?~~ One request, tested up to four pages.
 3. ~~Image size?~~ 1,400 px – smaller pages lose amounts in small print.
-4. Real documents: one more run of `scripts/ki-belegtest.py` with 5–10 real difficult invoices
-   before building, to confirm the numbers above.
+4. ~~Test with real documents first?~~ Not done separately (decided 2026-11-03) – real
+   documents show up in use; `scripts/ki-belegtest.py` stays for checking later.
 5. Questions the query model cannot express: collect them during use and extend the model (no
    free-form answers from the model); the question set grows with them.
