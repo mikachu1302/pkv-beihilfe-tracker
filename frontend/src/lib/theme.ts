@@ -1,7 +1,9 @@
 // The colour scheme of this device: like the system, light or dark. The
-// choice is kept in the device configuration (backend) and, to avoid a flash
-// at start, in localStorage; the CSS reads data-theme on the root element.
+// choice is kept in the device configuration (backend) and, to paint the
+// right one at start, in localStorage (public/boot.js reads it before the
+// first paint); the CSS reads data-theme on the root element.
 import {useSyncExternalStore} from "react";
+import {createStore, loadLocal, saveLocal, useStore} from "./store";
 
 export type Theme = "" | "light" | "dark";
 
@@ -10,17 +12,9 @@ export const THEME_LABELS: Record<Theme, string> = {light: "Hell", dark: "Dunkel
 export const THEME_ORDER: Theme[] = ["light", "dark", ""];
 
 const KEY = "pkv.theme";
-const listeners = new Set<() => void>();
-let current: Theme = stored();
 
-function stored(): Theme {
-    try {
-        const v = localStorage.getItem(KEY);
-        return v === "light" || v === "dark" ? v : "";
-    } catch {
-        return "";
-    }
-}
+const parse = (v: unknown): Theme => (v === "light" || v === "dark" ? v : "");
+const theme = createStore<Theme>(parse(loadLocal(KEY)));
 
 function systemDark(): boolean {
     return typeof window.matchMedia === "function" && window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -28,48 +22,36 @@ function systemDark(): boolean {
 
 /** Sets data-theme to the scheme in effect ("dark" or "light"). */
 function paint() {
-    const dark = current === "dark" || (current === "" && systemDark());
-    document.documentElement.dataset.theme = dark ? "dark" : "light";
-    listeners.forEach(l => l());
+    const t = theme.get();
+    document.documentElement.dataset.theme = t === "dark" || (t === "" && systemDark()) ? "dark" : "light";
+    theme.notify();
 }
 
-/** Applies a theme on this device (without saving it in the backend). */
-export function applyTheme(t: Theme) {
-    current = t;
-    try {
-        if (t) localStorage.setItem(KEY, t);
-        else localStorage.removeItem(KEY);
-    } catch {
-        // the backend keeps it
-    }
+/** Applies a theme on this device (without saving it in the backend); unknown values mean automatic. */
+export function applyTheme(t: string) {
+    const value = parse(t);
+    theme.set(value);
+    saveLocal(KEY, value || null);
     paint();
 }
 
-// Applied as soon as this module is evaluated (main.tsx imports it first),
-// before the rest of the app is loaded.
+// Applied as soon as this module is evaluated (main.tsx imports it first).
 paint();
 
 /** Called once at start: following the system when it changes. */
 export function initTheme() {
-    paint();
     if (typeof window.matchMedia === "function") {
-        window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => current === "" && paint());
+        window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => theme.get() === "" && paint());
     }
 }
 
-const subscribe = (l: () => void) => {
-    listeners.add(l);
-    return () => {
-        listeners.delete(l);
-    };
-};
-
 /** The theme chosen on this device ("" = automatic). */
 export function useTheme(): Theme {
-    return useSyncExternalStore(subscribe, () => current);
+    return useStore(theme);
 }
 
 /** Whether the dark scheme is in effect right now (chosen, or automatic and the system is dark). */
 export function useDarkActive(): boolean {
-    return useSyncExternalStore(subscribe, () => document.documentElement.dataset.theme === "dark");
+    // Read from the page: with "Automatisch" the system may switch while the chosen theme stays "".
+    return useSyncExternalStore(theme.subscribe, () => document.documentElement.dataset.theme === "dark");
 }

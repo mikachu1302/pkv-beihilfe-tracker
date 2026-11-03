@@ -13,7 +13,8 @@ import (
 type AppearanceDTO struct {
 	Theme  string `json:"theme"`  // "" = like the system, "light", "dark"
 	Design string `json:"design"` // "new" (the default) or "classic"
-	// DesignHint: show the one-time hint where to switch back to the classic design.
+	// DesignHint: show the one-time hint where to switch back to the classic
+	// design (devices that had a data folder before v0.4.0).
 	DesignHint bool            `json:"designHint"`
 	View       string          `json:"view"` // default invoice view: "detail", "compact", "table", "classic"
 	Table      TableOptionsDTO `json:"table"`
@@ -23,39 +24,48 @@ type AppearanceDTO struct {
 type TableOptionsDTO struct {
 	Dense  bool     `json:"dense"`
 	Sum    bool     `json:"sum"`
-	Hidden []string `json:"hidden"` // column keys not shown
+	Hidden []string `json:"hidden"` // column kinds not shown
 }
 
-// Designs, invoice views and table columns known to this version. Unknown
-// values in the configuration (from a newer version) fall back to the default.
+// Themes, designs, invoice views and table column kinds known to this
+// version, defaults first (keep in sync with frontend/src/lib/theme.ts,
+// design.ts, appearance.ts). Unknown values in the configuration (from a
+// newer version) fall back to the default.
 var (
-	designs     = []string{"new", "classic"}
-	views       = []string{"detail", "compact", "table", "classic"}
-	tableColumn = []string{"service", "invoice", "provider", "category", "reference", "amount", "paid",
+	themes       = []string{"", "light", "dark"}
+	designs      = []string{"new", "classic"}
+	views        = []string{"detail", "compact", "table", "classic"}
+	tableColumns = []string{"service", "invoice", "provider", "category", "reference", "amount", "paid",
 		"expected", "actual", "diff", "submitted", "refunded", "note"}
 )
+
+// known returns v if it is one of values, else the first (the default).
+func known(v string, values []string) string {
+	if slices.Contains(values, v) {
+		return v
+	}
+	return values[0]
+}
 
 // Appearance returns the appearance settings of this device.
 func (s *Service) Appearance() AppearanceDTO {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.cfg == nil {
-		return AppearanceDTO{Design: "new", View: "detail", Table: TableOptionsDTO{Sum: true, Hidden: []string{}}}
+		return appearanceOf(&config.Config{DesignHintSeen: true})
 	}
 	return appearanceOf(s.cfg)
 }
 
 func appearanceOf(c *config.Config) AppearanceDTO {
-	a := AppearanceDTO{Theme: c.Theme, Design: c.Design, View: c.View, DesignHint: !c.DesignHintSeen,
-		Table: TableOptionsDTO{Dense: c.Table.Dense, Sum: !c.Table.NoSum, Hidden: []string{}}}
-	if !slices.Contains(designs, a.Design) {
-		a.Design = "new"
-	}
-	if !slices.Contains(views, a.View) {
-		a.View = "detail"
+	a := AppearanceDTO{
+		Theme: known(c.Theme, themes), Design: known(c.Design, designs), View: known(c.View, views),
+		// Not on the setup screen: a device set up now gets no hint (SetDataDir marks it seen).
+		DesignHint: !c.DesignHintSeen && c.DataDir != "",
+		Table:      TableOptionsDTO{Dense: c.Table.Dense, Sum: !c.Table.NoSum, Hidden: []string{}},
 	}
 	for _, h := range c.Table.Hidden {
-		if slices.Contains(tableColumn, h) {
+		if slices.Contains(tableColumns, h) {
 			a.Table.Hidden = append(a.Table.Hidden, h)
 		}
 	}
@@ -64,9 +74,7 @@ func appearanceOf(c *config.Config) AppearanceDTO {
 
 // SetTheme sets the colour scheme of this device: "", "light" or "dark".
 func (s *Service) SetTheme(theme string) error {
-	switch theme {
-	case "", "light", "dark":
-	default:
+	if !slices.Contains(themes, theme) {
 		return fmt.Errorf("unbekanntes Farbschema %q", theme)
 	}
 	return s.updateConfig("Farbschema", func(c *config.Config) { c.Theme = theme })
@@ -95,19 +103,14 @@ func (s *Service) SetView(view string) error {
 	if !slices.Contains(views, view) {
 		return fmt.Errorf("unbekannte Ansicht %q", view)
 	}
-	return s.updateConfig("Standardansicht", func(c *config.Config) {
-		c.View = view
-		if view == "detail" {
-			c.View = "" // the default
-		}
-	})
+	return s.updateConfig("Standardansicht", func(c *config.Config) { c.View = view })
 }
 
 // SetTableOptions sets the options of the table view.
 func (s *Service) SetTableOptions(t TableOptionsDTO) error {
 	var hidden []string
 	for _, h := range t.Hidden {
-		if !slices.Contains(tableColumn, h) {
+		if !slices.Contains(tableColumns, h) {
 			return fmt.Errorf("unbekannte Spalte %q", h)
 		}
 		if !slices.Contains(hidden, h) {
@@ -127,11 +130,10 @@ func (s *Service) updateConfig(what string, change func(*config.Config)) error {
 	if s.cfg == nil {
 		return errors.New("Konfiguration nicht verfügbar")
 	}
-	old := *s.cfg
-	old.Table.Hidden = slices.Clone(s.cfg.Table.Hidden)
+	old := s.cfg.Clone()
 	change(s.cfg)
 	if err := s.cfg.Save(s.cfgDir); err != nil {
-		*s.cfg = old
+		*s.cfg = *old
 		return fmt.Errorf("%s konnte nicht gespeichert werden: %w", what, err)
 	}
 	return nil

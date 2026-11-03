@@ -11,6 +11,16 @@ export function eur(v: string | number | undefined | null): string {
     return `${eurFmt.format(n)} €`;
 }
 
+/** "1.234,56" – an amount without the € sign, for tables with many amounts. */
+export function decimal(v: string | number | undefined | null): string {
+    return eurFmt.format(num(v));
+}
+
+/** The sum of the amounts picked from each item (amounts arrive as strings). */
+export function sumBy<T>(items: readonly T[], pick: (item: T) => string | number | undefined | null): number {
+    return items.reduce((s, x) => s + num(pick(x)), 0);
+}
+
 /** "1.235 €" (rounded) for axes and tight spaces. */
 export function eurRound(v: string | number | undefined | null): string {
     if (v === undefined || v === null || v === "") return "–";
@@ -72,6 +82,13 @@ export function shortDate(iso: string | undefined | null): string {
     if (!iso) return "";
     const [y, m, d] = iso.split("-");
     return d && m && y ? `${d}.${m}.${y.slice(2)}` : iso;
+}
+
+/** "2026-03-14" → "14.03." for short status texts. */
+export function dayMonth(iso: string | undefined | null): string {
+    if (!iso) return "";
+    const [, m, d] = iso.split("-");
+    return d && m ? `${d}.${m}.` : iso;
 }
 
 /** Today as "YYYY-MM-DD" in local time. */

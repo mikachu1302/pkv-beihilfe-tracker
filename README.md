@@ -9,8 +9,8 @@ compared with the premium refund (Beitragsrückerstattung). The user interface i
   that record the date; bulk "eingereicht" for several invoices. Four views: **Detail** (one card
   per invoice with SOLL, IST and dates per payer), **Kompakt** (one line per invoice with status
   dots, expandable), **Tabelle** (every field as a column like a spreadsheet: sortable, column
-  chooser, sum row – read only) and the classic list. Long lists stay fast: Tabelle and Kompakt
-  render only the visible rows.
+  chooser, sum row – read only) and the classic list. Long lists stay fast: the three new views
+  render only the visible invoices.
 - **SOLL/IST per invoice and payer**; SOLL follows the share (50/50, 70/30 or 100 % PKV) at the
   date of treatment.
 - **Dashboard per year** (Leistungsjahr = year of treatment), comparison "claim from the PKV

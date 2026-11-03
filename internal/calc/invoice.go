@@ -65,6 +65,25 @@ type ClaimView struct {
 	FromDoc bool `json:"fromDoc"`
 }
 
+// Owed is what the payer still owes on this claim according to SOLL, as in
+// Outstanding: SOLL − IST of claims that are submitted, still to be
+// submitted or refunded (a deviation); held-back and skipped claims owe nothing.
+func (c ClaimView) Owed() money.Cents {
+	switch c.Status {
+	case StatusOpen, StatusSubmitted, StatusRefunded:
+		return c.Expected - c.Actual
+	}
+	return 0
+}
+
+// LongWait reports a submitted claim waiting for its refund longer than LongWaitDays.
+func (c ClaimView) LongWait() bool { return c.WaitingDays > LongWaitDays }
+
+// DeadlineSoon reports a deadline that is missed or within DeadlineWarnDays.
+func (c ClaimView) DeadlineSoon() bool {
+	return !c.Deadline.IsZero() && c.DeadlineDays <= DeadlineWarnDays
+}
+
 // InvoiceView is an invoice with the derived values of all its claims.
 type InvoiceView struct {
 	ID          string      `json:"id"`

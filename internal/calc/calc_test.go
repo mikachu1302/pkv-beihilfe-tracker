@@ -128,6 +128,32 @@ func TestWaitingAndFromDoc(t *testing.T) {
 	if pkv := claimOf(v, "pkv"); pkv.WaitingDays != 0 || !pkv.FromDoc {
 		t.Errorf("pkv (refunded): waiting %d, from doc %v", pkv.WaitingDays, pkv.FromDoc)
 	}
+	if bh := claimOf(v, "bh"); !bh.LongWait() || claimOf(Invoice(s, &inv, d("2026-03-10")), "bh").LongWait() {
+		t.Error("long wait: more than LongWaitDays after submitting")
+	}
+}
+
+func TestOwedAndDeadlineSoon(t *testing.T) {
+	s := settings70()
+	inv := model.Invoice{InvoiceDate: d("2023-06-01"), Amount: eur("100"), Claims: map[string]model.Claim{
+		"bh":  {Refunds: refund("40")}, // 50 % in 2023: SOLL 50, IST 40 – owes the deviation
+		"pkv": {Held: true},            // held back: owes nothing
+	}}
+	v := Invoice(s, &inv, d("2026-04-01"))
+	if bh := claimOf(v, "bh"); bh.Owed() != eur("10") {
+		t.Errorf("bh owed %v", bh.Owed())
+	}
+	pkv := claimOf(v, "pkv")
+	if pkv.Owed() != 0 {
+		t.Errorf("held claim owed %v", pkv.Owed())
+	}
+	open := model.Invoice{InvoiceDate: d("2023-06-01"), Amount: eur("80")}
+	if bh := claimOf(Invoice(s, &open, d("2026-04-01")), "bh"); !bh.DeadlineSoon() || bh.Owed() != eur("40") {
+		t.Errorf("open claim 61 days before its deadline: soon %v, owed %v", bh.DeadlineSoon(), bh.Owed())
+	}
+	if bh := claimOf(Invoice(s, &open, d("2025-01-01")), "bh"); bh.DeadlineSoon() {
+		t.Error("deadline more than DeadlineWarnDays ahead counts as soon")
+	}
 }
 
 func TestFullPKV(t *testing.T) {

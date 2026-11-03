@@ -1,19 +1,19 @@
 import {useEffect, useRef, useState} from "react";
 import {Desktop, Svc} from "../api";
 import type {BackupStatusDTO, CoverageDTO, PayerDTO, ProblemDTO, SettingsDTO, YearSettingDTO} from "../api";
-import {useApp, useSetDesign, useSetTheme} from "../App";
+import {useApp} from "../App";
 import {useToast} from "../components/feedback";
 import {ErrorNotice, Field, Loading, Notice} from "../components/ui";
 import {errMsg, toInput} from "../lib/format";
 import {key, useSaveShortcut, useUnsavedChanges} from "../lib/shortcuts";
 import {useBackend} from "../lib/useBackend";
-import {patchAppearance, setSessionView, useAppearance, VIEW_LABELS, VIEW_ORDER} from "../lib/appearance";
+import {defaultView, useAppearance, VIEW_LABELS, VIEW_ORDER} from "../lib/appearance";
 import type {InvoiceView} from "../lib/appearance";
+import {useSetDesign, useSetTheme, useSetView, useTableOptions} from "../lib/appearanceActions";
 import {DESIGN_LABELS, DESIGN_ORDER, useDesign} from "../lib/design";
 import type {Design} from "../lib/design";
 import {THEME_LABELS, THEME_ORDER, useTheme} from "../lib/theme";
 import type {Theme} from "../lib/theme";
-import {COLUMN_KINDS, useTableOptions} from "./invoices/TableView";
 
 /** Amounts in the form use the German format. */
 function forForm(s: SettingsDTO): SettingsDTO {
@@ -247,43 +247,20 @@ function Appearance() {
     const setTheme = useSetTheme();
     const design = useDesign();
     const setDesign = useSetDesign();
-    const appearance = useAppearance();
+    const view = defaultView(useAppearance());
     const setView = useSetView();
     const [table, setTable] = useTableOptions();
-    const view = (appearance?.view ?? "detail") as InvoiceView;
-    const hiddenCount = COLUMN_KINDS.filter(k => table.hidden.includes(k)).length;
+    const hidden = table.hidden.length;
     return (
         <section className="panel" aria-label="Darstellung">
             <h2>Darstellung</h2>
             <p className="muted small">Gilt nur für dieses Gerät; der Datenordner bleibt unberührt.</p>
             <div className="appearance">
-                <fieldset className="choice-cards">
-                    <legend>Design</legend>
-                    {DESIGN_ORDER.map(d => (
-                        <label key={d} className={`choice-card ${design === d ? "on" : ""}`}>
-                            <input type="radio" name="design" checked={design === d} onChange={() => setDesign(d)}
-                                   aria-labelledby={`design-${d}`} aria-describedby={`design-${d}-hint`}/>
-                            <span>
-                                <span className="choice-title" id={`design-${d}`}>{DESIGN_LABELS[d]}{d === "new" && " (Standard)"}</span>
-                                <span className="choice-hint" id={`design-${d}-hint`}>{DESIGN_HINTS[d]}</span>
-                            </span>
-                        </label>
-                    ))}
-                </fieldset>
+                <ChoiceCards legend="Design" name="design" value={design} onChange={setDesign}
+                             options={DESIGN_ORDER.map(d => ({value: d, title: DESIGN_LABELS[d], hint: DESIGN_HINTS[d]}))}/>
                 {design === "new" && (
-                    <fieldset className="choice-cards">
-                        <legend>Standardansicht der Rechnungen</legend>
-                        {VIEW_ORDER.map(v => (
-                            <label key={v} className={`choice-card ${view === v ? "on" : ""}`}>
-                                <input type="radio" name="view" checked={view === v} onChange={() => setView(v)}
-                                       aria-labelledby={`view-${v}`} aria-describedby={`view-${v}-hint`}/>
-                                <span>
-                                    <span className="choice-title" id={`view-${v}`}>{VIEW_LABELS[v]}{v === "detail" && " (Standard)"}</span>
-                                    <span className="choice-hint" id={`view-${v}-hint`}>{VIEW_HINTS[v]}</span>
-                                </span>
-                            </label>
-                        ))}
-                    </fieldset>
+                    <ChoiceCards legend="Standardansicht der Rechnungen" name="view" value={view} onChange={setView}
+                                 options={VIEW_ORDER.map(v => ({value: v, title: VIEW_LABELS[v], hint: VIEW_HINTS[v]}))}/>
                 )}
                 <div className="appearance-side">
                     <fieldset className="choice stacked">
@@ -307,9 +284,9 @@ function Appearance() {
                                 enge Zeilen
                             </label>
                             <span className="muted small">
-                                {hiddenCount === 0 ? "Alle Spalten sichtbar" : `${hiddenCount} Spaltenart${hiddenCount === 1 ? "" : "en"} ausgeblendet`}
+                                {hidden === 0 ? "Alle Spalten sichtbar" : `${hidden} Spaltenart${hidden === 1 ? "" : "en"} ausgeblendet`}
                                 {" – "}auswählen in der Tabelle über „Spalten“.
-                                {hiddenCount > 0 && <> <button className="link" onClick={() => setTable({...table, hidden: []})}>Alle zeigen</button></>}
+                                {hidden > 0 && <> <button className="link" onClick={() => setTable({...table, hidden: []})}>Alle zeigen</button></>}
                             </span>
                         </fieldset>
                     )}
@@ -324,6 +301,31 @@ function Appearance() {
     );
 }
 
+/** Radio buttons as cards with a title (the name) and a hint (the description); the first option is the default. */
+function ChoiceCards<T extends string>({legend, name, value, onChange, options}: {
+    legend: string;
+    name: string;
+    value: T;
+    onChange: (v: T) => void;
+    options: {value: T; title: string; hint: string}[];
+}) {
+    return (
+        <fieldset className="choice-cards">
+            <legend>{legend}</legend>
+            {options.map((o, i) => (
+                <label key={o.value} className={`choice-card ${value === o.value ? "on" : ""}`}>
+                    <input type="radio" name={name} checked={value === o.value} onChange={() => onChange(o.value)}
+                           aria-labelledby={`${name}-${o.value}`} aria-describedby={`${name}-${o.value}-hint`}/>
+                    <span>
+                        <span className="choice-title" id={`${name}-${o.value}`}>{o.title}{i === 0 && " (Standard)"}</span>
+                        <span className="choice-hint" id={`${name}-${o.value}-hint`}>{o.hint}</span>
+                    </span>
+                </label>
+            ))}
+        </fieldset>
+    );
+}
+
 const DESIGN_HINTS: Record<Design, string> = {
     new: "Ruhige Flächen, eine Akzentfarbe, Beträge in Festbreitenschrift; Rechnungen als Detail, Kompakt oder Tabelle",
     classic: "Das Aussehen bis Version 0.3 mit der bisherigen Rechnungsliste",
@@ -335,16 +337,6 @@ const VIEW_HINTS: Record<InvoiceView, string> = {
     table: "Alle Felder als Spalten wie in Excel, sortierbar, nur zum Ansehen",
     classic: "Die bisherige Liste mit Häkchen in der Tabelle",
 };
-
-/** Sets the default view of the invoice list; a quick choice made in the list gives way to it. */
-function useSetView(): (v: InvoiceView) => void {
-    const toast = useToast();
-    return v => {
-        patchAppearance({view: v});
-        setSessionView(null);
-        Svc.SetView(v).catch(toast.error);
-    };
-}
 
 export function Backups({onChanged}: {onChanged: () => void}) {
     const toast = useToast();

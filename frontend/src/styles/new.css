@@ -9,7 +9,7 @@
    Text contrast >= 4.5:1 (WCAG AA) for every text token on --bg, --panel,
    --panel-2, --row-hover and --row-selected, status colours on their -bg,
    --accent-text on --accent, nav text on nav surfaces, toast text, white on
-   --bad-strong (checked with a script, see PLAN-v0.4.md). */
+   --bad-strong (styles/contrast.test.ts checks them). */
 :root[data-design="new"] {
   --bg: #f5f6f8;
   --panel: #ffffff;
@@ -51,6 +51,7 @@
   --font-size: 14px;
   --figure-size: 26px;
   --radius-sm: 10px;
+  --radius-md: 12px; /* notices, popovers, small panels, menu entries */
   --radius: 16px;
   --radius-lg: 18px;
   --radius-pill: 999px;
@@ -103,7 +104,7 @@
 [data-design="new"] .sidebar .logo { display: flex; }
 [data-design="new"] .sidebar .brand-text { flex: 1; white-space: nowrap; }
 [data-design="new"] .sidebar a, [data-design="new"] .nav-button {
-  border-left: none; border-radius: 12px; padding: 0 12px; min-height: 44px; gap: 12px; color: var(--nav-text); }
+  border-left: none; border-radius: var(--radius-md); padding: 0 12px; min-height: 44px; gap: 12px; color: var(--nav-text); }
 [data-design="new"] .sidebar a:hover, [data-design="new"] .nav-button:hover,
 [data-design="new"] .sidebar a:focus-visible, [data-design="new"] .nav-button:focus-visible { color: var(--text); background: var(--nav-hover); }
 [data-design="new"] .sidebar a.active { color: var(--nav-active); background: var(--nav-active-bg); font-weight: 600; }
@@ -139,18 +140,15 @@
 [data-design="new"] .card .value { line-height: 1.2; }
 [data-design="new"] .card .value.owed { color: var(--accent-fg); }
 [data-design="new"] .cards.outstanding { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
-[data-design="new"] .notice { border-radius: 12px; padding: 12px 16px; }
-[data-design="new"] fieldset { border-radius: 14px; padding: 14px 16px 16px; }
-[data-design="new"] fieldset.choice, [data-design="new"] fieldset.choice-cards { border: none; padding: 0; }
+[data-design="new"] .notice { border-radius: var(--radius-md); padding: 12px 16px; }
+:where([data-design="new"]) fieldset { border-radius: var(--radius-md); padding: 14px 16px 16px; }
 [data-design="new"] .modal { border: 1px solid var(--border); padding: 24px; box-shadow: 0 18px 48px rgba(0,0,0,.25); }
-[data-design="new"] .popover { border-radius: 14px; padding: 14px; }
-[data-design="new"] .tooltip { border-radius: 10px; }
-[data-design="new"] .toast { border-radius: 12px; padding: 12px 16px; }
-[data-design="new"] .bulkbar { border-radius: 14px; padding: 10px 14px; }
-[data-design="new"] .doc-tile { border-radius: 12px; }
-[data-design="new"] .doc-add { border-radius: 12px; }
-[data-design="new"] .preview-wrap { border-radius: 14px; }
-[data-design="new"] .dropzone { border-radius: 14px; }
+[data-design="new"] .popover, [data-design="new"] .toast, [data-design="new"] .bulkbar, [data-design="new"] .doc-tile,
+[data-design="new"] .doc-add, [data-design="new"] .preview-wrap, [data-design="new"] .dropzone { border-radius: var(--radius-md); }
+[data-design="new"] .popover { padding: 14px; }
+[data-design="new"] .tooltip { border-radius: var(--radius-sm); }
+[data-design="new"] .toast { padding: 12px 16px; }
+[data-design="new"] .bulkbar { padding: 10px 14px; }
 
 /* ---------- controls ---------- */
 :where([data-design="new"]) button, :where([data-design="new"]) .btn { padding: 7px 14px; font-weight: 500; }
@@ -164,11 +162,13 @@
 [data-design="new"] .badge.good { color: var(--good); }
 [data-design="new"] .badge.warn { color: var(--warn); }
 [data-design="new"] .badge.bad { color: var(--bad); }
+[data-design="new"] .badge.info { color: var(--info); border-color: currentColor; }
+[data-design="new"] .badge.muted { border-color: currentColor; }
 [data-design="new"] .nav-count { font-weight: 700; }
 [data-design="new"] kbd { font-family: var(--font-num); font-size: 11.5px; }
 
 /* ---------- tables ---------- */
-[data-design="new"] .table-wrap { border-radius: 14px; background: var(--panel); }
+[data-design="new"] .table-wrap { border-radius: var(--radius-md); background: var(--panel); }
 :where([data-design="new"]) th, :where([data-design="new"]) td { padding: 8px 10px; }
 [data-design="new"] .table-wrap th { background: var(--panel-2); }
 [data-design="new"] .table-wrap table td:first-child, [data-design="new"] .table-wrap table th:first-child { padding-left: 14px; }
@@ -176,7 +176,7 @@
 [data-design="new"] .provider-link { font-weight: 600; }
 
 /* ---------- settings ---------- */
-[data-design="new"] .choice-card { border-width: 1.5px; border-radius: 12px; padding: 10px 12px; }
+[data-design="new"] .choice-card { border-width: 1.5px; border-radius: var(--radius-md); padding: 10px 12px; }
 [data-design="new"] .choice-title { font-size: 15px; }
 [data-design="new"] .choice-hint { font-size: 13px; }
 [data-design="new"] fieldset.choice-cards legend, [data-design="new"] fieldset.choice legend { font-weight: 700; }

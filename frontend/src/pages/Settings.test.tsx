@@ -4,7 +4,7 @@ import {beforeEach, describe, expect, it, vi} from "vitest";
 import type {SettingsDTO} from "../api";
 import {settings} from "../test/fixtures";
 import {renderAt, testStatus} from "../test/render";
-import {setAppearance, setSessionView} from "../lib/appearance";
+import {setSessionView} from "../lib/appearance";
 import {applyDesign} from "../lib/design";
 import Settings, {Backups} from "./Settings";
 
@@ -17,7 +17,6 @@ vi.mock("../api", () => ({Svc: svc, Desktop: desktop}));
 
 beforeEach(() => {
     vi.clearAllMocks();
-    setAppearance(null);
     svc.BackupStatus.mockResolvedValue({dir: "", last: "", lastSize: 0, count: 0, error: ""});
     svc.GetSettings.mockResolvedValue(settings);
     svc.SetDesign.mockResolvedValue(undefined);
@@ -104,7 +103,9 @@ describe("Backups", () => {
         await user.click(await screen.findByRole("button", {name: "Jetzt sichern"}));
         expect(await screen.findByText(/2 vorhanden/)).toBeInTheDocument();
     });
+});
 
+describe("Settings · Darstellung", () => {
     it("switches the design on this device", async () => {
         const user = userEvent.setup();
         renderAt("/", "/", <Settings/>);
@@ -142,6 +143,5 @@ describe("Backups", () => {
         const darstellung = await screen.findByRole("region", {name: "Darstellung"});
         expect(within(darstellung).queryByRole("group", {name: "Standardansicht der Rechnungen"})).not.toBeInTheDocument();
         expect(within(darstellung).queryByRole("group", {name: "Tabellenansicht"})).not.toBeInTheDocument();
-        applyDesign("new");
     });
 });

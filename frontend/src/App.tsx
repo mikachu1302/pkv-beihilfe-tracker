@@ -6,11 +6,11 @@ import {Svc} from "./api";
 import type {StatusDTO} from "./api";
 import {FeedbackProvider, useConfirm, useToast} from "./components/feedback";
 import {ErrorNotice, Loading, Notice} from "./components/ui";
-import {patchAppearance, setAppearance, useAppearance} from "./lib/appearance";
+import {setAppearance, useAppearance} from "./lib/appearance";
+import {useCloseDesignHint, useSetDesign, useSetTheme} from "./lib/appearanceActions";
 import {applyDesign, useDesign} from "./lib/design";
-import type {Design} from "./lib/design";
+import {loadLocal, saveLocal} from "./lib/store";
 import {applyTheme, useDarkActive} from "./lib/theme";
-import type {Theme} from "./lib/theme";
 import {useBackend} from "./lib/useBackend";
 import {clearUnsavedChanges, dialogOpen, hasUnsavedChanges, isMac, isTyping, key, mod, useKeydown} from "./lib/shortcuts";
 import {useDialog} from "./lib/useDialog";
@@ -68,20 +68,12 @@ const NAV_KEY = "pkv.navCollapsed";
 function useNavCollapsed(): [boolean, (v: boolean) => void] {
     const design = useDesign();
     const [chosen, setChosen] = useState<boolean | null>(() => {
-        try {
-            const v = localStorage.getItem(NAV_KEY);
-            return v === null ? null : v === "1";
-        } catch {
-            return null;
-        }
+        const v = loadLocal(NAV_KEY);
+        return v === null ? null : v === "1";
     });
     const set = (v: boolean) => {
         setChosen(v);
-        try {
-            localStorage.setItem(NAV_KEY, v ? "1" : "0");
-        } catch {
-            // not remembered – fine
-        }
+        saveLocal(NAV_KEY, v ? "1" : "0");
     };
     return [chosen ?? design === "new", set];
 }
@@ -189,18 +181,6 @@ function AppRoutes({status}: {status: StatusDTO}) {
 }
 
 /**
- * Sets the colour scheme of this device and keeps it in the device
- * configuration. A failure to save is reported; the scheme still applies.
- */
-export function useSetTheme(): (t: Theme) => void {
-    const toast = useToast();
-    return t => {
-        applyTheme(t);
-        Svc.SetTheme(t).catch(toast.error);
-    };
-}
-
-/**
  * Switch "Dunkel" in the menu: dark mode on or off. It shows the scheme in effect
  * (also with "Automatisch"); switching chooses light or dark for this device.
  */
@@ -218,19 +198,6 @@ function ThemeToggle() {
 }
 
 /**
- * Sets the design of this device and keeps it in the device configuration
- * (which also closes the one-time hint about the new design).
- */
-export function useSetDesign(): (d: Design) => void {
-    const toast = useToast();
-    return d => {
-        applyDesign(d);
-        patchAppearance({design: d, designHint: false});
-        Svc.SetDesign(d).catch(toast.error);
-    };
-}
-
-/**
  * Takes colour scheme and design from the device configuration (localStorage,
  * which painted the first frame, may be empty or from an older version).
  */
@@ -241,8 +208,8 @@ function AppearanceSync({dataDir}: {dataDir?: string}) {
         Svc.Appearance().then(a => {
             if (!a || !live) return;
             setAppearance(a);
-            applyTheme(a.theme as Theme);
-            applyDesign(a.design as Design);
+            applyTheme(a.theme);
+            applyDesign(a.design);
         }, () => {});
         return () => {
             live = false;
@@ -256,12 +223,8 @@ function DesignHint() {
     const appearance = useAppearance();
     const design = useDesign();
     const setDesign = useSetDesign();
-    const toast = useToast();
+    const close = useCloseDesignHint();
     if (!appearance?.designHint || design !== "new") return null;
-    const close = () => {
-        patchAppearance({designHint: false});
-        Svc.CloseDesignHint().catch(toast.error);
-    };
     return (
         <Notice kind="good">
             <div className="row">

@@ -434,7 +434,7 @@ into the repo.
   `@fontsource-variable`, Latin only, OFL texts shipped). The accent is split into a fill
   (`--accent`) and text/lines (`--accent-fg`). A test checks the text contrast of both designs in
   light and dark from the token files. Invoice views in `pages/invoices/` share one set of props
-  (rows, selection, ticks, popovers); Tabelle and Kompakt render only the visible rows
+  (rows, selection, ticks, popovers); Detail, Kompakt and Tabelle render only the visible rows
   (`@tanstack/react-virtual`, pinned) – Kompakt is a list with `aria-setsize`/`aria-posinset`
   because an ARIA table row cannot hold the expanded details. Rows now carry the due date, claims
   the days since submission (`calc.LongWaitDays`, shared with the reminders) and whether a refund

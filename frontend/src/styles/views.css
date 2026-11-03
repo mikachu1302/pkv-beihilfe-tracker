@@ -1,23 +1,19 @@
 /* The invoice views of the new design (Detail, Kompakt, Tabelle) and their
-   controls. They exist only in the new design, but use only tokens. */
+   controls. They exist only in the new design; colours, fonts and the larger
+   radii come from its tokens. */
 
 .view-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 18px; }
 .view-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
 
 /* segmented control (view switch) */
-.segmented { display: flex; flex-wrap: wrap; background: var(--panel-2); border-radius: 12px; padding: 4px; gap: 2px; }
+.segmented { display: flex; flex-wrap: wrap; background: var(--panel-2); border-radius: var(--radius-md, 12px); padding: 4px; gap: 2px; }
 .segmented button { border: none; border-radius: 9px; padding: 7px 14px; min-height: 34px; background: transparent; color: var(--muted); font-weight: 500; }
 .segmented button:hover { color: var(--text); }
 .segmented button[aria-pressed="true"] { background: var(--panel); color: var(--text); font-weight: 700; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
 .segmented button:focus-visible { outline: 2px solid var(--accent-fg); outline-offset: 1px; }
 
-/* status pill and colours */
-.pill { display: inline-block; font-size: 12px; font-weight: 600; border: 1.5px solid currentColor; border-radius: 999px; padding: 1px 9px; white-space: nowrap; line-height: 1.4; }
-.pill.warn, .warn-text { color: var(--warn); }
-.pill.info { color: var(--info); }
-.pill.good { color: var(--good); }
-.pill.bad { color: var(--bad); }
-.pill.muted { color: var(--muted); }
+/* status colours (the status pills are badges) */
+.warn-text { color: var(--warn); }
 .payer-name { font-size: 14px; font-weight: 600; }
 .payer-name .muted { font-weight: 400; }
 .payer-1 { color: var(--payer-1, var(--text)); }
@@ -25,7 +21,8 @@
 .inv-paid .due, .compact-details .due { color: var(--warn); font-weight: 600; font-size: 13px; white-space: nowrap; }
 
 /* ---------- Detail: one card per invoice ---------- */
-.inv-cards [role="feed"] > article + article { margin-top: 12px; } /* not on the spacers: the virtualiser counts the gap in them */
+/* --card-gap from DetailView; not on the spacers: the virtualiser counts the gap in them */
+.inv-cards [role="feed"] > article + article { margin-top: var(--card-gap, 12px); }
 .inv-card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); cursor: pointer; }
 .inv-card:hover { border-color: var(--muted); }
 .inv-card:focus-visible { outline: 2px solid var(--accent-fg); outline-offset: 2px; }
@@ -34,8 +31,7 @@
 .inv-main { padding: 16px 20px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid var(--border); min-width: 0; }
 .inv-dates { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13px; color: var(--muted); }
 .inv-dates .num { font-size: 13px; }
-.inv-provider { font-size: 18px; font-weight: 700; line-height: 1.2; color: var(--text); text-decoration: none; overflow-wrap: anywhere; }
-.inv-provider:hover { color: var(--accent-fg); text-decoration: underline; }
+.provider-link.inv-provider { font-size: 18px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
 .inv-amount-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
 .inv-amount.num { font-size: 22px; font-weight: 600; text-align: left; }
 .inv-paid { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
@@ -59,34 +55,35 @@
 
 /* ---------- Tabelle: read-only grid, only the visible rows rendered ---------- */
 .grid-wrap { overflow: auto; max-height: max(360px, calc(100vh - 64px)); background: var(--panel); border: 1px solid var(--border);
-  border-radius: 12px; }
+  border-radius: var(--radius-md, 12px); }
 .data-grid { border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 12.5px; background: var(--panel); }
 .data-grid th, .data-grid td { padding: 0 8px; border: none; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; background: var(--panel); }
 .data-grid .right { text-align: right; }
 .data-grid td.num { font-size: inherit; }
 .data-grid td.strong { font-weight: 600; }
-.data-grid thead th { position: sticky; z-index: 2; background: var(--panel-2); color: var(--text); font-size: 12.5px; }
-.data-grid tr.groups th { top: 0; height: 30px; text-align: center; font-weight: 600; }
-.data-grid tr.groups th.payer-1 { color: var(--payer-1, var(--text)); }
-.data-grid tr.groups th.payer-2 { color: var(--payer-2, var(--text)); }
-.data-grid tr.cols th { top: 30px; height: 34px; }
+/* heights from TableView: --group-h, --cols-h, --row-h, --sum-h */
+.data-grid thead th { position: sticky; z-index: 2; background: var(--panel-2); font-size: 12.5px; }
+.data-grid tr.groups th { top: 0; height: var(--group-h); text-align: center; font-weight: 600; }
+.data-grid tr.cols th { top: var(--group-h); height: var(--cols-h); color: var(--text); }
 .data-grid th[aria-sort="ascending"], .data-grid th[aria-sort="descending"] { color: var(--accent-fg); }
 .data-grid button.sort { border: none; background: none; padding: 0; font: inherit; font-weight: 600; color: inherit; cursor: pointer;
   width: 100%; text-align: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 0; }
 .data-grid button.sort:focus-visible { outline: 2px solid var(--accent-fg); outline-offset: -2px; }
-.data-grid tbody tr:not(.spacer) { height: var(--row-h, 36px); }
+.data-grid tbody tr:not(.spacer) { height: var(--row-h); }
 .data-grid tbody tr.spacer td { padding: 0; border: none; background: none; }
 .data-grid tbody tr.zebra td { background: var(--zebra, var(--panel)); }
 .data-grid tbody tr:hover td { background: var(--row-hover); }
 .data-grid tbody tr.sel td { background: var(--row-selected); }
 .data-grid tbody tr:focus-visible { outline: 2px solid var(--accent-fg); outline-offset: -2px; }
 .data-grid tbody tr:focus-visible td { background: var(--row-selected); }
-.data-grid tbody:focus, [role="feed"]:focus, .compact [role="list"]:focus { outline: none; } /* fallback focus while a row is re-rendered */
+/* the list holds the focus while the focused row is scrolled out of the rendered range */
+.data-grid tbody:focus, [role="feed"]:focus, .compact [role="list"]:focus { outline: none; }
+.data-grid tbody:focus-visible, [role="feed"]:focus-visible, .compact [role="list"]:focus-visible { outline: 2px dashed var(--accent-fg); outline-offset: 2px; }
 .data-grid .sticky-a { position: sticky; left: 0; z-index: 1; text-align: center; padding: 0; }
 .data-grid .sticky-b { position: sticky; left: 36px; z-index: 1; box-shadow: inset -1px 0 0 var(--border); }
 .data-grid thead .sticky-a, .data-grid thead .sticky-b, .data-grid tfoot .sticky-a, .data-grid tfoot .sticky-b { z-index: 3; }
-.data-grid tfoot td { position: sticky; bottom: 0; z-index: 2; height: 36px; background: var(--panel-2); font-weight: 700; border-top: 1px solid var(--border); }
+.data-grid tfoot td { position: sticky; bottom: 0; z-index: 2; height: var(--sum-h); background: var(--panel-2); font-weight: 700; border-top: 1px solid var(--border); }
 .grid-wrap.dense .data-grid { font-size: 12px; }
 .column-menu { right: 0; top: calc(100% + 6px); min-width: 380px; }
 .column-menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -109,13 +106,10 @@
 .compact-row.sel .compact-line { background: var(--row-selected); }
 .compact-line:focus-visible { outline: 2px solid var(--accent-fg); outline-offset: -2px; }
 .compact-provider { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
-.compact-provider a { font-weight: 600; color: var(--text); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.compact-provider a:hover { color: var(--accent-fg); text-decoration: underline; }
+.compact-provider a { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .compact-provider .small { white-space: nowrap; }
 .compact-claim { display: flex; gap: 8px; align-items: center; font-size: 12px; min-width: 0; white-space: nowrap; overflow: hidden; }
-.dots { display: flex; gap: 3px; flex: none; color: var(--text); }
-.dots.payer-1 { color: var(--payer-1, var(--text)); }
-.dots.payer-2 { color: var(--payer-2, var(--text)); }
+.dots { display: flex; gap: 3px; flex: none; } /* filled dots take the payer colour (payer-1, payer-2) */
 .dots .dot, .dots .ring { width: 9px; height: 9px; border-radius: 50%; box-sizing: border-box; }
 .dots .dot { background: currentColor; }
 .dots .dot.bad { background: var(--bad); }

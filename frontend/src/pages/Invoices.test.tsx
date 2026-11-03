@@ -1,9 +1,10 @@
-import {screen, waitFor, within} from "@testing-library/react";
+import {fireEvent, screen, waitFor, within} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
-import {setAppearance, setSessionView} from "../lib/appearance";
+import {beforeEach, describe, expect, it, vi} from "vitest";
+import {DEFAULT_APPEARANCE, setAppearance, setSessionView} from "../lib/appearance";
 import {applyDesign} from "../lib/design";
-import {claimView, invoiceRow, settings} from "../test/fixtures";
+import {stubHeights} from "../test/layout";
+import {claimView, invoiceRow, manyRows, settings} from "../test/fixtures";
 import {renderAt} from "../test/render";
 import Invoices, {matchesFilter} from "./Invoices";
 
@@ -43,12 +44,6 @@ function figures(tag: string) {
         ],
     };
 }
-
-afterEach(() => {
-    applyDesign("new");
-    setSessionView(null);
-    setAppearance(null);
-});
 
 describe("Invoices, classic list", () => {
     beforeEach(() => applyDesign("classic"));
@@ -161,8 +156,6 @@ describe("Invoices, classic list", () => {
     });
 });
 
-const appearance = {theme: "", design: "new", designHint: false, view: "detail", table: {dense: false, sum: true, hidden: []}};
-
 describe("Invoices, new design", () => {
     it("starts with the detail view: one card per invoice with a column per payer", async () => {
         renderAt("/", "/", <Invoices/>);
@@ -171,8 +164,8 @@ describe("Invoices, new design", () => {
         expect(within(card).getAllByText("nicht eingereicht")).toHaveLength(2);
         expect(screen.getByRole("button", {name: "Detail"})).toHaveAttribute("aria-pressed", "true");
         const other = screen.getByRole("article", {name: /Apotheke am Markt/});
-        expect(within(other).getByText("eingereicht", {selector: ".pill"})).toBeInTheDocument();
-        expect(within(other).getByText("zurückgehalten", {selector: ".pill"})).toBeInTheDocument();
+        expect(within(other).getByText("eingereicht", {selector: ".badge"})).toBeInTheDocument();
+        expect(within(other).getByText("zurückgehalten", {selector: ".badge"})).toBeInTheDocument();
         expect(screen.getByText("2 Rechnungen")).toBeInTheDocument();
     });
 
@@ -249,31 +242,41 @@ describe("Invoices, new design", () => {
         expect(await screen.findByRole("columnheader", {name: "Muster PKV"})).toBeInTheDocument();
         setSessionView(null);
         expect(await screen.findByRole("article", {name: /Dr. Muster/})).toBeInTheDocument();
-        setAppearance({...appearance, view: "classic"});
+        setAppearance({...DEFAULT_APPEARANCE, view: "classic"});
         expect(await screen.findByRole("columnheader", {name: "Muster PKV"})).toBeInTheDocument();
     });
 
     it("renders only the visible cards when the page scrolls", async () => {
-        const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
-        Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
-            configurable: true, get() {
-                const el = this as HTMLElement;
-                return el.classList.contains("content") ? 800 : el.tagName === "ARTICLE" ? 190 : 0;
-            },
-        });
-        try {
-            svc.ListInvoices.mockResolvedValue(Array.from({length: 300}, (_, i) => invoiceRow(`r${i}`, `Praxis ${i + 1}`)));
-            renderAt("/", "/", <main className="content"><Invoices/></main>);
-            const feed = await screen.findByRole("feed", {name: "Rechnungen, Detailansicht"});
-            await waitFor(() => expect(within(feed).getAllByRole("article").length).toBeLessThan(30));
-            const cards = within(feed).getAllByRole("article");
-            expect(cards.length).toBeGreaterThan(3);
-            expect(cards[0]).toHaveAttribute("aria-setsize", "300");
-            expect(cards[0]).toHaveAttribute("aria-posinset", "1");
-            expect(screen.getByText("300 Rechnungen")).toBeInTheDocument();
-        } finally {
-            if (height) Object.defineProperty(HTMLElement.prototype, "offsetHeight", height);
-        }
+        stubHeights(el => (el.classList.contains("content") ? 800 : el.tagName === "ARTICLE" ? 190 : 0));
+        svc.ListInvoices.mockResolvedValue(manyRows(300));
+        renderAt("/", "/", <main className="content"><Invoices/></main>);
+        const feed = await screen.findByRole("feed", {name: "Rechnungen, Detailansicht"});
+        await waitFor(() => expect(within(feed).getAllByRole("article").length).toBeLessThan(30));
+        const cards = within(feed).getAllByRole("article");
+        expect(cards.length).toBeGreaterThan(3);
+        expect(cards[0]).toHaveAttribute("aria-setsize", "300");
+        expect(cards[0]).toHaveAttribute("aria-posinset", "1");
+        expect(screen.getByText("300 Rechnungen")).toBeInTheDocument();
+    });
+
+    it("opens the invoice with a click on the card, but not on its controls", async () => {
+        const user = userEvent.setup();
+        renderAt("/", "/", <Invoices/>);
+        const card = await screen.findByRole("article", {name: /Dr. Muster/});
+        await user.click(within(card).getByLabelText("Dr. Muster auswählen"));
+        expect(screen.queryByText("andere Seite")).not.toBeInTheDocument();
+        await user.click(within(card).getByText("286,40 €"));
+        expect(await screen.findByText("andere Seite")).toBeInTheDocument();
+    });
+
+    it("closes a popover when the view changes", async () => {
+        const user = userEvent.setup();
+        renderAt("/", "/", <Invoices/>);
+        const card = await screen.findByRole("article", {name: /Dr. Muster/});
+        await user.click(within(card).getAllByLabelText("erstattet")[0]);
+        expect(screen.getByRole("dialog", {name: "Erstattung Beihilfe"})).toBeInTheDocument();
+        await user.click(screen.getByRole("button", {name: "Klassische Liste"}));
+        expect(screen.queryByRole("dialog", {name: "Erstattung Beihilfe"})).not.toBeInTheDocument();
     });
 
     it("has no view switch in the classic design", async () => {
@@ -285,26 +288,11 @@ describe("Invoices, new design", () => {
     });
 });
 
-/** Gives the table's scroll area a height: jsdom has no layout, the virtualiser would render no rows. */
-function stubTableHeight(px: number): () => void {
-    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
-    Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
-        configurable: true, get() {
-            return (this as HTMLElement).classList.contains("grid-wrap") ? px : 0;
-        },
-    });
-    return () => {
-        if (height) Object.defineProperty(HTMLElement.prototype, "offsetHeight", height);
-    };
-}
-
 describe("Invoices, table view", () => {
-    let restore = () => {};
     beforeEach(() => {
         setSessionView("table");
-        restore = stubTableHeight(400);
+        stubHeights(el => (el.classList.contains("grid-wrap") ? 400 : 0)); // the table's own scroll area
     });
-    afterEach(() => restore());
 
     const bodyRows = () => within(screen.getByRole("table", {name: "Rechnungen, Tabellenansicht"})).getAllByRole("row")
         .filter(r => r.closest("tbody") && r.getAttribute("aria-hidden") !== "true");
@@ -333,7 +321,7 @@ describe("Invoices, table view", () => {
         expect(providers()).toEqual(["Apotheke am Markt", "Dr. Muster"]);
         await user.click(screen.getByRole("button", {name: "Behandler"}));
         expect(screen.getByRole("columnheader", {name: "Behandler"})).toHaveAttribute("aria-sort", "descending");
-        await user.click(screen.getAllByRole("button", {name: "SOLL"})[0]); // sorting by another column
+        await user.click(screen.getByRole("button", {name: "Beihilfe: SOLL"})); // sorting by another column
         expect(screen.getByRole("columnheader", {name: "Behandler"})).toHaveAttribute("aria-sort", "none");
         await user.click(screen.getByRole("button", {name: "Behandler"}));
         await user.click(screen.getByRole("button", {name: "Behandler"}));
@@ -391,8 +379,22 @@ describe("Invoices, table view", () => {
         expect(screen.queryByText("andere Seite")).not.toBeInTheDocument();
     });
 
+    it("keeps a rendered row reachable with Tab after scrolling", async () => {
+        svc.ListInvoices.mockResolvedValue(manyRows(300));
+        renderAt("/", "/", <Invoices/>);
+        const table = await screen.findByRole("table", {name: "Rechnungen, Tabellenansicht"});
+        expect(bodyRows()[0]).toHaveAttribute("tabindex", "0");
+        const scroller = table.closest(".grid-wrap") as HTMLElement;
+        Object.defineProperty(scroller, "scrollTop", {configurable: true, value: 36 * 150});
+        fireEvent.scroll(scroller);
+        await waitFor(() => expect(Number(bodyRows()[0].getAttribute("aria-rowindex"))).toBeGreaterThan(100));
+        const stops = bodyRows().filter(r => r.getAttribute("tabindex") === "0");
+        expect(stops).toHaveLength(1);
+        expect(Number(stops[0].getAttribute("aria-rowindex"))).toBeGreaterThan(140); // in view, not the overscan above
+    });
+
     it("renders only the visible rows of a long list", async () => {
-        svc.ListInvoices.mockResolvedValue(Array.from({length: 300}, (_, i) => invoiceRow(`r${i}`, `Praxis ${i + 1}`)));
+        svc.ListInvoices.mockResolvedValue(manyRows(300));
         renderAt("/", "/", <Invoices/>);
         const table = await screen.findByRole("table", {name: "Rechnungen, Tabellenansicht"});
         expect(table).toHaveAttribute("aria-rowcount", "303");
@@ -446,27 +448,25 @@ describe("Invoices, compact view", () => {
         expect(await screen.findByText("andere Seite")).toBeInTheDocument();
     });
 
+    it("opens the invoice with a double click on the line", async () => {
+        const user = userEvent.setup();
+        renderAt("/", "/", <Invoices/>);
+        const line = await screen.findByRole("group", {name: /Dr. Muster/});
+        await user.dblClick(within(line).getAllByText("286,40 €")[0]); // the amount
+        expect(await screen.findByText("andere Seite")).toBeInTheDocument();
+    });
+
     it("renders only the visible lines when the page scrolls", async () => {
-        // jsdom has no layout: the page is 500 px high, every line 46 px (the virtualiser measures them).
-        const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
-        Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
-            configurable: true, get() {
-                const el = this as HTMLElement;
-                return el.classList.contains("content") ? 500 : el.getAttribute("role") === "listitem" ? 46 : 0;
-            },
-        });
-        try {
-            svc.ListInvoices.mockResolvedValue(Array.from({length: 300}, (_, i) => invoiceRow(`r${i}`, `Praxis ${i + 1}`)));
-            renderAt("/", "/", <main className="content"><Invoices/></main>);
-            const list = await screen.findByRole("list");
-            await waitFor(() => expect(within(list).getAllByRole("listitem").length).toBeLessThan(40));
-            const items = within(list).getAllByRole("listitem");
-            expect(items.length).toBeGreaterThan(5);
-            expect(items[0]).toHaveAttribute("aria-setsize", "300");
-            expect(items[0]).toHaveAttribute("aria-posinset", "1");
-            expect(screen.getByText("300 Rechnungen")).toBeInTheDocument();
-        } finally {
-            if (height) Object.defineProperty(HTMLElement.prototype, "offsetHeight", height);
-        }
+        // the page is 500 px high, every line 46 px (the virtualiser measures them)
+        stubHeights(el => (el.classList.contains("content") ? 500 : el.getAttribute("role") === "listitem" ? 46 : 0));
+        svc.ListInvoices.mockResolvedValue(manyRows(300));
+        renderAt("/", "/", <main className="content"><Invoices/></main>);
+        const list = await screen.findByRole("list");
+        await waitFor(() => expect(within(list).getAllByRole("listitem").length).toBeLessThan(40));
+        const items = within(list).getAllByRole("listitem");
+        expect(items.length).toBeGreaterThan(5);
+        expect(items[0]).toHaveAttribute("aria-setsize", "300");
+        expect(items[0]).toHaveAttribute("aria-posinset", "1");
+        expect(screen.getByText("300 Rechnungen")).toBeInTheDocument();
     });
 });

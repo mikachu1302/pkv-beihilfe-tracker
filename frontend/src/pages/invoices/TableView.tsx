@@ -3,53 +3,32 @@
 // Only the visible rows are rendered (@tanstack/react-virtual): the header,
 // the first columns and the sum row are sticky and stay outside the
 // virtualised body, every row has the fixed height of its density.
-import {useLayoutEffect, useMemo, useRef, useState} from "react";
+import {useMemo, useRef, useState} from "react";
 import type {CSSProperties, ReactNode} from "react";
 import {useVirtualizer} from "@tanstack/react-virtual";
-import {Svc} from "../../api";
 import type {ClaimViewDTO, InvoiceRowDTO, PayerDTO} from "../../api";
-import {useToast} from "../../components/feedback";
-import {patchAppearance, useAppearance} from "../../lib/appearance";
-import {CATEGORY_LABELS, date, eur, num, plural, shortDate} from "../../lib/format";
+import {COLUMN_KINDS, PAYER_KINDS} from "../../lib/appearance";
+import type {ColumnKind, TableOptions} from "../../lib/appearance";
+import {CATEGORY_LABELS, date, dayMonth, decimal, eur, num, plural, shortDate, signClass, sumBy} from "../../lib/format";
 import {useDialog} from "../../lib/useDialog";
-import {claimOf, opensInvoice, payerClass, useRowNav} from "./shared";
-import type {ViewProps} from "./shared";
+import {firstInView, useLayoutValue, useRowNav} from "./hooks";
+import {claimOf, opensInvoice, payerClass, providerName, selectLabel} from "./model";
+import type {ViewProps} from "./model";
 
-/** Column kinds, as kept in the table options (hidden columns). Per payer: expected … refunded. */
-export const COLUMN_KINDS = ["service", "invoice", "provider", "category", "reference", "amount", "paid",
-    "expected", "actual", "diff", "submitted", "refunded", "note"] as const;
-export type ColumnKind = typeof COLUMN_KINDS[number];
-
-export const COLUMN_LABELS: Record<ColumnKind, string> = {
+const COLUMN_LABELS: Record<ColumnKind, string> = {
     service: "Behandlung", invoice: "Rechnung", provider: "Behandler", category: "Kategorie", reference: "Re.-Nr.",
     amount: "Betrag", paid: "Bezahlt", expected: "SOLL", actual: "IST", diff: "Diff", submitted: "eingereicht",
     refunded: "erstattet", note: "Notiz",
 };
-const PAYER_KINDS: ColumnKind[] = ["expected", "actual", "diff", "submitted", "refunded"];
 
-/** Row heights in px per density (the CSS sets the same). */
-export const ROW_HEIGHT = {normal: 36, dense: 28};
-const HEAD_HEIGHT = 64; // two header rows of 30 + 34 px
-const SUM_HEIGHT = 36;
+/** Heights in px of the header rows, a body row per density and the sum row (views.css takes them as variables). */
+const GROUP_ROW = 30;
+const COLUMN_ROW = 34;
+const HEAD_HEIGHT = GROUP_ROW + COLUMN_ROW;
+const ROW_HEIGHT = {normal: 36, dense: 28};
+const SUM_ROW = 36;
 
-export interface TableOptions {
-    dense: boolean;
-    sum: boolean;
-    hidden: string[];
-}
-
-const DEFAULT_OPTIONS: TableOptions = {dense: false, sum: true, hidden: []};
-
-/** Options of the table view (device configuration); changes are saved right away. */
-export function useTableOptions(): [TableOptions, (o: TableOptions) => void] {
-    const toast = useToast();
-    const a = useAppearance();
-    const options = a ? {...a.table, hidden: a.table.hidden ?? []} : DEFAULT_OPTIONS;
-    return [options, o => {
-        patchAppearance({table: o});
-        Svc.SetTableOptions(o).catch(toast.error);
-    }];
-}
+type Cell = {text: ReactNode; title?: string; className?: string};
 
 interface Col {
     id: string;
@@ -59,85 +38,81 @@ interface Col {
     right?: boolean;
     payer?: number; // index of the payer column group
     sortValue: (r: InvoiceRowDTO) => string | number;
-    cell: (r: InvoiceRowDTO) => {text: ReactNode; title?: string; tone?: string};
+    cell: (r: InvoiceRowDTO) => Cell;
     sum?: (rows: InvoiceRowDTO[]) => ReactNode;
 }
 
 type Sort = {id: string; dir: "asc" | "desc"} | null;
 
-const fmt = new Intl.NumberFormat("de-DE", {minimumFractionDigits: 2, maximumFractionDigits: 2});
-const amount = (v: string | number) => fmt.format(num(v));
-const dash = {text: "–", tone: "muted"};
+const dash: Cell = {text: "–", className: "muted"};
 
 function columns(payers: PayerDTO[]): Col[] {
+    const col = (kind: ColumnKind, width: number, c: Omit<Col, "id" | "kind" | "label" | "width">): Col =>
+        ({id: kind, kind, label: COLUMN_LABELS[kind], width, ...c});
     const base: Col[] = [
-        {id: "service", kind: "service", label: "Behandlung", width: 96, sortValue: r => r.serviceDate,
-            cell: r => ({text: shortDate(r.serviceDate) || "–", title: date(r.serviceDate)})},
-        {id: "invoice", kind: "invoice", label: "Rechnung", width: 92, sortValue: r => r.invoiceDate,
-            cell: r => ({text: shortDate(r.invoiceDate) || "–", title: date(r.invoiceDate)})},
-        {id: "provider", kind: "provider", label: "Behandler", width: 220, sortValue: r => r.provider.toLocaleLowerCase("de"),
-            cell: r => ({text: r.provider || "(ohne Namen)", title: r.provider, tone: "strong"}),
-            sum: rows => plural(rows.length, "Rechnung", "Rechnungen")},
-        {id: "category", kind: "category", label: "Kategorie", width: 110, sortValue: r => CATEGORY_LABELS[r.category] ?? r.category,
-            cell: r => ({text: CATEGORY_LABELS[r.category] ?? r.category})},
-        {id: "reference", kind: "reference", label: "Re.-Nr.", width: 110, sortValue: r => r.reference,
-            cell: r => (r.reference ? {text: r.reference, title: r.reference} : dash)},
-        {id: "amount", kind: "amount", label: "Betrag", width: 100, right: true, sortValue: r => num(r.amount),
-            cell: r => ({text: amount(r.amount), title: eur(r.amount)}),
-            sum: rows => amount(rows.reduce((s, r) => s + num(r.amount), 0))},
+        col("service", 96, {sortValue: r => r.serviceDate, cell: r => ({text: shortDate(r.serviceDate) || "–", title: date(r.serviceDate)})}),
+        col("invoice", 92, {sortValue: r => r.invoiceDate, cell: r => ({text: shortDate(r.invoiceDate) || "–", title: date(r.invoiceDate)})}),
+        col("provider", 220, {sortValue: r => r.provider.toLocaleLowerCase("de"),
+            cell: r => ({text: providerName(r), title: r.provider, className: "strong"}),
+            sum: rows => plural(rows.length, "Rechnung", "Rechnungen")}),
+        col("category", 110, {sortValue: r => CATEGORY_LABELS[r.category] ?? r.category, cell: r => ({text: CATEGORY_LABELS[r.category] ?? r.category})}),
+        col("reference", 110, {sortValue: r => r.reference, cell: r => (r.reference ? {text: r.reference, title: r.reference} : dash)}),
+        col("amount", 100, {right: true, sortValue: r => num(r.amount), cell: r => ({text: decimal(r.amount), title: eur(r.amount)}),
+            sum: rows => decimal(sumBy(rows, r => r.amount))}),
         // paid ones by date, then unpaid ones by due date, then those without
-        {id: "paid", kind: "paid", label: "Bezahlt", width: 100, sortValue: r => (r.paid.done ? `0${r.paid.date}` : r.due ? `1${r.due}` : "2"),
+        col("paid", 100, {sortValue: r => (r.paid.done ? `0${r.paid.date}` : r.due ? `1${r.due}` : "2"),
             cell: r => r.paid.done ? {text: shortDate(r.paid.date), title: `bezahlt am ${date(r.paid.date)}`}
-                : r.due ? {text: `fällig ${shortDate(r.due).slice(0, 6)}`, title: `fällig am ${date(r.due)}`, tone: "warn-text"} : dash},
+                : r.due ? {text: `fällig ${dayMonth(r.due)}`, title: `fällig am ${date(r.due)}`, className: "warn-text"} : dash}),
     ];
-    const perPayer = payers.flatMap((p, pi): Col[] => {
-        const c = (r: InvoiceRowDTO) => claimOf(r, p.id);
-        const refunded = (cl?: ClaimViewDTO) => cl?.status === "refunded";
-        const sumOf = (field: "expected" | "actual" | "diff", only?: (cl: ClaimViewDTO) => boolean) =>
-            (rows: InvoiceRowDTO[]) => amount(rows.reduce((s, r) => {
-                const cl = c(r);
-                return cl && (!only || only(cl)) ? s + num(cl[field]) : s;
-            }, 0));
+    const perPayer = payers.flatMap((p, payer): Col[] => {
+        const claim = (r: InvoiceRowDTO) => claimOf(r, p.id);
+        const refunded = (r: InvoiceRowDTO) => {
+            const c = claim(r);
+            return c?.status === "refunded" ? c : undefined;
+        };
+        const sumOf = (pick: (r: InvoiceRowDTO) => ClaimViewDTO | undefined, field: "expected" | "actual" | "diff") =>
+            (rows: InvoiceRowDTO[]) => decimal(sumBy(rows, r => pick(r)?.[field]));
+        const pcol = (kind: ColumnKind, width: number, c: Omit<Col, "id" | "kind" | "label" | "width" | "payer">): Col =>
+            ({id: `${p.id}:${kind}`, kind, label: COLUMN_LABELS[kind], width, payer, ...c});
         return [
-            {id: `${p.id}:expected`, kind: "expected", label: "SOLL", width: 92, right: true, payer: pi,
-                sortValue: r => num(c(r)?.expected), cell: r => (c(r) ? {text: amount(c(r)!.expected)} : dash), sum: sumOf("expected")},
-            {id: `${p.id}:actual`, kind: "actual", label: "IST", width: 92, right: true, payer: pi,
-                sortValue: r => (refunded(c(r)) ? num(c(r)!.actual) : -Infinity),
-                cell: r => (refunded(c(r)) ? {text: amount(c(r)!.actual)} : dash), sum: sumOf("actual")},
-            {id: `${p.id}:diff`, kind: "diff", label: "Diff", width: 86, right: true, payer: pi,
-                sortValue: r => (refunded(c(r)) ? num(c(r)!.diff) : -Infinity),
+            pcol("expected", 92, {right: true, sortValue: r => num(claim(r)?.expected),
                 cell: r => {
-                    const cl = c(r);
-                    if (!refunded(cl)) return dash;
-                    const d = num(cl!.diff);
-                    return {text: amount(d), tone: d < 0 ? "neg" : d > 0 ? "pos" : ""};
-                },
-                sum: sumOf("diff", refunded)},
-            {id: `${p.id}:submitted`, kind: "submitted", label: "eingereicht", width: 96, payer: pi,
-                sortValue: r => c(r)?.submitted.date ?? "",
+                    const c = claim(r);
+                    return c ? {text: decimal(c.expected)} : dash;
+                }, sum: sumOf(claim, "expected")}),
+            pcol("actual", 92, {right: true, sortValue: r => (refunded(r) ? num(refunded(r)?.actual) : -Infinity),
                 cell: r => {
-                    const cl = c(r);
-                    if (!cl) return dash;
-                    if (cl.submitted.done) return {text: shortDate(cl.submitted.date), title: `eingereicht am ${date(cl.submitted.date)}`};
-                    if (cl.held) return {text: "zurückg.", title: "zurückgehalten", tone: "muted"};
-                    if (cl.skip) return {text: "verzichtet", tone: "muted"};
+                    const c = refunded(r);
+                    return c ? {text: decimal(c.actual)} : dash;
+                }, sum: sumOf(claim, "actual")}),
+            pcol("diff", 86, {right: true, sortValue: r => (refunded(r) ? num(refunded(r)?.diff) : -Infinity),
+                cell: r => {
+                    const c = refunded(r);
+                    return c ? {text: decimal(c.diff), className: signClass(c.diff)} : dash;
+                }, sum: sumOf(refunded, "diff")}),
+            pcol("submitted", 96, {sortValue: r => claim(r)?.submitted.date ?? "",
+                cell: r => {
+                    const c = claim(r);
+                    if (!c) return dash;
+                    if (c.submitted.done) return {text: shortDate(c.submitted.date), title: `eingereicht am ${date(c.submitted.date)}`};
+                    if (c.held) return {text: "zurückg.", title: "zurückgehalten", className: "muted"};
+                    if (c.skip) return {text: "verzichtet", className: "muted"};
                     return dash;
-                }},
-            {id: `${p.id}:refunded`, kind: "refunded", label: "erstattet", width: 96, payer: pi,
-                sortValue: r => c(r)?.refunded.date ?? "",
+                }}),
+            pcol("refunded", 96, {sortValue: r => claim(r)?.refunded.date ?? "",
                 cell: r => {
-                    const cl = c(r);
-                    if (!cl) return dash;
-                    const flag = cl.clarify.done ? " ⚑" : "";
-                    const title = cl.clarify.done ? `Klärungsbedarf${cl.clarify.note ? `: ${cl.clarify.note}` : ""}` : undefined;
-                    if (cl.refunded.done) return {text: shortDate(cl.refunded.date) + flag, title: title ?? `erstattet am ${date(cl.refunded.date)}`};
-                    if (cl.longWait) return {text: `${Math.floor(cl.waitingDays / 7)} Wo. offen${flag}`, title: title ?? "Erstattung seit mehr als 6 Wochen offen", tone: "warn-text"};
-                    return flag ? {text: flag.trim(), title, tone: "neg"} : dash;
-                }},
+                    const c = claim(r);
+                    if (!c) return dash;
+                    const flag = c.clarify.done ? " ⚑" : "";
+                    const clarify = c.clarify.done ? `Klärungsbedarf${c.clarify.note ? `: ${c.clarify.note}` : ""}` : undefined;
+                    const weeks = Math.floor(c.waitingDays / 7);
+                    if (c.refunded.done) return {text: shortDate(c.refunded.date) + flag, title: clarify ?? `erstattet am ${date(c.refunded.date)}`};
+                    if (c.longWait) return {text: `${weeks} Wo. offen${flag}`, title: clarify ?? `Erstattung seit ${weeks} Wochen offen`, className: "warn-text"};
+                    return flag ? {text: flag.trim(), title: clarify, className: "neg"} : dash;
+                }}),
         ];
     });
-    const note: Col = {id: "note", kind: "note", label: "Notiz", width: 220, sortValue: r => r.note.toLocaleLowerCase("de"),
-        cell: r => ({text: r.note, title: r.note})};
+    const note = col("note", 220, {sortValue: r => r.note.toLocaleLowerCase("de"), cell: r => ({text: r.note, title: r.note})});
     return [...base, ...perPayer, note];
 }
 
@@ -145,23 +120,32 @@ export function TableView(v: ViewProps & {options: TableOptions}) {
     const {payers, options} = v;
     const [sort, setSort] = useState<Sort>(null);
     const all = useMemo(() => columns(payers), [payers]);
-    const cols = all.filter(c => c.kind === "service" || !options.hidden.includes(c.kind));
+    const cols = useMemo(() => all.filter(c => c.kind === "service" || !options.hidden.includes(c.kind)), [all, options.hidden]);
 
     const rows = useMemo(() => {
-        if (!sort) return v.rows;
-        const col = cols.find(c => c.id === sort.id); // a hidden column does not sort
-        if (!col) return v.rows;
+        const col = sort && cols.find(c => c.id === sort.id); // a hidden column does not sort
+        if (!sort || !col) return v.rows;
         const sign = sort.dir === "asc" ? 1 : -1;
         return [...v.rows].sort((a, b) => {
             const x = col.sortValue(a), y = col.sortValue(b);
             const d = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y), "de");
-            return d * sign;
+            return (d || 0) * sign; // -∞ − -∞ is NaN: equal
         });
     }, [v.rows, sort, cols]);
 
     const rowHeight = options.dense ? ROW_HEIGHT.dense : ROW_HEIGHT.normal;
     const scroller = useRef<HTMLDivElement | null>(null);
-    const height = useFillHeight(scroller);
+    // The table's own scroll area fills the rest of the window below its top
+    // (with the page scrolled to the top), at least 360 px – so the sum row
+    // is in view without scrolling the page when there is room.
+    const height = useLayoutValue<number | undefined>(() => {
+        const el = scroller.current;
+        const page = el?.closest<HTMLElement>(".content");
+        if (!el || !page) return undefined;
+        const top = el.getBoundingClientRect().top - page.getBoundingClientRect().top + page.scrollTop;
+        return Math.max(360, Math.round(page.clientHeight - top - (parseFloat(getComputedStyle(page).paddingBottom) || 0)));
+    }, undefined);
+
     const virtual = useVirtualizer({
         count: rows.length,
         getScrollElement: () => scroller.current,
@@ -169,16 +153,15 @@ export function TableView(v: ViewProps & {options: TableOptions}) {
         overscan: 12,
         scrollMargin: HEAD_HEIGHT,
         scrollPaddingStart: HEAD_HEIGHT,
-        scrollPaddingEnd: options.sum ? SUM_HEIGHT : 0,
+        scrollPaddingEnd: options.sum ? SUM_ROW : 0,
         getItemKey: i => rows[i].id,
     });
     const items = virtual.getVirtualItems();
-    const visibleFrom = (virtual.scrollOffset ?? 0) + HEAD_HEIGHT;
     const nav = useRowNav(rows.map(r => r.id), {
         open: v.open, toggle: v.toggleOne,
         scrollTo: i => virtual.scrollToIndex(i, {align: "auto"}),
         rendered: items.map(i => rows[i.index].id),
-        firstVisible: rows[(items.find(i => i.end > visibleFrom) ?? items[0])?.index ?? -1]?.id,
+        firstVisible: rows[firstInView(items, (virtual.scrollOffset ?? 0) + HEAD_HEIGHT) ?? -1]?.id,
     });
 
     const top = items.length ? items[0].start - HEAD_HEIGHT : 0;
@@ -191,18 +174,17 @@ export function TableView(v: ViewProps & {options: TableOptions}) {
     const groups: {label: ReactNode; span: number; payer?: number}[] = [];
     for (const c of cols) {
         const last = groups[groups.length - 1];
-        const payer = c.payer;
-        if (last && last.payer === payer) last.span++;
-        else groups.push({label: payer === undefined ? "" : payers[payer].name, span: 1, payer});
+        if (last && last.payer === c.payer) last.span++;
+        else groups.push({label: c.payer === undefined ? "" : payers[c.payer].name, span: 1, payer: c.payer});
     }
 
     function toggleSort(id: string) {
         setSort(s => (s?.id !== id ? {id, dir: "asc"} : s.dir === "asc" ? {id, dir: "desc"} : null));
     }
 
+    const sizes = {"--row-h": `${rowHeight}px`, "--group-h": `${GROUP_ROW}px`, "--cols-h": `${COLUMN_ROW}px`, "--sum-h": `${SUM_ROW}px`};
     return (
-        <div ref={scroller} className={`grid-wrap ${options.dense ? "dense" : ""}`}
-             style={{"--row-h": `${rowHeight}px`, maxHeight: height} as CSSProperties}>
+        <div ref={scroller} className={`grid-wrap ${options.dense ? "dense" : ""}`} style={{...sizes, maxHeight: height} as CSSProperties}>
             <table className="data-grid" style={{width}} aria-rowcount={rows.length + headRows + (options.sum ? 1 : 0)}
                    aria-label="Rechnungen, Tabellenansicht">
                 <colgroup>
@@ -215,9 +197,9 @@ export function TableView(v: ViewProps & {options: TableOptions}) {
                     {/* the first column is sticky on its own; a wide sticky cell would cover the payer headers */}
                     <th className="sticky-b" aria-hidden="true"/>
                     {groups.map((g, i) => {
-                        const span = i === 0 ? g.span - 1 : g.span;
-                        return span > 0 && (
-                            <th key={i} colSpan={span} scope={g.payer === undefined ? undefined : "colgroup"}
+                        const n = i === 0 ? g.span - 1 : g.span;
+                        return n > 0 && (
+                            <th key={i} colSpan={n} scope={g.payer === undefined ? undefined : "colgroup"}
                                 className={g.payer !== undefined ? `group ${payerClass(g.payer)}` : ""}>{g.label}</th>
                         );
                     })}
@@ -226,11 +208,11 @@ export function TableView(v: ViewProps & {options: TableOptions}) {
                     <th className="sticky-a"><span className="sr-only">Auswahl</span></th>
                     {cols.map((c, i) => {
                         const dir = sort?.id === c.id ? sort.dir : null;
+                        const name = c.payer !== undefined ? `${payers[c.payer].name}: ${c.label}` : c.label;
                         return (
                             <th key={c.id} scope="col" className={`${i === 0 ? "sticky-b" : ""} ${c.right ? "right" : ""}`}
                                 aria-sort={dir === "asc" ? "ascending" : dir === "desc" ? "descending" : "none"}>
-                                <button type="button" className="sort" onClick={() => toggleSort(c.id)}
-                                        title={`Nach ${c.payer !== undefined ? `${payers[c.payer].name}: ` : ""}${c.label} sortieren`}>
+                                <button type="button" className="sort" aria-label={name} title={`Nach ${name} sortieren`} onClick={() => toggleSort(c.id)}>
                                     {c.label}<span className="sort-mark" aria-hidden="true">{dir === "asc" ? " ↑" : dir === "desc" ? " ↓" : ""}</span>
                                 </button>
                             </th>
@@ -244,15 +226,16 @@ export function TableView(v: ViewProps & {options: TableOptions}) {
                 {top > 0 && <tr className="spacer" aria-hidden="true"><td colSpan={span} style={{height: top}}/></tr>}
                 {items.map(item => {
                     const r = rows[item.index];
-                    const selected = v.selected.has(r.id);
                     return (
-                        <tr key={r.id} className={`${item.index % 2 ? "zebra" : ""} ${selected ? "sel" : ""}`} aria-rowindex={item.index + 1 + headRows}
+                        <tr key={r.id} className={`${item.index % 2 ? "zebra" : ""} ${v.selected.has(r.id) ? "sel" : ""}`} aria-rowindex={item.index + 1 + headRows}
                             {...nav.item(r.id)} onDoubleClick={e => opensInvoice(e.target as HTMLElement, true) && v.open(r.id)}>
-                            <td className="sticky-a"><input type="checkbox" aria-label={`${r.provider} auswählen`} checked={selected} onChange={() => v.toggleOne(r.id)}/></td>
+                            <td className="sticky-a">
+                                <input type="checkbox" aria-label={selectLabel(r)} checked={v.selected.has(r.id)} onChange={() => v.toggleOne(r.id)}/>
+                            </td>
                             {cols.map((c, i) => {
                                 const cell = c.cell(r);
                                 return (
-                                    <td key={c.id} title={cell.title} className={`${i === 0 ? "sticky-b" : ""} ${c.right ? "right num" : ""} ${cell.tone ?? ""}`}>
+                                    <td key={c.id} title={cell.title} className={`${i === 0 ? "sticky-b" : ""} ${c.right ? "right num" : ""} ${cell.className ?? ""}`}>
                                         {cell.text}
                                     </td>
                                 );
@@ -279,33 +262,10 @@ export function TableView(v: ViewProps & {options: TableOptions}) {
     );
 }
 
-/**
- * Height for the table's own scroll area: the rest of the window below its
- * top (with the page scrolled to the top), at least 360 px – so the sum row
- * is in view without scrolling the page when there is room.
- */
-function useFillHeight(ref: React.RefObject<HTMLElement | null>): number | undefined {
-    const [height, setHeight] = useState<number>();
-    useLayoutEffect(() => {
-        const update = () => {
-            const el = ref.current;
-            const page = el?.closest<HTMLElement>(".content");
-            if (!el || !page) return;
-            const top = el.getBoundingClientRect().top - page.getBoundingClientRect().top + page.scrollTop;
-            const bottom = parseFloat(getComputedStyle(page).paddingBottom) || 0;
-            setHeight(Math.max(360, page.clientHeight - top - bottom));
-        };
-        update();
-        window.addEventListener("resize", update);
-        return () => window.removeEventListener("resize", update);
-    });
-    return height;
-}
-
 /** "Spalten 12 von 18": shows and hides columns (per payer: all payers at once), and the sum row. */
 export function ColumnChooser({payers, options, onChange}: {payers: number; options: TableOptions; onChange: (o: TableOptions) => void}) {
     const [open, setOpen] = useState(false);
-    const count = (k: ColumnKind) => (PAYER_KINDS.includes(k) ? Math.max(payers, 0) : 1);
+    const count = (k: ColumnKind) => (PAYER_KINDS.includes(k) ? payers : 1);
     const total = COLUMN_KINDS.reduce((s, k) => s + count(k), 0);
     const shown = COLUMN_KINDS.filter(k => k === "service" || !options.hidden.includes(k)).reduce((s, k) => s + count(k), 0);
     const toggle = (k: ColumnKind) => onChange({...options, hidden: options.hidden.includes(k) ? options.hidden.filter(h => h !== k) : [...options.hidden, k]});
@@ -324,10 +284,10 @@ function ColumnMenu({options, toggle, onSum, onClose}: {
     onClose: () => void;
 }) {
     const ref = useDialog<HTMLDivElement>(onClose);
-    const box = (k: ColumnKind, note = "") => (
+    const box = (k: ColumnKind) => (
         <label key={k} className="inline">
             <input type="checkbox" checked={k === "service" || !options.hidden.includes(k)} disabled={k === "service"} onChange={() => toggle(k)}/>
-            {COLUMN_LABELS[k]}{note}
+            {COLUMN_LABELS[k]}
         </label>
     );
     return (
@@ -335,11 +295,11 @@ function ColumnMenu({options, toggle, onSum, onClose}: {
             <div className="column-menu-grid">
                 <div>
                     <strong className="small">Rechnung</strong>
-                    {(["service", "invoice", "provider", "category", "reference", "amount", "paid", "note"] as ColumnKind[]).map(k => box(k))}
+                    {COLUMN_KINDS.filter(k => !PAYER_KINDS.includes(k)).map(box)}
                 </div>
                 <div>
                     <strong className="small">Je Kostenträger</strong>
-                    {PAYER_KINDS.map(k => box(k))}
+                    {PAYER_KINDS.map(box)}
                     <hr/>
                     <label className="inline"><input type="checkbox" checked={options.sum} onChange={e => onSum(e.target.checked)}/>Summenzeile</label>
                 </div>

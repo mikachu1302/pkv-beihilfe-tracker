@@ -10,6 +10,7 @@ import type {Segment} from "../components/charts";
 import {ErrorNotice, Loading, Notice, Stat, YearSelect} from "../components/ui";
 import {date, eur, num, plural, toInput, today} from "../lib/format";
 import {useBackend} from "../lib/useBackend";
+import {invoicePath} from "../lib/paths";
 
 const BUCKETS: {key: "refunded" | "submitted" | "open" | "held" | "skipped"; label: string; slot: number}[] = [
     {key: "refunded", label: "Erstattet", slot: 1},
@@ -72,7 +73,7 @@ function Reminders() {
     if (items.length === 0) return null;
     const shown = all ? items : items.slice(0, 6);
     const link = (r: ReminderDTO) => {
-        if (r.invoiceId) return <Link to={`/rechnung/${encodeURIComponent(r.invoiceId)}`}>öffnen</Link>;
+        if (r.invoiceId) return <Link to={invoicePath(r.invoiceId)}>öffnen</Link>;
         if (r.kind === "inbox") return <Link to="/posteingang">Posteingang</Link>;
         if (r.kind === "premium") return <button className="link" onClick={() => setYear(r.year)}>Jahr {r.year} anzeigen</button>;
         return null;

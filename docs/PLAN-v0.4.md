@@ -101,8 +101,9 @@ rows of overscan. Details:
 - Tabelle: fixed row height per density (normal/dense); the sticky header, the sticky first
   column and the sum row stay outside the virtualised body.
 - Kompakt: expanded rows are taller – their height is measured (`measureElement`).
-- Keyboard: ↑/↓ moves the selection and scrolls it into view (`scrollToIndex`); focus stays on
-  the selected row even when rows are recycled.
+- Keyboard: ↑/↓ moves the selection and scrolls it into view (`scrollToIndex`). When the
+  focused row is scrolled out of the rendered range, the list itself takes the focus and the keys
+  go on from that row (see Implementation).
 - Screen readers: `aria-rowcount` on the table and `aria-rowindex` on every rendered row, so the
   position ("Zeile 120 von 300") is announced although only part of the rows exists. (Kompakt is
   a list with `aria-setsize`/`aria-posinset` instead – see Implementation.)
@@ -115,9 +116,10 @@ rows of overscan. Details:
 
 **Klassische Liste** – today's invoice table with all its functions (ticks, popovers, bulk bar).
 
-Common to all views: the toolbar (year, search, filters, Ausstand per payer), keyboard
-navigation (↑/↓ moves the selection, Enter opens), bulk selection (eingereicht for several),
-the same filters and search, the same sort order unless the table is sorted otherwise.
+Common to all views: the toolbar (year, search, filters, Ausstand per payer), bulk selection
+(eingereicht for several), the same filters and search, the same sort order unless the table is
+sorted otherwise. The new views also have keyboard navigation (↑/↓ moves the selection, Enter
+opens); the classic list keeps its v0.3 behaviour.
 
 ## Settings · Darstellung
 
@@ -217,6 +219,33 @@ Two independent reviews of the change (view logic; styles and the design switch)
 - The contrast test now follows the real cascade for "Neu dunkel" and checks the dimmed footer.
 - Kept on purpose: links use the accent colour in both designs (before: the browser's blue and
   purple, hard to read in classic dark).
+
+### Code quality review (2026-11-03)
+
+A second round of three reviews (functional regressions against v0.3.0, duplicated code, code
+quality and guidelines) found no regression of v0.3.0 behaviour – the classic list was compared
+side by side with a v0.3.0 build and driven in both designs. Changed after it:
+- the Ausstand of an invoice comes from the backend (`InvoiceRowDTO.Owed`, `calc.ClaimView.Owed`)
+  instead of a float sum in the browser (which showed "-0,00 €"); "lange offen" and "Frist bald"
+  are `calc.ClaimView.LongWait`/`DeadlineSoon`, used by reminders, year figures and the DTOs;
+- `pages/invoices/` is split into `model.ts` (types and pure helpers such as `markChange`,
+  `refundedMark`, `providerName`), `hooks.ts` (`useRowNav`, `usePageVirtualizer`, `useListNav`,
+  `useLayoutValue` – the one place that reads layout after every render) and `parts.tsx` (ticks,
+  popovers, selection box, payer column) – the ticks were written out in three views;
+- appearance: defaults and lists in `lib/appearance.ts`, the "apply, save, report a failure"
+  actions in `lib/appearanceActions.ts`, one small store helper (`lib/store.ts`) for theme,
+  design and appearance; the backend cleans unknown themes too, stores the chosen view as given,
+  restores the whole configuration when saving fails (`Config.Clone`) and shows the design hint
+  only when a data folder exists (it flashed on a fresh device choosing an existing folder);
+- the table memoises its columns (a sorted table re-sorted on every scroll frame), names its sort
+  buttons with the payer ("Beihilfe: SOLL"), passes its row heights to the CSS as variables;
+- Kompakt exposes the expanded state on the focusable line; PageUp/PageDown move through the list
+  (one card in the Detail feed); the list shows a dashed focus outline when it holds the focus;
+- status pills are badges (kinds `info`, `muted`), payer colours are set once, the new design's
+  radii are tokens (`--radius-md`), `fieldset` follows the `:where()` rule;
+- tests: one layout stub helper and `manyRows`, stores reset after every test (setup.ts), a test
+  that `public/boot.js` paints like `theme.ts`/`design.ts`, tab stop after scrolling, opening by
+  click and double click, popovers closing on a view change; Go tests for fallbacks and rollback.
 
 ## Open points
 

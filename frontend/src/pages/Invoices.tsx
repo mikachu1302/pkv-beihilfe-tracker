@@ -6,8 +6,9 @@ import {useApp} from "../App";
 import {useConfirm, useToast} from "../components/feedback";
 import {OutstandingCards} from "../components/Outstanding";
 import {Empty, ErrorNotice, Loading, YearSelect} from "../components/ui";
-import {setSessionView, useInvoiceView, VIEW_LABELS} from "../lib/appearance";
+import {setSessionView, useInvoiceView, VIEW_LABELS, VIEW_ORDER} from "../lib/appearance";
 import type {InvoiceView} from "../lib/appearance";
+import {useTableOptions} from "../lib/appearanceActions";
 import {useDesign} from "../lib/design";
 import {eur, num, plural, today} from "../lib/format";
 import {useBackend} from "../lib/useBackend";
@@ -15,12 +16,11 @@ import {dialogOpen, isTyping, key, mod, useKeydown} from "../lib/shortcuts";
 import {ClassicList} from "./invoices/ClassicList";
 import {CompactView} from "./invoices/CompactView";
 import {DetailView} from "./invoices/DetailView";
-import {ColumnChooser, TableView, useTableOptions} from "./invoices/TableView";
-import type {Pop, ViewProps} from "./invoices/shared";
+import {markChange} from "./invoices/model";
+import type {Pop, ViewProps} from "./invoices/model";
+import {TableView, ColumnChooser} from "./invoices/TableView";
+import {invoicePath} from "../lib/paths";
 import {exportExcel} from "./Overview";
-
-/** The views of the new design, in the order of the switch. */
-const VIEWS: InvoiceView[] = ["detail", "compact", "table", "classic"];
 
 type Filter = "all" | "open" | "submitted" | "clarify" | "deadline" | "unpaid" | "warnings";
 
@@ -44,7 +44,7 @@ export function matchesFilter(r: InvoiceRowDTO, f: Filter): boolean {
         case "clarify":
             return cl.some(c => c.clarify.done || c.suggestClarify);
         case "deadline":
-            return cl.some(c => c.deadline !== "" && c.deadlineDays <= 90);
+            return cl.some(c => c.deadlineSoon);
         case "unpaid":
             return !r.paid.done;
         case "warnings": // plausibility findings, e.g. typos taken over from the old spreadsheet
@@ -115,7 +115,7 @@ export default function Invoices() {
             return;
         }
         if (num(c.actual) !== 0 && !await confirm(`Erstattungen von ${c.payerName} (${eur(c.actual)}) entfernen?`, "Entfernen")) return;
-        await change({invoiceId: r.id, payerId: c.payerId, mark: "refunded", on: false, date: "", note: "", amount: ""});
+        await change(markChange(r.id, c.payerId, "refunded", false));
     }
 
     async function toggleClarify(r: InvoiceRowDTO, c: ClaimViewDTO) {
@@ -123,7 +123,7 @@ export default function Invoices() {
             setPop({rowId: r.id, payerId: c.payerId, kind: "clarify"});
             return;
         }
-        await change({invoiceId: r.id, payerId: c.payerId, mark: "clarify", on: false, date: "", note: "", amount: ""});
+        await change(markChange(r.id, c.payerId, "clarify", false));
     }
 
     const allSelected = visible.length > 0 && visible.every(r => selected.has(r.id));
@@ -134,16 +134,22 @@ export default function Invoices() {
         return n;
     });
 
-    // A popover belongs to a visible invoice in the current view.
-    const popGone = pop !== null && !visible.some(r => r.id === pop.rowId);
-    useEffect(() => {
-        if (popGone) setPop(null);
-    }, [popGone]);
-    useEffect(() => setPop(null), [view]);
+    // A popover belongs to a visible invoice: it closes when the filter, the
+    // search or the view changes, and is not shown for an invoice that left
+    // the list otherwise (reloaded data).
+    const shownPop = pop !== null && visible.some(r => r.id === pop.rowId) ? pop : null;
+    const chooseFilter = (f: Filter) => {
+        setFilter(f);
+        setPop(null);
+    };
+    const chooseView = (v: InvoiceView) => {
+        setSessionView(v);
+        setPop(null);
+    };
 
     const viewProps: ViewProps = {
-        rows: visible, payers, selected, toggleOne, allSelected, toggleAll, pop, setPop, change, toggleRefunded, toggleClarify,
-        open: id => navigate(`/rechnung/${encodeURIComponent(id)}`),
+        rows: visible, payers, selected, toggleOne, allSelected, toggleAll, pop: shownPop, setPop, change, toggleRefunded, toggleClarify,
+        open: id => navigate(invoicePath(id)),
     };
 
     const yearList = years.data ?? [year];
@@ -155,13 +161,16 @@ export default function Invoices() {
                             onChange={setYear} allLabel="alle Jahre"/>
                 <span className="spacer"/>
                 <input ref={search} aria-label="Suchen" placeholder={`Suchen … (${key("F")})`} className="search" value={query}
-                       onChange={e => setQuery(e.target.value)}/>
+                       onChange={e => {
+                           setQuery(e.target.value);
+                           setPop(null);
+                       }}/>
                 <button onClick={() => exportExcel(toast, year)}>Excel</button>
                 <button className="primary" onClick={() => navigate("/rechnung/neu")}>Neue Rechnung</button>
             </div>
             {design === "new" && (
                 <div className="view-bar">
-                    <ViewSwitch view={view}/>
+                    <ViewSwitch view={view} onChange={chooseView}/>
                     {view !== "classic" && visible.length > 0 && (
                         <div className="view-tools">
                             {view === "table" && (
@@ -189,7 +198,7 @@ export default function Invoices() {
                     const count = f === "warnings" ? rows.filter(r => matchesFilter(r, f)).length : 0;
                     return (
                         <button key={f} className={`chip ${filter === f ? "on" : ""}`} aria-pressed={filter === f}
-                                onClick={() => setFilter(f)}>{label}{count > 0 && ` (${count})`}</button>
+                                onClick={() => chooseFilter(f)}>{label}{count > 0 && ` (${count})`}</button>
                     );
                 })}
             </div>
@@ -215,11 +224,11 @@ export default function Invoices() {
 }
 
 /** Detail, Kompakt, Tabelle or the classic list (new design only). */
-function ViewSwitch({view}: {view: InvoiceView}) {
+function ViewSwitch({view, onChange}: {view: InvoiceView; onChange: (v: InvoiceView) => void}) {
     return (
         <div className="segmented" role="group" aria-label="Ansicht">
-            {VIEWS.map(v => (
-                <button key={v} type="button" aria-pressed={view === v} onClick={() => setSessionView(v)}>{VIEW_LABELS[v]}</button>
+            {VIEW_ORDER.map(v => (
+                <button key={v} type="button" aria-pressed={view === v} onClick={() => onChange(v)}>{VIEW_LABELS[v]}</button>
             ))}
         </div>
     );

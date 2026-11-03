@@ -94,11 +94,13 @@ type ClaimViewDTO struct {
 	SuggestClarify     bool    `json:"suggestClarify"`
 	Deadline           string  `json:"deadline"`
 	DeadlineDays       int     `json:"deadlineDays"`
+	DeadlineSoon       bool    `json:"deadlineSoon"` // missed or within calc.DeadlineWarnDays
 	// WaitingDays since submitted while waiting for the refund; LongWait
-	// when longer than the dashboard reminder allows.
-	WaitingDays int  `json:"waitingDays"`
-	LongWait    bool `json:"longWait"`
-	FromDoc     bool `json:"fromDoc"` // a refund comes from a Bescheid
+	// when longer than the dashboard reminder allows (calc.LongWaitDays).
+	WaitingDays int    `json:"waitingDays"`
+	LongWait    bool   `json:"longWait"`
+	FromDoc     bool   `json:"fromDoc"` // a refund comes from a Bescheid
+	Owed        string `json:"owed"`    // what the payer still owes on it (calc.ClaimView.Owed)
 }
 
 // InvoiceRowDTO is an invoice with its derived values, as shown in lists.
@@ -117,6 +119,7 @@ type InvoiceRowDTO struct {
 	Expected    string         `json:"expected"`
 	Actual      string         `json:"actual"`
 	OwnShare    string         `json:"ownShare"`
+	Owed        string         `json:"owed"` // sum of the claims' Owed (Ausstand of this invoice)
 	Settled     bool           `json:"settled"`
 	Warnings    []WarningDTO   `json:"warnings"`
 	Note        string         `json:"note"`
@@ -186,6 +189,7 @@ func rowDTO(inv *model.Invoice, v calc.InvoiceView) InvoiceRowDTO {
 		Actual: v.Actual.String(), OwnShare: v.OwnShare.String(), Settled: v.Settled, Note: inv.Note,
 		Attachments: len(inv.Attachments), Claims: []ClaimViewDTO{}, Warnings: []WarningDTO{},
 	}
+	var owed money.Cents
 	for _, c := range v.Claims {
 		ic := inv.Claims[c.PayerID]
 		r.Claims = append(r.Claims, ClaimViewDTO{
@@ -194,10 +198,12 @@ func rowDTO(inv *model.Invoice, v calc.InvoiceView) InvoiceRowDTO {
 			Diff: c.Diff.String(), Status: string(c.Status), Submitted: markDTO(c.Submitted),
 			Refunded: markDTO(c.Refunded), Clarify: markDTO(c.Clarify), Held: ic.Held, Skip: ic.Skip,
 			KeepsPremiumRefund: c.KeepsPremiumRefund, SuggestClarify: c.SuggestClarify,
-			Deadline: c.Deadline.String(), DeadlineDays: c.DeadlineDays,
-			WaitingDays: c.WaitingDays, LongWait: c.WaitingDays > calc.LongWaitDays, FromDoc: c.FromDoc,
+			Deadline: c.Deadline.String(), DeadlineDays: c.DeadlineDays, DeadlineSoon: c.DeadlineSoon(),
+			WaitingDays: c.WaitingDays, LongWait: c.LongWait(), FromDoc: c.FromDoc, Owed: c.Owed().String(),
 		})
+		owed += c.Owed()
 	}
+	r.Owed = owed.String()
 	for _, w := range v.Warnings {
 		r.Warnings = append(r.Warnings, WarningDTO(w))
 	}

@@ -146,11 +146,11 @@ func (s *Service) Reminders() ([]ReminderDTO, error) {
 			case !c.Deadline.IsZero() && c.DeadlineDays < 0:
 				add(ReminderDTO{Kind: "deadline", Text: fmt.Sprintf("Antragsfrist bei %s abgelaufen (%s): %s", c.PayerName, c.Deadline.DE(), label),
 					InvoiceID: inv.ID, PayerID: c.PayerID, Year: v.Year, Urgent: true})
-			case !c.Deadline.IsZero() && c.DeadlineDays <= calc.DeadlineWarnDays:
+			case c.DeadlineSoon():
 				add(ReminderDTO{Kind: "deadline", Text: fmt.Sprintf("Bei %s bis %s einreichen (noch %d Tage): %s", c.PayerName, c.Deadline.DE(), c.DeadlineDays, label),
 					InvoiceID: inv.ID, PayerID: c.PayerID, Year: v.Year, Urgent: c.DeadlineDays <= 30})
 			}
-			if c.WaitingDays > calc.LongWaitDays {
+			if c.LongWait() {
 				add(ReminderDTO{Kind: "refund", Text: fmt.Sprintf("Erstattung von %s seit %d Wochen offen: %s", c.PayerName, c.WaitingDays/7, label),
 					InvoiceID: inv.ID, PayerID: c.PayerID, Year: v.Year})
 			}

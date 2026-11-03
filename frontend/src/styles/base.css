@@ -105,6 +105,8 @@ tr.click:focus-visible { outline: 2px solid var(--accent-fg); outline-offset: -2
 .badge.good { background: var(--good-bg); color: var(--good); }
 .badge.warn { background: var(--warn-bg); color: var(--warn); }
 .badge.bad { background: var(--bad-bg); color: var(--bad); }
+.badge.info { color: var(--info); }
+.badge.muted { color: var(--muted); }
 
 .notice { border-radius: var(--radius); padding: 10px 14px; margin-bottom: 12px; border: 1px solid var(--border); }
 .notice.warn { background: var(--warn-bg); border-color: var(--warn); }
@@ -354,7 +356,7 @@ th.payer-first, td.payer-first { border-left: 1px solid var(--border); }
 .w-auto { width: auto !important; }
 .w-date { width: 150px !important; }
 .grow-input { flex: 1; min-width: 140px; }
-.search { width: 200px !important; }
+.search { width: 200px; }
 .grid.two { grid-template-columns: 1fr 1fr; }
 .modal.narrow { max-width: 480px; }
 .content.narrow { max-width: 760px; margin: 0 auto; }

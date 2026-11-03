@@ -19,7 +19,7 @@ export function Empty({children}: {children: ReactNode}) {
     return <div className="panel empty">{children}</div>;
 }
 
-export function Badge({kind, children, title}: {kind?: "good" | "warn" | "bad"; children: ReactNode; title?: string}) {
+export function Badge({kind, children, title}: {kind?: "good" | "warn" | "bad" | "info" | "muted"; children: ReactNode; title?: string}) {
     return <span className={`badge ${kind ?? ""}`} title={title}>{children}</span>;
 }
 

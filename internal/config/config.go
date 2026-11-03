@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
 const fileName = "config.json"
@@ -25,14 +26,14 @@ type Config struct {
 	// Theme is the colour scheme of this device: "" follows the system,
 	// "light" or "dark".
 	Theme string `json:"theme,omitempty"`
-	// Design is the look of this device: "" (the default, the new design),
-	// "new" or "classic".
+	// Design is the look of this device: "new" or "classic"; "" = not
+	// chosen yet (the new design).
 	Design string `json:"design,omitempty"`
 	// DesignHintSeen: the one-time hint where to switch back to the classic
 	// design was closed (or the device was set up with v0.4.0 or later).
 	DesignHintSeen bool `json:"designHintSeen,omitempty"`
-	// View is the invoice view the list starts with in the new design: ""
-	// (Detail), "compact", "table" or "classic".
+	// View is the invoice view the list starts with in the new design:
+	// "detail", "compact", "table" or "classic"; "" = not chosen yet (Detail).
 	View string `json:"view,omitempty"`
 	// Table holds the options of the table view.
 	Table TableOptions `json:"table,omitzero"`
@@ -44,6 +45,13 @@ type TableOptions struct {
 	Dense  bool     `json:"dense,omitempty"`
 	NoSum  bool     `json:"noSum,omitempty"`
 	Hidden []string `json:"hidden,omitempty"` // column keys not shown
+}
+
+// Clone returns a copy that shares no slices with c.
+func (c *Config) Clone() *Config {
+	d := *c
+	d.Table.Hidden = slices.Clone(c.Table.Hidden)
+	return &d
 }
 
 // Dir returns the folder for the device-local configuration.

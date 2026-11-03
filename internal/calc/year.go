@@ -205,7 +205,7 @@ func addClaim(py *PayerYear, a *pkvAcc, cv *ClaimView, billed money.Cents) {
 		switch {
 		case cv.DeadlineDays < 0:
 			py.DeadlineMissed++
-		case cv.DeadlineDays <= DeadlineWarnDays:
+		case cv.DeadlineSoon():
 			py.DeadlineSoon++
 		}
 	}

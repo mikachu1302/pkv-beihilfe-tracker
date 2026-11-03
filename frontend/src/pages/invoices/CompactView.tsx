@@ -4,24 +4,22 @@
 // Only the visible lines are rendered (usePageVirtualizer); the page
 // scrolls, expanded lines are measured.
 import {useState} from "react";
-import type {CSSProperties, KeyboardEvent as ReactKeyboardEvent} from "react";
+import type {CSSProperties, KeyboardEvent} from "react";
 import {Link} from "react-router";
 import type {ClaimViewDTO, InvoiceRowDTO, PayerDTO} from "../../api";
-import {MarkBox} from "../../components/MarkBox";
-import {CATEGORY_LABELS, date, eur, num, plural, shortDate} from "../../lib/format";
-import {footerItems, PayerColumn} from "./DetailView";
-import {claimOf, claimState, opensInvoice, payerClass, useDropPopover, usePageVirtualizer, useRowNav} from "./shared";
-import type {ViewProps} from "./shared";
+import {CATEGORY_LABELS, date, dayMonth, eur, num, plural, shortDate, sumBy} from "../../lib/format";
+import {invoicePath} from "../../lib/paths";
+import {useListNav, usePageVirtualizer} from "./hooks";
+import type {RowNavItem} from "./hooks";
+import {claimOf, claimState, opensInvoice, payerClass, providerName, rowLabel} from "./model";
+import type {Tone, ViewProps} from "./model";
+import {footerItems, PaidMark, PayerColumn, SelectBox} from "./parts";
 
+/** Estimated height of a line in px (expanded lines are measured). */
 const LINE_HEIGHT = 46;
 
-/** What the payer still owes on this invoice: SOLL − IST of claims not held back or skipped. */
-export function openAmount(r: InvoiceRowDTO): number {
-    return (r.claims ?? []).reduce((s, c) => (["open", "submitted", "refunded"].includes(c.status) ? s + num(c.expected) - num(c.actual) : s), 0);
-}
-
 /** Progress in three dots: held 1, submitted 2, refunded 3 (the last one coloured by the outcome). */
-function dots(c: ClaimViewDTO): {filled: number; last?: string} {
+function dots(c: ClaimViewDTO): {filled: number; last?: Tone} {
     switch (c.status) {
         case "held":
             return {filled: 1};
@@ -35,24 +33,22 @@ function dots(c: ClaimViewDTO): {filled: number; last?: string} {
 }
 
 /** Short text next to the dots: "eingereicht 20.09.", "erstattet −39,21 €", "nicht eingereicht". */
-function shortText(c: ClaimViewDTO): {text: string; tone: string} {
-    const day = (iso: string) => shortDate(iso).slice(0, 6);
+function shortText(c: ClaimViewDTO): {text: string; className: string} {
     switch (c.status) {
         case "submitted":
-            return {text: `eingereicht ${day(c.submitted.date)}`, tone: ""};
+            return {text: `eingereicht ${dayMonth(c.submitted.date)}`, className: ""};
         case "refunded": {
-            const d = num(c.diff);
-            if (d !== 0) return {text: `erstattet ${eur(d)}`, tone: c.clarify.done ? "neg" : c.suggestClarify ? "warn-text" : ""};
-            return {text: `erstattet ${day(c.refunded.date)}`.trim(), tone: "pos"};
+            if (num(c.diff) !== 0) return {text: `erstattet ${eur(c.diff)}`, className: c.clarify.done ? "neg" : c.suggestClarify ? "warn-text" : ""};
+            return {text: `erstattet ${dayMonth(c.refunded.date)}`.trim(), className: "pos"};
         }
         default:
-            return {text: claimState(c).label, tone: c.status === "open" ? "warn-text" : "muted"};
+            return {text: claimState(c).label, className: c.status === "open" ? "warn-text" : "muted"};
     }
 }
 
 /** Small flags at the end of the line, each with its meaning as text. */
-function flags(r: InvoiceRowDTO): {mark: string; text: string; tone: string}[] {
-    const out: {mark: string; text: string; tone: string}[] = [];
+function flags(r: InvoiceRowDTO): {mark: string; text: string; tone: Tone}[] {
+    const out: {mark: string; text: string; tone: Tone}[] = [];
     if (!r.paid.done) out.push({mark: "€", text: r.due ? `nicht bezahlt, fällig ${date(r.due)}` : "nicht bezahlt", tone: "warn"});
     const cl = r.claims ?? [];
     const wait = Math.max(0, ...cl.filter(c => c.longWait).map(c => c.waitingDays));
@@ -80,13 +76,8 @@ export function CompactView(v: ViewProps) {
         });
         if (!on && v.pop?.rowId === id) v.setPop(null); // its popover goes with the details
     };
-    const rendered = pv.items.map(i => rows[i.index].id);
-    useDropPopover(v, rendered);
-    const nav = useRowNav(rows.map(r => r.id), {
-        open: v.open, toggle: v.toggleOne,
-        scrollTo: pv.scrollTo,
-        rendered, firstVisible: pv.firstVisible === undefined ? undefined : rows[pv.firstVisible]?.id,
-        keys: (e: ReactKeyboardEvent, id: string) => {
+    const nav = useListNav(v, pv, {
+        keys: (e: KeyboardEvent, id: string) => {
             if (e.key === "ArrowRight") setOpen(id, true);
             else if (e.key === "ArrowLeft") setOpen(id, false);
             else return false;
@@ -94,12 +85,8 @@ export function CompactView(v: ViewProps) {
         },
     });
 
-    const style = {"--payers": payers.length} as CSSProperties;
-    const total = rows.reduce((s, r) => s + num(r.amount), 0);
-    const open = rows.reduce((s, r) => s + openAmount(r), 0);
-
     return (
-        <section className="compact" style={style} aria-label="Rechnungen, Kompaktansicht">
+        <section className="compact" style={{"--payers": payers.length} as CSSProperties} aria-label="Rechnungen, Kompaktansicht">
             <div className="compact-line compact-head" aria-hidden="true">
                 <span/>
                 <span>Behandlung</span>
@@ -110,10 +97,7 @@ export function CompactView(v: ViewProps) {
                 <span/>
                 <span/>
             </div>
-            <div ref={el => {
-                pv.list.current = el;
-                nav.container.current = el;
-            }} role="list" {...nav.containerProps}>
+            <div role="list" {...nav.listProps}>
                 {pv.top > 0 && <div aria-hidden="true" style={{height: pv.top}}/>}
                 {pv.items.map(item => {
                     const r = rows[item.index];
@@ -131,9 +115,9 @@ export function CompactView(v: ViewProps) {
                 <span/>
                 <span/>
                 <span>{plural(rows.length, "Rechnung", "Rechnungen")}</span>
-                <span className="right num">{eur(total)}</span>
+                <span className="right num">{eur(sumBy(rows, r => r.amount))}</span>
                 {payers.map(p => <span key={p.id}/>)}
-                <span className="right num due-sum" title="SOLL − IST, ohne zurückgehaltene">{eur(open)}</span>
+                <span className="right num due-sum" title="SOLL − IST, ohne zurückgehaltene">{eur(sumBy(rows, r => r.owed))}</span>
                 <span/>
                 <span/>
             </div>
@@ -145,23 +129,22 @@ function CompactLine({row: r, payers, v, nav, expanded, setExpanded}: {
     row: InvoiceRowDTO;
     payers: PayerDTO[];
     v: ViewProps;
-    nav: ReturnType<ReturnType<typeof useRowNav>["item"]>;
+    nav: RowNavItem;
     expanded: boolean;
     setExpanded: (on: boolean) => void;
 }) {
-    const selected = v.selected.has(r.id);
-    const open = openAmount(r);
+    const owed = num(r.owed);
     const detailsId = `compact-${r.id}`;
-    const label = `${r.provider || "Rechnung ohne Namen"}, ${date(r.serviceDate)}, ${eur(r.amount)}`;
     return (
-        <div className={`compact-row ${selected ? "sel" : ""} ${expanded ? "open" : ""}`}>
-            <div className="compact-line" role="group" aria-label={label} {...nav}
+        <div className={`compact-row ${v.selected.has(r.id) ? "sel" : ""} ${expanded ? "open" : ""}`}>
+            <div className="compact-line" role="group" aria-label={rowLabel(r)} aria-expanded={expanded} aria-controls={detailsId}
+                 aria-keyshortcuts="ArrowRight ArrowLeft Enter" {...nav}
                  onClick={e => opensInvoice(e.target as HTMLElement) && setExpanded(!expanded)}
                  onDoubleClick={e => opensInvoice(e.target as HTMLElement, true) && v.open(r.id)}>
-                <input type="checkbox" aria-label={`${r.provider} auswählen`} checked={selected} onChange={() => v.toggleOne(r.id)}/>
+                <SelectBox row={r} v={v}/>
                 <span className="num muted">{shortDate(r.serviceDate) || "–"}</span>
                 <span className="compact-provider">
-                    <Link to={`/rechnung/${encodeURIComponent(r.id)}`}>{r.provider || "(ohne Namen)"}</Link>
+                    <Link className="provider-link" to={invoicePath(r.id)}>{providerName(r)}</Link>
                     <span className="muted small">{CATEGORY_LABELS[r.category] ?? r.category}</span>
                 </span>
                 <span className="right num">{eur(r.amount)}</span>
@@ -175,11 +158,11 @@ function CompactLine({row: r, payers, v, nav, expanded, setExpanded}: {
                             <span className={`dots ${payerClass(i)}`} aria-hidden="true">
                                 {[0, 1, 2].map(k => <span key={k} className={k < d.filled ? `dot ${k === 2 && d.last ? d.last : ""}` : "ring"}/>)}
                             </span>
-                            <span className={t.tone}>{t.text}</span>
+                            <span className={t.className}>{t.text}</span>
                         </span>
                     );
                 })}
-                <span className={`right num ${open === 0 ? "muted" : ""}`}>{open === 0 ? "–" : eur(open)}</span>
+                <span className={`right num ${owed === 0 ? "muted" : ""}`}>{owed === 0 ? "–" : eur(owed)}</span>
                 <span className="flags">
                     {flags(r).map(f => (
                         <span key={f.mark} className={`flag-box ${f.tone}`} title={f.text}>
@@ -197,7 +180,6 @@ function CompactLine({row: r, payers, v, nav, expanded, setExpanded}: {
 }
 
 function CompactDetails({id, row: r, payers, v}: {id: string; row: InvoiceRowDTO; payers: PayerDTO[]; v: ViewProps}) {
-    const footer = footerItems(r);
     return (
         <div id={id} className="compact-details" style={{"--cols": payers.length + 1} as CSSProperties}>
             {payers.map((p, i) => {
@@ -208,12 +190,10 @@ function CompactDetails({id, row: r, payers, v}: {id: string; row: InvoiceRowDTO
                 <strong>
                     {r.invoiceDate ? `Rechnung ${date(r.invoiceDate)}` : "Rechnung"}{r.reference && ` · ${r.reference}`}
                 </strong>
-                <MarkBox label="bezahlt" mark={r.paid}
-                         onToggle={on => v.change({invoiceId: r.id, payerId: "", mark: "paid", on, date: "", note: "", amount: ""})}
-                         onDate={d => v.change({invoiceId: r.id, payerId: "", mark: "paid", on: true, date: d, note: "", amount: ""})}/>
+                <PaidMark row={r} change={v.change}/>
                 {!r.paid.done && r.due && <span className="due">fällig {date(r.due)}</span>}
-                {footer.map(f => <span key={f.text} className={`small ${f.tone ?? ""}`}>{f.text}</span>)}
-                <Link to={`/rechnung/${encodeURIComponent(r.id)}`}>Rechnung öffnen →</Link>
+                {footerItems(r).map(f => <span key={f.text} className={`small ${f.tone ?? ""}`}>{f.text}</span>)}
+                <Link to={invoicePath(r.id)}>Rechnung öffnen →</Link>
             </div>
         </div>
     );

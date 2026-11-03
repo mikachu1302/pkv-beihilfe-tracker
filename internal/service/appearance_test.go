@@ -1,6 +1,8 @@
 package service
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 )
@@ -57,6 +59,9 @@ func TestDesignAndViews(t *testing.T) {
 	again := NewWithConfigDir(s.cfgDir)
 	t.Cleanup(func() { _ = again.ServiceShutdown() })
 	a = again.Appearance()
+	if again.cfg.View != "table" {
+		t.Errorf("stored view %q", again.cfg.View)
+	}
 	if a.Design != "classic" || a.View != "table" || a.Table.Sum || !a.Table.Dense || !slices.Equal(a.Table.Hidden, []string{"note", "reference"}) {
 		t.Errorf("after restart %+v", a)
 	}
@@ -81,5 +86,38 @@ func TestDesignHintForExistingDevices(t *testing.T) {
 	}
 	if s.Appearance().DesignHint {
 		t.Error("hint still shown after choosing a design")
+	}
+}
+
+func TestAppearanceFallbacksAndRollback(t *testing.T) {
+	s := newTestService(t)
+	// Values from a newer version fall back to the defaults.
+	s.cfg.Theme, s.cfg.Design, s.cfg.View = "sepia", "retro", "kacheln"
+	s.cfg.Table.Hidden = []string{"note", "farbe"}
+	a := s.Appearance()
+	if a.Theme != "" || a.Design != "new" || a.View != "detail" || !slices.Equal(a.Table.Hidden, []string{"note"}) {
+		t.Errorf("fallbacks %+v", a)
+	}
+	// No hint before a data folder is chosen (the setup screen).
+	s.cfg.DesignHintSeen, s.cfg.DataDir = false, ""
+	if s.Appearance().DesignHint {
+		t.Error("hint without a data folder")
+	}
+
+	// A failed save leaves the configuration as it was.
+	s.cfg.Theme, s.cfg.Table.Hidden = "dark", []string{"note"}
+	blocked := filepath.Join(t.TempDir(), "datei")
+	if err := os.WriteFile(blocked, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s.cfgDir = blocked // not a folder: saving fails
+	if err := s.SetTheme("light"); err == nil {
+		t.Fatal("saving into a file succeeded")
+	}
+	if err := s.SetTableOptions(TableOptionsDTO{Hidden: []string{"reference"}}); err == nil {
+		t.Fatal("saving into a file succeeded")
+	}
+	if s.cfg.Theme != "dark" || !slices.Equal(s.cfg.Table.Hidden, []string{"note"}) {
+		t.Errorf("not rolled back: %q %v", s.cfg.Theme, s.cfg.Table.Hidden)
 	}
 }
