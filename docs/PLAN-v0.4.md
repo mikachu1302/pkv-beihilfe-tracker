@@ -19,7 +19,7 @@ switch at any time.
 | Topic | Decision |
 |---|---|
 | Look | Direction A: one accent colour (lime `#C8F542` as fill; dark olive `#3F6212` for text on light), numbers in a monospace face, calm surfaces. Fonts bundled (no CDN): Space Grotesk (UI) and JetBrains Mono (numbers), both OFL. |
-| Design switch | "Design: Klassisch / Neu" per device. Both designs share the **same structure** (menu, pages, forms, views) and differ only in look (colours, fonts, spacing, radii, density). No second set of screens: every feature is built once and shows up in both designs. "Klassisch" is today's look, not a frozen copy of v0.2.0. |
+| Design switch | "Design: Klassisch / Neu" per device; **Neu is the default**, also for existing installations after the update, with a one-time hint where to switch back (decided 2026-11-03). Both designs share the **same structure** (menu, pages, forms, views) and differ only in look (colours, fonts, spacing, radii, density). No second set of screens: every feature is built once and shows up in both designs. "Klassisch" is today's look, not a frozen copy of v0.2.0. |
 | Views | Detail, Kompakt, Tabelle – the same data in all three – plus today's list as "Klassische Liste". Views and design are independent: every view works in both designs. |
 | Default view | Configurable per device; out of the box: **Detail**. Switching in the list applies until the next start (or until changed in the settings). |
 | Table | **Read only**: sorting, choosing columns, sum row. Editing stays in the invoice form (double click / Enter opens it). |
@@ -73,7 +73,7 @@ the same filters and search, the same sort order unless the table is sorted othe
 
 ## Settings · Darstellung
 
-- Design: Klassisch / Neu.
+- Design: Neu (default) / Klassisch.
 - Standardansicht: Detail (default) / Kompakt / Tabelle / Klassische Liste.
 - Farbschema: wie das System (default) / hell / dunkel.
 - Tabelle: sum row, dense rows, visible columns (also from the column chooser).
@@ -102,8 +102,6 @@ the same filters and search, the same sort order unless the table is sorted othe
 
 ## Open points
 
-- Default design after the update: "Neu" for everyone with a one-time hint where to switch back,
-  or keep "Klassisch" for existing installations?
 - Should the classic design default to the "Klassische Liste" view?
 - Should the invoice detail page also get the "Reise einer Rechnung" layout (direction D)?
 - Status dots need a text alternative in every place (screen readers, colour blindness).
