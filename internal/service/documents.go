@@ -248,33 +248,40 @@ func (s *Service) discardStaged(ids []string) {
 }
 
 // StagedToInbox moves documents added in the invoice form into the inbox –
-// a Bescheid is booked from there. It returns the inbox names.
-func (s *Service) StagedToInbox(ids []string) ([]string, error) {
+// a Bescheid is booked from there. Several documents become the pages of
+// one inbox document. It returns the inbox name.
+func (s *Service) StagedToInbox(ids []string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	st, _, err := s.ready()
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	var names []string
 	for _, id := range ids {
 		d, ok := s.staged[id]
 		if !ok {
-			return names, errStagedGone
+			return "", errStagedGone
 		}
 		b, err := os.ReadFile(d.path)
 		if err != nil {
-			return names, errStagedGone
+			return "", errStagedGone
 		}
 		n, err := st.AddToInbox(d.name, b)
 		if err != nil {
-			return names, err
+			return "", err
 		}
 		names = append(names, n)
 		_ = os.Remove(d.path)
 		delete(s.staged, id)
 	}
-	return names, nil
+	switch len(names) {
+	case 0:
+		return "", nil
+	case 1:
+		return names[0], nil
+	}
+	return st.MergeInbox(names)
 }
 
 var errStagedGone = errors.New("Ein hinzugefügter Beleg ist nicht mehr verfügbar – bitte erneut hinzufügen")
@@ -345,7 +352,7 @@ func documentInUse(data *store.Data, doc, except string) bool {
 		}
 	}
 	for _, d := range data.RefundDocs {
-		if d.Attachment == doc {
+		if slices.Contains(d.Pages(), doc) {
 			return true
 		}
 	}

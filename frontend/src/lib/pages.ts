@@ -19,6 +19,9 @@ export interface PageFile {
     // replaced under the same name is recognised again.
     modified?: string;
     size?: number;
+    // Identifies the file for the cache instead of the URL – a page that is
+    // only renamed (renumbered in a multi-page document) is not read again.
+    key?: string;
 }
 
 export type Progress = (message: string) => void;
@@ -73,7 +76,7 @@ function abortError(signal: AbortSignal): unknown {
  */
 export function createRecognizer(run: Run, size = 60) {
     const jobs = new Map<string, Job>();
-    const key = (f: PageFile) => `${f.url}\n${f.modified ?? ""}\n${f.size ?? ""}`;
+    const key = (f: PageFile) => f.key ?? `${f.url}\n${f.modified ?? ""}\n${f.size ?? ""}`;
 
     function job(f: PageFile): Job {
         const k = key(f);

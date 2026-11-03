@@ -328,6 +328,14 @@ table.refunds input { padding: 3px 6px; }
 .inbox-item { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 2px; }
 .inbox-item.on { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
 .inbox-item .name { word-break: break-all; }
+.inbox-row { display: flex; align-items: flex-start; gap: 6px; }
+.inbox-row > input[type=checkbox] { margin-top: 10px; flex: none; }
+.merge-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; min-height: 30px; }
+.page-preview { margin: 0 0 12px; }
+.page-preview figcaption { margin-bottom: 4px; }
+.page-strip { margin: 8px 0 4px; }
+.page-strip .doc-tile { cursor: grab; }
+.page-strip .doc-tile.dragging { opacity: .5; }
 .inbox-detail { display: grid; grid-template-columns: minmax(260px, 520px) 1fr; gap: 16px; align-items: start; }
 .preview-wrap { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px; max-height: 80vh; overflow: auto; }
 .preview { display: block; max-width: 100%; height: auto; margin: 0 auto; }

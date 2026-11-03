@@ -435,8 +435,24 @@ type RefundDoc struct {
 	Deductions      []Deduction  `json:"deductions,omitempty"`
 	Lines           []RefundLine `json:"lines,omitempty"`
 	Attachment      string       `json:"attachment,omitempty"`
-	State           string       `json:"state,omitempty"`
-	Note            string       `json:"note,omitempty"`
+	// MorePages are the further pages of a multi-page Bescheid (files in
+	// belege/, in order). Attachment stays the first page, so older app
+	// versions still find the document. No schema bump: a Bescheid is written
+	// once when it is booked and not saved again – an older version could
+	// only drop the field when merging sync conflict copies of the same
+	// Bescheid (the files stay in belege/).
+	MorePages []string `json:"morePages,omitempty"`
+	State     string   `json:"state,omitempty"`
+	Note      string   `json:"note,omitempty"`
+}
+
+// Pages returns the stored files of the Bescheid, in order (none if it was
+// entered without a document).
+func (d *RefundDoc) Pages() []string {
+	if d.Attachment == "" {
+		return nil
+	}
+	return append([]string{d.Attachment}, d.MorePages...)
 }
 
 // LinesTotal is the sum of the refunds of all lines.

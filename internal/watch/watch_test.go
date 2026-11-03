@@ -123,6 +123,44 @@ func TestInboxFilesAreRelevant(t *testing.T) {
 	wait(t, ch)
 }
 
+func TestPagesInInboxFoldersAreRelevant(t *testing.T) {
+	root := t.TempDir()
+	inbox := filepath.Join(root, InboxDir)
+	existing := filepath.Join(inbox, "Scan")
+	os.MkdirAll(existing, 0o755)
+	_, ch := start(t, root, nil)
+	// A page arrives in an existing multi-page document.
+	os.WriteFile(filepath.Join(existing, "02 Seite.jpg"), []byte("jpg"), 0o644)
+	wait(t, ch)
+	// A new folder with pages (the phone, or a sync tool).
+	group := filepath.Join(inbox, "Handy-20261103")
+	os.MkdirAll(group, 0o755)
+	os.WriteFile(filepath.Join(group, "01 Seite.jpg"), []byte("jpg"), 0o644)
+	wait(t, ch)
+	// A page added later to the new folder is seen too (the folder is watched).
+	time.Sleep(2 * debounce)
+	os.WriteFile(filepath.Join(group, "02 Seite.jpg"), []byte("jpg"), 0o644)
+	wait(t, ch)
+	// Deeper folders are not watched.
+	deep := filepath.Join(group, "tiefer")
+	os.MkdirAll(deep, 0o755)
+	time.Sleep(2 * debounce)
+	drain(ch)
+	os.WriteFile(filepath.Join(deep, "x.jpg"), []byte("jpg"), 0o644)
+	quiet(t, ch)
+}
+
+// drain forgets changes reported so far.
+func drain(ch chan struct{}) {
+	for {
+		select {
+		case <-ch:
+		default:
+			return
+		}
+	}
+}
+
 func TestYearFolderRemovedIsAChange(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "2025", "rechnungen")

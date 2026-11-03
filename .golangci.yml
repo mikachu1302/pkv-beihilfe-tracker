@@ -47,9 +47,10 @@ linters:
       # Tests may ignore errors of setup helpers (writing fixtures, etc.).
       - path: _test\.go
         linters: [errcheck]
-      # Service, backup and upload return German messages that the UI or the
-      # phone page shows as they are; German nouns start with a capital letter.
-      - path: internal/(service|backup|upload)/
+      # Service, backup, upload and the inbox operations of the store return
+      # German messages that the UI or the phone page shows as they are;
+      # German nouns start with a capital letter.
+      - path: internal/(service|backup|upload)/|internal/store/inbox\.go
         linters: [staticcheck]
         text: "ST1005"
 

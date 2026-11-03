@@ -32,7 +32,8 @@ const EventDataChanged = "data-changed"
 // DataChangedDTO is the payload of EventDataChanged.
 type DataChangedDTO struct {
 	Issues     int    `json:"issues"`     // notes from loading (e.g. merged conflict copies)
-	InboxAdded int    `json:"inboxAdded"` // new files in the inbox folder (e.g. from the phone)
+	InboxAdded int    `json:"inboxAdded"` // new documents in the inbox folder (e.g. from the phone)
+	InboxPages int    `json:"inboxPages"` // new pages of documents that were there already
 	Error      string `json:"error"`
 }
 
@@ -60,7 +61,7 @@ type Service struct {
 	backupErr     error
 	bg            sync.WaitGroup // background backups
 	upload        *upload.Server
-	inboxSeen     []string             // inbox file names at the last reload
+	inboxSeen     map[string]bool      // inbox pages at the last reload (names relative to the inbox)
 	session       string               // temporary folder of this run (see sessionDir)
 	tmpRoot       string               // where session folders are made; "" = os.TempDir() (tests set it)
 	staged        map[string]stagedDoc // documents added in invoice forms, by ID
@@ -117,10 +118,12 @@ func (s *Service) open(dir string) error {
 		_ = s.upload.Stop()
 		s.upload = nil
 	}
-	s.inboxSeen = s.inboxSeen[:0]
-	if files, err := st.ListInbox(); err == nil {
-		for _, f := range files {
-			s.inboxSeen = append(s.inboxSeen, f.Name)
+	s.inboxSeen = map[string]bool{}
+	if entries, err := st.ListInbox(); err == nil {
+		for _, e := range entries {
+			for _, p := range e.Pages {
+				s.inboxSeen[p.Name] = true
+			}
 		}
 	}
 	s.watcher, s.watchErr = watch.Start(dir, s.watchDebounce, st.IsOwnChange, s.externalChange)
@@ -135,6 +138,34 @@ func (s *Service) stopWatch() {
 	}
 }
 
+// newInboxPages compares the inbox with the last reload: pages the app did
+// not put there itself are new – a new document, or new pages of one that
+// was there already (the phone adding pages to a multi-page document).
+func (s *Service) newInboxPages(entries []store.InboxEntry) (docs, pages int) {
+	before := s.inboxSeen
+	s.inboxSeen = map[string]bool{}
+	for _, e := range entries {
+		fresh, known := 0, 0
+		for _, p := range e.Pages {
+			s.inboxSeen[p.Name] = true
+			path, err := s.st.InboxPath(p.Name)
+			if before[p.Name] || err != nil || s.st.IsOwnChange(path) {
+				known++
+			} else {
+				fresh++
+			}
+		}
+		switch {
+		case fresh == 0:
+		case known > 0:
+			pages += fresh
+		default:
+			docs++
+		}
+	}
+	return docs, pages
+}
+
 // externalChange reloads the data folder after someone else changed it.
 func (s *Service) externalChange() {
 	s.mu.Lock()
@@ -143,18 +174,8 @@ func (s *Service) externalChange() {
 		return
 	}
 	ev := DataChangedDTO{}
-	before := map[string]bool{}
-	if files, err := s.st.ListInbox(); err == nil {
-		for _, f := range s.inboxSeen {
-			before[f] = true
-		}
-		s.inboxSeen = s.inboxSeen[:0]
-		for _, f := range files {
-			s.inboxSeen = append(s.inboxSeen, f.Name)
-			if !before[f.Name] {
-				ev.InboxAdded++
-			}
-		}
+	if entries, err := s.st.ListInbox(); err == nil {
+		ev.InboxAdded, ev.InboxPages = s.newInboxPages(entries)
 	}
 	data, issues, err := s.st.Load()
 	if err != nil {

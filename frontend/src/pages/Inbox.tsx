@@ -1,7 +1,8 @@
 import {useEffect, useId, useRef, useState} from "react";
 import {Desktop, Svc} from "../api";
-import type {AnalysisDTO, AnalyzeInputDTO, InboxItemDTO, InvoiceDTO, PayerDTO, PhoneUploadDTO, RefundReviewDTO} from "../api";
+import type {AnalysisDTO, AnalyzeInputDTO, InboxItemDTO, InboxPageDTO, InvoiceDTO, PayerDTO, PhoneUploadDTO, RefundReviewDTO} from "../api";
 import {useApp, useInboxChanged} from "../App";
+import {DocThumb} from "../components/DocThumb";
 import {useConfirm, useToast} from "../components/feedback";
 import {Badge, Empty, ErrorNotice, Field, Notice, SourceBadge} from "../components/ui";
 import {recognizePages, renderPdfPreview} from "../lib/capture";
@@ -23,12 +24,16 @@ export default function Inbox() {
     const [selected, setSelected] = useState<string>("");
     const [phone, setPhone] = useState(false);
     const {dragging, handlers} = useFileDrop(files => void addDropped(files));
+    // Entries ticked to be merged into one document.
+    const [ticked, setTicked] = useState<string[]>([]);
+    const [merging, setMerging] = useState(false);
     const items = list.data ?? [];
     const current = items.find(i => i.name === selected) ?? items[0];
 
     useEffect(() => {
         const all = list.data ?? [];
         if (all.length && !all.some(i => i.name === selected)) setSelected(all[0].name);
+        setTicked(t => t.filter(n => all.some(i => i.name === n)));
     }, [list.data, selected]);
 
     // After own changes: reload the list and the count in the navigation.
@@ -63,8 +68,28 @@ export default function Inbox() {
         }
     }
 
+    async function merge() {
+        // Pages in the order of the list.
+        const names = items.filter(i => ticked.includes(i.name)).map(i => i.name);
+        setMerging(true);
+        try {
+            const name = await Svc.MergeInbox(names);
+            setTicked([]);
+            setSelected(name);
+            toast.show(`${names.length} Belege zu einem zusammengefasst`);
+            reload();
+        } catch (e) {
+            toast.error(e);
+        } finally {
+            setMerging(false);
+        }
+    }
+
+    const tick = (name: string, on: boolean) => setTicked(t => (on ? [...t, name] : t.filter(n => n !== name)));
+
     async function discard(item: InboxItemDTO) {
-        if (!await confirm(`„${item.name}“ aus dem Posteingang löschen?`, "Löschen")) return;
+        const what = item.group ? `„${item.name}“ mit ${pagesOf(item).length} Seiten` : `„${item.name}“`;
+        if (!await confirm(`${what} aus dem Posteingang löschen?`, "Löschen")) return;
         try {
             await Svc.DiscardInbox(item.name);
             reload();
@@ -91,18 +116,40 @@ export default function Inbox() {
                 </Empty>
             ) : (
                 <div className="inbox">
-                    <ul className="inbox-list" aria-label="Belege im Posteingang">
-                        {items.map(i => (
-                            <li key={i.name}>
-                                <button className={`inbox-item ${current?.name === i.name ? "on" : ""}`} onClick={() => setSelected(i.name)}>
-                                    <span className="name">{i.name}</span>
-                                    <span className="sub">{i.type === "pdf" ? "PDF" : i.type === "image" ? "Bild" : "Datei"} · {i.modified.slice(8, 10)}.{i.modified.slice(5, 7)}. {i.modified.slice(11)}</span>
-                                </button>
-                            </li>
-                        ))}
-                    </ul>
+                    <div>
+                        {items.length > 1 && (
+                            <div className="merge-bar" role="group" aria-label="Zusammenfassen">
+                                {ticked.length >= 2 ? (
+                                    <>
+                                        <button className="primary" disabled={merging} onClick={merge}>
+                                            Zu einem Beleg zusammenfassen ({ticked.length})
+                                        </button>
+                                        <button className="link" onClick={() => setTicked([])}>Auswahl aufheben</button>
+                                    </>
+                                ) : (
+                                    <span className="muted small">
+                                        {ticked.length === 1 ? "Weitere Belege anhaken, um sie als Seiten zusammenzufassen." : "Seiten eines Belegs anhaken, um sie zusammenzufassen."}
+                                    </span>
+                                )}
+                            </div>
+                        )}
+                        <ul className="inbox-list" aria-label="Belege im Posteingang">
+                            {items.map(i => (
+                                <li key={i.name} className="inbox-row">
+                                    {items.length > 1 && (
+                                        <input type="checkbox" aria-label={`„${i.name}“ zum Zusammenfassen auswählen`}
+                                               checked={ticked.includes(i.name)} onChange={e => tick(i.name, e.target.checked)}/>
+                                    )}
+                                    <button className={`inbox-item ${current?.name === i.name ? "on" : ""}`} onClick={() => setSelected(i.name)}>
+                                        <span className="name">{i.name}</span>
+                                        <span className="sub">{kindLabel(i)} · {i.modified.slice(8, 10)}.{i.modified.slice(5, 7)}. {i.modified.slice(11)}</span>
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
                     {current && <InboxItem key={current.name} item={current} payers={settings.data?.payers ?? []}
-                                           onDone={reload} onDiscard={() => discard(current)}/>}
+                                           onDone={reload} onChanged={reload} onDiscard={() => discard(current)}/>}
                 </div>
             )}
             {phone && <PhoneDialog onClose={() => {
@@ -113,10 +160,37 @@ export default function Inbox() {
     );
 }
 
-function Preview({item}: {item: InboxItemDTO}) {
+/** The pages of an inbox document; a single file is its only page. */
+const pagesOf = (i: InboxItemDTO): InboxPageDTO[] =>
+    i.pages?.length ? i.pages : [{name: i.name, size: i.size, modified: i.modified, type: i.type, url: i.url}];
+
+function kindLabel(i: InboxItemDTO): string {
+    if (i.group) return `${pagesOf(i).length} Seiten`;
+    return i.type === "pdf" ? "PDF" : i.type === "image" ? "Bild" : "Datei";
+}
+
+/** The page names without the number the app puts before them ("01 "): stable across renumbering. */
+const pageKey = (p: InboxPageDTO) => `${p.name.slice(p.name.lastIndexOf("/") + 1).replace(/^\d{2,3} /, "")}|${p.size}|${p.modified}`;
+
+/** All pages of a document, one below the other. */
+function Pages({item}: {item: InboxItemDTO}) {
+    if (!item.group) return <Preview page={pagesOf(item)[0]}/>;
+    return (
+        <>
+            {pagesOf(item).map((p, i) => (
+                <figure key={p.name} className="page-preview">
+                    <figcaption className="muted small">Seite {i + 1}{p.type === "pdf" ? " (PDF – erste Seite)" : ""}</figcaption>
+                    <Preview page={p}/>
+                </figure>
+            ))}
+        </>
+    );
+}
+
+function Preview({page}: {page: {name: string; url: string; type: string; modified: string}}) {
     const canvas = useRef<HTMLCanvasElement>(null);
     const [error, setError] = useState("");
-    const {url, type, modified} = item;
+    const {url, type, modified} = page;
     // Rendered again only when the file changed – list reloads hand in new item objects.
     useEffect(() => {
         if (type !== "pdf" || !canvas.current) return;
@@ -125,7 +199,7 @@ function Preview({item}: {item: InboxItemDTO}) {
         renderPdfPreview(url, canvas.current, 520, run.signal).catch(e => !run.signal.aborted && setError(errMsg(e)));
         return () => run.abort();
     }, [url, type, modified]);
-    if (type === "image") return <img className="preview" src={url} alt={item.name}/>;
+    if (type === "image") return <img className="preview" src={url} alt={page.name}/>;
     if (type === "pdf") {
         return (
             <>
@@ -137,7 +211,13 @@ function Preview({item}: {item: InboxItemDTO}) {
     return <Notice kind="warn">Vorschau nicht möglich.</Notice>;
 }
 
-function InboxItem({item, payers, onDone, onDiscard}: {item: InboxItemDTO; payers: PayerDTO[]; onDone: () => void; onDiscard: () => void}) {
+function InboxItem({item, payers, onDone, onChanged, onDiscard}: {
+    item: InboxItemDTO;
+    payers: PayerDTO[];
+    onDone: () => void;
+    onChanged: () => void; // pages reordered or taken out
+    onDiscard: () => void;
+}) {
     const toast = useToast();
     const {setYear} = useApp();
     const [status, setStatus] = useState("");
@@ -152,7 +232,11 @@ function InboxItem({item, payers, onDone, onDiscard}: {item: InboxItemDTO; payer
     const touched = useRef(false);
     const [edited, setEdited] = useState(false); // the user typed into the draft: leaving asks first
     useUnsavedChanges(edited && !saving);
-    const {url, type, modified, size} = item;
+    // Recognition runs again when the pages change (not when the list is reloaded).
+    const pages = pagesOf(item).map(p => ({url: p.url, type: p.type, modified: p.modified, size: p.size, key: pageKey(p)}));
+    const pagesKey = pages.map(p => p.key).join("\n");
+    const pagesRef = useRef(pages);
+    pagesRef.current = pages;
     useSaveShortcut(() => void save(), draft !== null && review === null);
 
     async function asRefund(inp: AnalyzeInputDTO) {
@@ -179,7 +263,7 @@ function InboxItem({item, payers, onDone, onDiscard}: {item: InboxItemDTO; payer
             let done = "";
             setError("");
             try {
-                const rec = await recognizePages([{url, type, modified, size}], msg => !signal.aborted && setStatus(msg), signal);
+                const rec = await recognizePages(pagesRef.current, msg => !signal.aborted && setStatus(msg), signal);
                 if (signal.aborted) return;
                 setStatus("Felder werden zugeordnet …");
                 const inp = {lines: rec.lines, qr: rec.qr};
@@ -210,7 +294,7 @@ function InboxItem({item, payers, onDone, onDiscard}: {item: InboxItemDTO; payer
             }
         })();
         return () => run.abort();
-    }, [url, type, modified, size]);
+    }, [pagesKey]);
 
     async function save() {
         if (!draft || saving) return;
@@ -239,10 +323,11 @@ function InboxItem({item, payers, onDone, onDiscard}: {item: InboxItemDTO; payer
 
     return (
         <section className={`inbox-detail ${review ? "review" : ""}`} aria-label={item.name}>
-            <div className="preview-wrap"><Preview item={item}/></div>
+            <div className="preview-wrap"><Pages item={item}/></div>
             <div className="panel">
                 <div className="payer-head">
                     <h2>{item.name}</h2>
+                    {item.group && <Badge>{pagesOf(item).length} Seiten</Badge>}
                     {analysis?.kind === "invoice" && <Badge kind="good">Rechnung erkannt</Badge>}
                     {analysis?.kind === "refund" && <Badge kind="good">Erstattungsbeleg erkannt</Badge>}
                     <span className="spacer"/>
@@ -250,6 +335,7 @@ function InboxItem({item, payers, onDone, onDiscard}: {item: InboxItemDTO; payer
                         ? <button className="link" onClick={asInvoice}>Als Rechnung behandeln</button>
                         : <button className="link" onClick={() => asRefund(input)}>Als Erstattungsbeleg behandeln</button>)}
                 </div>
+                {item.group && <PageStrip item={item} onChanged={onChanged}/>}
                 {status && <p className="muted small" role="status">{status}</p>}
                 {error && <Notice kind="warn">{error} Die Felder lassen sich von Hand ausfüllen.</Notice>}
                 {review && <RefundReview inboxName={item.name} initial={review} payers={payers} onDone={onDone} onDiscard={onDiscard}/>}
@@ -308,6 +394,67 @@ function InboxItem({item, payers, onDone, onDiscard}: {item: InboxItemDTO; payer
                 )}
             </div>
         </section>
+    );
+}
+
+/** The pages of a multi-page document: change the order, take pages out. */
+function PageStrip({item, onChanged}: {item: InboxItemDTO; onChanged: () => void}) {
+    const toast = useToast();
+    const [busy, setBusy] = useState(false);
+    const [dragFrom, setDragFrom] = useState<number | null>(null);
+    const names = pagesOf(item).map(p => p.name);
+    async function run(p: Promise<unknown>) {
+        setBusy(true);
+        try {
+            await p;
+            onChanged();
+        } catch (e) {
+            toast.error(e);
+        } finally {
+            setBusy(false);
+        }
+    }
+    const move = (from: number, to: number) => {
+        const next = [...names];
+        const [page] = next.splice(from, 1);
+        next.splice(to, 0, page);
+        void run(Svc.ReorderInbox(item.name, next));
+    };
+    return (
+        <div className="page-strip">
+            <div className="doc-tiles" aria-label="Seiten">
+                {pagesOf(item).map((p, i) => (
+                    <div key={p.name} className={`doc-tile ${dragFrom === i ? "dragging" : ""}`} draggable={!busy}
+                         onDragStart={e => {
+                             e.dataTransfer.effectAllowed = "move";
+                             setDragFrom(i);
+                         }}
+                         onDragOver={e => dragFrom !== null && e.preventDefault()}
+                         onDrop={e => {
+                             e.preventDefault();
+                             if (dragFrom !== null && dragFrom !== i) move(dragFrom, i);
+                             setDragFrom(null);
+                         }}
+                         onDragEnd={() => setDragFrom(null)}>
+                        <div className="doc-open"><DocThumb url={p.url} type={p.type} label={`Seite ${i + 1}`}/></div>
+                        <div className="doc-meta">
+                            <span>Seite {i + 1}</span>
+                            <span className="spacer"/>
+                            <button className="link" disabled={busy || i === 0} aria-label={`Seite ${i + 1} nach vorne`} title="Nach vorne"
+                                    onClick={() => move(i, i - 1)}>←</button>
+                            <button className="link" disabled={busy || i === names.length - 1} aria-label={`Seite ${i + 1} nach hinten`}
+                                    title="Nach hinten" onClick={() => move(i, i + 1)}>→</button>
+                        </div>
+                        <button className="link small" disabled={busy} aria-label={`Seite ${i + 1} herauslösen`}
+                                onClick={() => void run(Svc.SplitInbox(p.name))}>Herauslösen</button>
+                    </div>
+                ))}
+            </div>
+            <p className="muted small">
+                Reihenfolge per Pfeil oder durch Ziehen ändern. „Herauslösen“ macht eine Seite wieder zu einem eigenen Beleg.{" "}
+                <button className="link" disabled={busy} onClick={() => void run(Svc.SplitInbox(item.name))}>Alle Seiten trennen</button>
+            </p>
+        </div>
     );
 }
 

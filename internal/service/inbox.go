@@ -27,13 +27,40 @@ const FilePrefix = "/datafile/"
 // phoneUploadTTL is how long the phone upload stays open at most.
 const phoneUploadTTL = 15 * time.Minute
 
-// InboxItemDTO is a file waiting in the inbox folder.
+// InboxItemDTO is a document waiting in the inbox: a file, or a folder with
+// the pages of a multi-page document.
 type InboxItemDTO struct {
-	Name     string `json:"name"`
+	Name     string         `json:"name"`
+	Size     int64          `json:"size"`     // all pages
+	Modified string         `json:"modified"` // newest page, "2026-11-02 10:15"
+	Type     string         `json:"type"`     // pdf, image, other; group for several pages
+	URL      string         `json:"url"`      // for the webview (single file only)
+	Group    bool           `json:"group"`
+	Pages    []InboxPageDTO `json:"pages"`
+}
+
+// InboxPageDTO is a file of an inbox document.
+type InboxPageDTO struct {
+	Name     string `json:"name"` // "scan.pdf" or "Scan 12/01 Scan 12.jpg"
 	Size     int64  `json:"size"`
-	Modified string `json:"modified"` // "2026-11-02 10:15"
-	Type     string `json:"type"`     // pdf, image, other
-	URL      string `json:"url"`      // for the webview
+	Modified string `json:"modified"`
+	Type     string `json:"type"`
+	URL      string `json:"url"`
+}
+
+func inboxItem(e store.InboxEntry) InboxItemDTO {
+	it := InboxItemDTO{Name: e.Name, Modified: e.Modified.Format("2006-01-02 15:04"), Group: e.Group, Type: "group",
+		Pages: []InboxPageDTO{}}
+	for _, p := range e.Pages {
+		pg := InboxPageDTO{Name: p.Name, Size: p.Size, Modified: p.Modified.Format("2006-01-02 15:04:05"),
+			Type: fileType(p.Name), URL: FilePrefix + "inbox/" + urlEscape(p.Name)}
+		it.Pages = append(it.Pages, pg)
+		it.Size += p.Size
+	}
+	if !e.Group && len(it.Pages) == 1 {
+		it.Type, it.URL = it.Pages[0].Type, it.Pages[0].URL
+	}
+	return it
 }
 
 func fileType(name string) string {
@@ -54,14 +81,13 @@ func (s *Service) ListInbox() ([]InboxItemDTO, error) {
 	if err != nil {
 		return nil, err
 	}
-	files, err := st.ListInbox()
+	entries, err := st.ListInbox()
 	if err != nil {
 		return nil, err
 	}
 	out := []InboxItemDTO{}
-	for _, f := range files {
-		out = append(out, InboxItemDTO{Name: f.Name, Size: f.Size, Modified: f.Modified.Format("2006-01-02 15:04"),
-			Type: fileType(f.Name), URL: FilePrefix + "inbox/" + urlEscape(f.Name)})
+	for _, e := range entries {
+		out = append(out, inboxItem(e))
 	}
 	return out, nil
 }
@@ -111,7 +137,8 @@ func (s *Service) AddFilesToInbox(paths []string) ([]string, error) {
 	return names, nil
 }
 
-// DiscardInbox deletes a file from the inbox folder.
+// DiscardInbox deletes a document from the inbox (all its pages), or one
+// page of a multi-page document ("folder/file").
 func (s *Service) DiscardInbox(name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -120,6 +147,87 @@ func (s *Service) DiscardInbox(name string) error {
 		return err
 	}
 	return st.RemoveFromInbox(name)
+}
+
+// MergeInbox makes one document of several inbox documents, in the given
+// order, and returns its name.
+func (s *Service) MergeInbox(names []string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st, _, err := s.ready()
+	if err != nil {
+		return "", err
+	}
+	return st.MergeInbox(names)
+}
+
+// ReorderInbox puts the pages of a multi-page document in the given order.
+func (s *Service) ReorderInbox(name string, pages []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st, _, err := s.ready()
+	if err != nil {
+		return err
+	}
+	return st.ReorderInbox(name, pages)
+}
+
+// SplitInbox takes a page ("folder/file") or all pages ("folder") out of a
+// multi-page document; each becomes a document of its own.
+func (s *Service) SplitInbox(name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st, _, err := s.ready()
+	if err != nil {
+		return err
+	}
+	return st.SplitInbox(name)
+}
+
+// inboxPage is a page of an inbox document on its way into belege/.
+type inboxPage struct {
+	name, doc string // inbox name, name in belege/
+	content   []byte
+}
+
+// readInboxPages reads the pages of an inbox document in order. The same
+// file twice (photographed twice) is kept once.
+func readInboxPages(st *store.Store, name string) ([]inboxPage, error) {
+	e, err := st.InboxEntry(name)
+	if err != nil {
+		return nil, fmt.Errorf("Datei im Posteingang nicht gefunden: %w", err)
+	}
+	var out []inboxPage
+	for _, p := range e.Pages {
+		path, err := st.InboxPath(p.Name)
+		if err != nil {
+			return nil, err
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("Datei im Posteingang nicht gefunden: %w", err)
+		}
+		doc, err := documentName(b, p.Name)
+		if err != nil {
+			return nil, err
+		}
+		if !slices.ContainsFunc(out, func(x inboxPage) bool { return x.doc == doc }) {
+			out = append(out, inboxPage{name: p.Name, doc: doc, content: b})
+		}
+	}
+	return out, nil
+}
+
+// storePages puts the pages into belege/ and returns their names there.
+func storePages(st *store.Store, pages []inboxPage) ([]string, error) {
+	var docs []string
+	for _, p := range pages {
+		if _, err := st.AddDocument(p.content, filepath.Ext(p.name)); err != nil {
+			return nil, fmt.Errorf("Beleg konnte nicht abgelegt werden: %w", err)
+		}
+		docs = append(docs, p.doc)
+	}
+	return docs, nil
 }
 
 // LineDTO is a line of recognised text with its position (0..1 of the page).
@@ -158,8 +266,8 @@ func (s *Service) AnalyzeDocument(in AnalyzeInputDTO) (AnalysisDTO, error) {
 	return out, nil
 }
 
-// CreateInvoiceFromInbox saves an invoice and moves the inbox file to the
-// documents folder, linked to the invoice.
+// CreateInvoiceFromInbox saves an invoice and moves the inbox document – all
+// its pages, in order – to the documents folder, linked to the invoice.
 func (s *Service) CreateInvoiceFromInbox(name string, d InvoiceDTO) (InvoiceDetailDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -167,13 +275,9 @@ func (s *Service) CreateInvoiceFromInbox(name string, d InvoiceDTO) (InvoiceDeta
 	if err != nil {
 		return InvoiceDetailDTO{}, err
 	}
-	path, err := st.InboxPath(name)
+	pages, err := readInboxPages(st, name)
 	if err != nil {
 		return InvoiceDetailDTO{}, err
-	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return InvoiceDetailDTO{}, fmt.Errorf("Datei im Posteingang nicht gefunden: %w", err)
 	}
 	inv, err := fromDTO(d, &data.Settings, s.newID)
 	if err != nil {
@@ -182,29 +286,32 @@ func (s *Service) CreateInvoiceFromInbox(name string, d InvoiceDTO) (InvoiceDeta
 	if err := validateInvoice(&inv); err != nil {
 		return InvoiceDetailDTO{}, err
 	}
-	docName, err := documentName(b, name)
+	// The same file again: scanned twice, or the inbox file could not be
+	// removed last time. A second invoice would count the costs twice.
+	for _, p := range pages {
+		for i := range data.Invoices {
+			if other := &data.Invoices[i]; !other.Deleted && slices.Contains(other.Attachments, p.doc) {
+				which := "Dieser Beleg ist"
+				if len(pages) > 1 {
+					which = fmt.Sprintf("Die Seite „%s“ ist", filepath.Base(p.name))
+				}
+				return InvoiceDetailDTO{}, fmt.Errorf("%s bereits erfasst (%s) – die Datei kann im Posteingang verworfen werden", which, invoiceLabel(other))
+			}
+		}
+	}
+	docs, err := storePages(st, pages)
 	if err != nil {
 		return InvoiceDetailDTO{}, err
 	}
-	// The same file again: scanned twice, or the inbox file could not be
-	// removed last time. A second invoice would count the costs twice.
-	for i := range data.Invoices {
-		if other := &data.Invoices[i]; !other.Deleted && slices.Contains(other.Attachments, docName) {
-			return InvoiceDetailDTO{}, fmt.Errorf("Dieser Beleg ist bereits erfasst (%s) – die Datei kann im Posteingang verworfen werden", invoiceLabel(other))
-		}
-	}
-	if _, err := st.AddDocument(b, filepath.Ext(name)); err != nil {
-		return InvoiceDetailDTO{}, fmt.Errorf("Beleg konnte nicht abgelegt werden: %w", err)
-	}
 	inv.ID = s.newID()
-	inv.Attachments = append(inv.Attachments, docName)
+	inv.Attachments = docs
 	saved, err := st.SaveInvoice(inv)
 	if err != nil {
 		return InvoiceDetailDTO{}, fmt.Errorf("Speichern fehlgeschlagen: %w", err)
 	}
 	replaceInvoice(data, saved)
-	// The invoice is saved. If the file cannot be removed (locked by the sync
-	// tool), it stays in the inbox; using it again is caught above.
+	// The invoice is saved. If the files cannot be removed (locked by the sync
+	// tool), they stay in the inbox; using them again is caught above.
 	_ = st.RemoveFromInbox(name)
 	return s.detail(&data.Settings, &saved), nil
 }

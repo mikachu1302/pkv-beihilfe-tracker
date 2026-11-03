@@ -178,9 +178,10 @@ function AppRoutes({status}: {status: StatusDTO}) {
 function LiveUpdates({onChange}: {onChange: () => void}) {
     const toast = useToast();
     useEffect(() => Events.On("data-changed", ev => {
-        const d = ev.data as {issues?: number; inboxAdded?: number; error?: string} | undefined;
+        const d = ev.data as {issues?: number; inboxAdded?: number; inboxPages?: number; error?: string} | undefined;
         if (d?.error) toast.show(`Datenordner konnte nicht neu eingelesen werden: ${d.error}`, true);
         else if (d?.inboxAdded) toast.show(d.inboxAdded === 1 ? "Neuer Beleg im Posteingang" : `${d.inboxAdded} neue Belege im Posteingang`);
+        else if (d?.inboxPages) toast.show(d.inboxPages === 1 ? "Neue Seite im Posteingang" : `${d.inboxPages} neue Seiten im Posteingang`);
         else toast.show(d?.issues ? "Änderungen übernommen – bitte die Hinweise oben beachten" : "Änderungen aus dem Datenordner übernommen");
         onChange();
     }), [toast, onChange]);

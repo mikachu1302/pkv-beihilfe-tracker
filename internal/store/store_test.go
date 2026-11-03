@@ -313,12 +313,18 @@ func TestAddDocument(t *testing.T) {
 func TestFileNamesAreChecked(t *testing.T) {
 	s := open(t, t.TempDir(), "a", "2026-11-02T10:00:00Z")
 	for _, name := range []string{"", ".", "..", ".hidden", "a/b.pdf", `a\b.pdf`, "../x.pdf"} {
-		if _, err := s.InboxPath(name); err == nil {
-			t.Errorf("InboxPath(%q) accepted", name)
-		}
 		if _, err := s.DocumentPath(name); err == nil {
 			t.Errorf("DocumentPath(%q) accepted", name)
 		}
+	}
+	// Inbox names may name a page of a multi-page entry ("folder/file"), no more.
+	for _, name := range []string{"", ".", "..", ".hidden", `a\b.pdf`, "../x.pdf", "a/b/c.pdf", "a/.x", "../a/x.pdf", "a/"} {
+		if _, err := s.InboxPath(name); err == nil {
+			t.Errorf("InboxPath(%q) accepted", name)
+		}
+	}
+	if p, err := s.InboxPath("Scan/01 Scan.jpg"); err != nil || p != filepath.Join(s.InboxDirPath(), "Scan", "01 Scan.jpg") {
+		t.Errorf("page path %q, %v", p, err)
 	}
 	if err := s.RemoveFromInbox(""); err == nil {
 		t.Error("RemoveFromInbox(\"\") accepted")

@@ -241,9 +241,9 @@ func TestRemovedAttachmentGoesBackToInbox(t *testing.T) {
 func TestStagedToInbox(t *testing.T) {
 	s := newTestService(t)
 	d := stagePNG(t, s, "bescheid.png", 1)
-	names, err := s.StagedToInbox([]string{d.ID})
-	if err != nil || len(names) != 1 || names[0] != "bescheid.png" {
-		t.Fatalf("names %v, %v", names, err)
+	name, err := s.StagedToInbox([]string{d.ID})
+	if err != nil || name != "bescheid.png" {
+		t.Fatalf("name %q, %v", name, err)
 	}
 	if exists(d.Path) {
 		t.Error("staged file left behind")

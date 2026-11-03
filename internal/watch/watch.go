@@ -1,10 +1,11 @@
 // Package watch notices changes in the data folder made by someone else – a
 // sync tool bringing changes from another device, the phone upload, or the
 // user editing files – while the app is running. Relevant are record files
-// (*.json) and any file in the inbox folder.
+// (*.json) and any file in the inbox folder or in a folder inside it (the
+// pages of a multi-page document).
 //
-// It watches the data folder, the inbox folder, the year folders and their
-// record folders – nothing else, as on macOS every watched folder costs one
+// It watches the data folder, the inbox folder and the folders in it, the
+// year folders and their record folders – nothing else, as on macOS every watched folder costs one
 // file descriptor per file in it (fsnotify is not recursive, so new folders
 // are added as they appear). It ignores hidden temp files and the app's own
 // writes, and calls onChange once a burst of events has settled. A year or
@@ -22,7 +23,8 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-// InboxDir is the inbox folder whose files are all relevant.
+// InboxDir is the inbox folder whose files – and the files of the folders
+// in it – are all relevant.
 const InboxDir = "Eingang"
 
 // Watcher watches one data folder.
@@ -83,7 +85,7 @@ func (w *Watcher) Close() error {
 var yearRe = regexp.MustCompile(`^\d{4}$`)
 
 // wanted reports whether the folder name at depth (root = 0, year or inbox
-// = 1, record folder = 2) is one to watch.
+// = 1, record folder or multi-page document = 2) is one to watch.
 func wanted(name string, depth int) bool {
 	switch {
 	case hidden(name):
@@ -91,7 +93,7 @@ func wanted(name string, depth int) bool {
 	case depth == 1:
 		return name == InboxDir || yearRe.MatchString(name)
 	case depth == 2:
-		return true // folders inside a year folder: the record folders
+		return true // folders inside a year folder (records) or the inbox (pages)
 	}
 	return depth == 0
 }
@@ -108,7 +110,7 @@ func (w *Watcher) addTree(dir string, depth int) error {
 	if err != nil {
 		return err
 	}
-	if depth >= 2 || depth == 1 && filepath.Base(dir) == InboxDir {
+	if depth >= 2 {
 		return nil
 	}
 	entries, err := os.ReadDir(dir)
@@ -167,7 +169,8 @@ func (w *Watcher) handle(ev fsnotify.Event) {
 	d := w.depth(ev.Name)
 	if ev.Has(fsnotify.Create) {
 		if fi, err := os.Stat(ev.Name); err == nil && fi.IsDir() {
-			if d <= 2 && wanted(name, d) && (d < 2 || yearRe.MatchString(filepath.Base(filepath.Dir(ev.Name)))) {
+			parent := filepath.Base(filepath.Dir(ev.Name))
+			if d <= 2 && wanted(name, d) && (d < 2 || yearRe.MatchString(parent) || parent == InboxDir) {
 				_ = w.addTree(ev.Name, d)
 				// Files may have arrived before the folder was watched.
 				w.note(ev.Name, true)
@@ -225,12 +228,14 @@ func (w *Watcher) fire() {
 	}
 }
 
-// relevant: a record file, or any file in the inbox folder.
+// relevant: a record file, or any file in the inbox folder or in a folder
+// inside it (also such a folder itself).
 func (w *Watcher) relevant(path string) bool {
 	if strings.EqualFold(filepath.Ext(path), ".json") {
 		return true
 	}
-	return filepath.Dir(path) == filepath.Join(w.root, InboxDir)
+	inbox := filepath.Join(w.root, InboxDir)
+	return filepath.Dir(path) == inbox || filepath.Dir(filepath.Dir(path)) == inbox
 }
 
 // foreignFiles reports whether dir (or its sub folders) holds record files

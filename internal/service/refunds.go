@@ -3,8 +3,6 @@ package service
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"unicode"
@@ -342,8 +340,8 @@ func (s *Service) review(data *store.Data, r RefundReviewDTO) (RefundReviewDTO, 
 }
 
 // ConfirmRefund stores the refund document and books its lines as refunds on
-// the assigned invoices. inboxName (may be empty) is the scanned document,
-// which moves to the documents folder. With saveLayout the column layout is
+// the assigned invoices. inboxName (may be empty) is the scanned document –
+// all its pages –, which moves to the documents folder. With saveLayout the column layout is
 // remembered for this payer.
 func (s *Service) ConfirmRefund(inboxName string, r RefundReviewDTO, saveLayout bool) (RefundConfirmDTO, error) {
 	s.mu.Lock()
@@ -369,17 +367,14 @@ func (s *Service) ConfirmRefund(inboxName string, r RefundReviewDTO, saveLayout 
 	// The scanned document. If it was booked before (a retry after an error,
 	// or the same Bescheid scanned twice), the earlier booking is replaced
 	// instead of counting the refunds twice.
-	var content []byte
+	var pages []inboxPage
 	if inboxName != "" {
-		path, err := st.InboxPath(inboxName)
-		if err == nil {
-			content, err = os.ReadFile(path)
-		}
-		if err != nil {
-			return out, fmt.Errorf("Datei im Posteingang nicht gefunden: %w", err)
-		}
-		if doc.Attachment, err = documentName(content, inboxName); err != nil {
+		if pages, err = readInboxPages(st, inboxName); err != nil {
 			return out, err
+		}
+		doc.Attachment = pages[0].doc
+		for _, p := range pages[1:] {
+			doc.MorePages = append(doc.MorePages, p.doc)
 		}
 		for _, d := range data.RefundDocs {
 			if d.Attachment == doc.Attachment && !d.Deleted {
@@ -478,10 +473,8 @@ func (s *Service) ConfirmRefund(inboxName string, r RefundReviewDTO, saveLayout 
 		doc.Lines = append(doc.Lines, line)
 	}
 
-	if content != nil {
-		if _, err := st.AddDocument(content, filepath.Ext(inboxName)); err != nil {
-			return out, fmt.Errorf("Beleg konnte nicht abgelegt werden: %w", err)
-		}
+	if _, err := storePages(st, pages); err != nil {
+		return out, err
 	}
 	saved, err := st.SaveRefundDoc(doc)
 	if err != nil {
@@ -571,18 +564,25 @@ func (s *Service) bookLine(get func(string) (*model.Invoice, error), line model.
 	return nil
 }
 
-// RefundDocPath returns the file of a refund document (to open it).
+// RefundDocPath returns the file of a refund document (to open it): the
+// document itself, or a temporary PDF with all its pages.
 func (s *Service) RefundDocPath(docID string) (string, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	st, data, err := s.ready()
+	_, data, err := s.ready()
+	var pages []string
+	if err == nil {
+		for _, d := range data.RefundDocs {
+			if d.ID == docID {
+				pages = d.Pages()
+			}
+		}
+	}
+	s.mu.Unlock()
 	if err != nil {
 		return "", err
 	}
-	for _, d := range data.RefundDocs {
-		if d.ID == docID && d.Attachment != "" {
-			return st.DocumentPath(d.Attachment)
-		}
+	if len(pages) == 0 {
+		return "", errors.New("zu diesem Bescheid ist keine Datei gespeichert")
 	}
-	return "", errors.New("zu diesem Bescheid ist keine Datei gespeichert")
+	return s.DocumentsPDF(pages)
 }
