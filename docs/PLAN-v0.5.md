@@ -1,8 +1,8 @@
 # v0.5.0 – Local AI: reading documents and asking questions (plan)
 
-Status: ready to build · 2026-11-03 · server set up and tested with made-up documents (results
-below); decisions recorded. No separate test with real documents – they show up in use. Next: [PLAN-v0.6.md](PLAN-v0.6.md) (checking invoices
-against other documents).
+Status: implemented · 2026-11-03 – steps 2–6 done; what differs from the plan below is under
+"Implementation" at the end. No separate test with real documents – they show up in use. Next:
+[PLAN-v0.6.md](PLAN-v0.6.md) (checking invoices against other documents).
 
 v0.5.0 brings two AI features, both **optional** (without the server everything works as today)
 and both **started by the user** – nothing runs on its own:
@@ -59,7 +59,7 @@ questions in ~5–9 s.
 Made-up documents only (real ones were not at hand); they are built to be hard: a 3-page GOÄ
 invoice with carry-overs, a 4-page dentist invoice, a skewed phone photo with a shadow, a dark
 low-contrast photo, a faded till receipt, 30 positions in a small font. Scripts:
-`scripts/ki-belegtest.py`, `scripts/ki-fragentest.py`.
+`scripts/ki-belegtest.py`, `scripts/ki-fragentest.py` (since replaced by a Go test, see Implementation).
 
 **Reading: AI vs. the app's text recognition** (same documents, same comparison; the OCR values
 read in the headless app, as the inbox fills them):
@@ -217,8 +217,8 @@ Examples:
   categories and statuses), then the query runs; the chips show the final query.
 - Follow-ups: the last two questions with their queries go along (no invoice data), so "und
   2025?" changes only the year.
-- Measured later with a fixed set of ~40 German questions and the expected queries
-  (`scripts/ki-fragentest.py`, made-up, in the repo): share of questions understood right.
+- Measured with a fixed set of German questions and the expected queries
+  (`internal/ask/testdata/fragen.json`, made-up): share of questions understood right.
 
 ### UI
 
@@ -241,8 +241,8 @@ Examples:
    badges, conflict hints); tests against an `httptest` server (answers, 401, timeouts, cancel,
    unreachable, invalid JSON, wrong IBAN, amount not in the OCR text).
 4. `internal/ask` (query model and `Run`) with unit tests – independent of the AI.
-5. Question → query (schema, prompt, follow-ups) and `scripts/ki-fragentest.py` with the question
-   set; then the "Fragen" page.
+5. Question → query (schema, prompt, follow-ups) and a live test with the question set; then the
+   "Fragen" page.
 6. README privacy section, docs, headless checks with a fake server.
 
 ## Open points
@@ -256,3 +256,65 @@ Examples:
    documents show up in use; `scripts/ki-belegtest.py` stays for checking later.
 5. Questions the query model cannot express: collect them during use and extend the model (no
    free-form answers from the model); the question set grows with them.
+
+## Implementation (2026-11-03)
+
+Built as planned in four commits (client and settings, reading, questions, docs). What differs
+or was decided on the way:
+
+**Reading**
+- The button is in the inbox and in the form of a **new** invoice with added documents (where the
+  text recognition runs today); existing invoices are not read again.
+- "Confirmed" (`SrcAIConfirmed`) is narrower than planned, because a document is full of dates and
+  amounts: an amount, an invoice number or an IBAN counts as confirmed when it is in the recognised
+  text; a provider when it is the provider of an earlier invoice; dates never by the text alone,
+  only when the text recognition read the same date. (Otherwise a position date the AI took for
+  the end of the treatment would have beaten the period the text recognition found next to its
+  label – the one miss of the test.)
+- Where the AI and the text recognition read the same value, the badge says "KI, bestätigt"
+  (a GiroCode stays "aus GiroCode"). The losing value shows next to the field with
+  "übernehmen"; where the user typed something else, the AI's reading shows the same way.
+- The category got examples in the prompt (a laboratory was read as a pharmacy).
+- The Wails server mode (headless tests only) cuts calls off after 30 s by default; main.go
+  allows 30 minutes there. The desktop app has no such limit.
+- Headless check against the real server with the made-up documents: the dark photo (text
+  recognition 0 of 5 fields) is filled completely in ~20 s per page; the till receipt keeps the
+  text recognition's total and gets provider, date and category confirmed.
+
+**Questions**
+- The question set moved from `scripts/ki-fragentest.py` to `internal/ask/testdata/fragen.json`
+  (87 questions now); `KI_TEST=1 go test ./internal/ask -run Live -v` runs it with the app's own
+  schema, prompt and corrections. Offline, `go test` checks the corrections against recorded
+  model answers.
+- `ask.Normalize` corrects the model by the words of the question: category and status synonyms,
+  no filter or grouping the question does not name, years and months as asked ("letzten Monat"
+  as dates), the kind by the form of the question ("Wie viele", "Welche", "Gab es …?", "Wie viel"),
+  requests and general questions unsupported, follow-ups keep what they do not change.
+- Measured (made-up questions, ~8 s each):
+
+  | | without the app's corrections | with them |
+  |---|---|---|
+  | the 40 questions of the first test (the rules were made with them) | 30 (75 %) | 40 (100 %) |
+  | 17 new questions, run once before any change | 12 (70 %) | 13 (76 %) |
+  | 15 new questions after fixing those misses, run once | 12 (80 %) | 11 (73 %) |
+  | 15 more new questions, run once | 10 (66 %) | 12 (80 %) |
+  | all 87 at the end (most of them known to the rules) | 62 (71 %) | 85 (97 %) |
+
+  So the honest figure for questions phrased in a new way is **about three in four** – below the
+  85 % aimed for; the chips make each miss visible and fixable without asking again. Every new
+  set went into `fragen.json` afterwards (with the generic fixes: negation a few words before
+  "eingereicht", "warten auf die Erstattung", "fehlt noch", "die meisten", requests with
+  "bitte"; after the last run "offene Rechnungen" and no status with the Ausstand). The model's
+  answers of the last run are in `testdata/antworten-2026-11-03.json`: offline, the corrections
+  get all 87 right.
+- Semantics fixed on the way: "noch offen" (nicht_erstattet) leaves out claims held back on
+  purpose (for the premium refund) – otherwise every invoice with a held PKV claim would be
+  "open"; "nicht eingereicht" keeps the list's meaning (open or held). Claims marked "wird nicht
+  eingereicht" never count. IST and difference count only refunded invoices, "offen" only those
+  with something owed.
+- A question fails at once while a document is being read (it would wait minutes for the lock).
+- Not built (no question of the set needed them): amount ranges, sort and limit, reminders as a
+  query. Questions about the date of submission or refund cannot be expressed either (the date
+  filters are about the treatment). Open point 5 stays: collect such questions during use.
+- "Fragen" is a menu entry only while the AI is on; the shortcuts number the visible entries.
+

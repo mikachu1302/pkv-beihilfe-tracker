@@ -25,9 +25,9 @@ type questionSet struct {
 	} `json:"fragen"`
 }
 
-func loadQuestions(t *testing.T) (questionSet, *model.Settings, civil.Date) {
+func loadQuestions(t *testing.T, file string) (questionSet, *model.Settings, civil.Date) {
 	t.Helper()
-	b, err := os.ReadFile("testdata/fragen.json")
+	b, err := os.ReadFile(file)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,10 +96,12 @@ func normalizeAll(set questionSet, answers []Query, s *model.Settings, today civ
 }
 
 // The corrections against what the model answered in the tests of
-// 2026-11-03 (testdata/antworten-2026-11-03.json; run 1 with every filter
-// field required – 25 % right, run 2 with the filter list – 68 % right).
+// 2026-11-03 (testdata/antworten-2026-11-03.json): runs 1 and 2 with the
+// prompt of the first test for the first 40 questions (every filter field
+// required – 25 % right; the filter list – 68 %), run 3 with the app's own
+// prompt for all questions (71 % right without the corrections).
 func TestNormalizeRecordedAnswers(t *testing.T) {
-	set, s, today := loadQuestions(t)
+	set, s, today := loadQuestions(t, "testdata/fragen.json")
 	b, err := os.ReadFile("testdata/antworten-2026-11-03.json")
 	if err != nil {
 		t.Fatal(err)
@@ -108,7 +110,7 @@ func TestNormalizeRecordedAnswers(t *testing.T) {
 	if err := json.Unmarshal(b, &runs); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"lauf1", "lauf2"} {
+	for _, name := range []string{"lauf1", "lauf2", "lauf3"} {
 		var answers []Query
 		if err := json.Unmarshal(runs[name], &answers); err != nil {
 			t.Fatal(err)

@@ -63,12 +63,12 @@ func Run(d Data, q Query, today civil.Date) Result {
 	if len(ms) == 0 {
 		return Result{Answer: "Keine Rechnung passt dazu.", Invoices: []string{}}
 	}
+	// The sentence says it all; figures only where there are several numbers.
 	r := Result{Invoices: order(ms, q.Measure)}
 	n := invoices(len(ms))
 	switch {
 	case q.Kind == KindCount:
 		r.Answer = n
-		r.Figures = []Figure{{"Rechnungen", strconv.Itoa(len(ms))}}
 	case q.Kind == KindSum && q.Measure == "":
 		// "SOLL und IST der Beihilfe": the payer figures together.
 		for _, m := range []string{MeasureExpected, MeasureActual, MeasureDiff, MeasureOwed} {
@@ -76,11 +76,9 @@ func Run(d Data, q Query, today civil.Date) Result {
 		}
 		r.Answer = fmt.Sprintf("SOLL %s, IST %s (%s)", eur(total(ms, MeasureExpected)), eur(total(ms, MeasureActual)), n)
 	case q.Kind == KindSum:
-		r.Figures = []Figure{{measureLabels[q.Measure], eur(total(ms, q.Measure))}, {"Rechnungen", strconv.Itoa(len(ms))}}
 		r.Answer = fmt.Sprintf("%s: %s (%s)", measureLabels[q.Measure], eur(total(ms, q.Measure)), n)
 	default: // a list
 		m := cmp.Or(q.Measure, MeasureAmount)
-		r.Figures = []Figure{{"Rechnungen", strconv.Itoa(len(ms))}, {measureLabels[m], eur(total(ms, m))}}
 		r.Answer = fmt.Sprintf("%s, %s zusammen %s", n, measureLabels[m], eur(total(ms, m)))
 	}
 	if q.GroupBy != "" {

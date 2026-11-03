@@ -152,6 +152,10 @@ function AnswerView({answer: a, vocabulary, onChange}: {
     const invoices = a.invoices ?? [];
     const shown = all ? invoices : invoices.slice(0, SHOWN);
     const list = listState(a.query);
+    // The list cannot show the Ausstand or the premium refund comparison.
+    const toList = a.query.typ !== "ausstand" && a.query.typ !== "beitragsrueckerstattung";
+    // Asked about one payer: only its state.
+    const payer = (a.query.filter ?? []).find(f => f.feld === "kostentraeger")?.wert;
     return (
         <div className="panel ask-answer">
             <Chips answer={a} vocabulary={vocabulary} onChange={onChange}/>
@@ -184,20 +188,23 @@ function AnswerView({answer: a, vocabulary, onChange}: {
                                 <td>{date(r.serviceDate)}</td>
                                 <td><Link to={invoicePath(r.id)}>{r.provider || "(ohne Behandler)"}</Link></td>
                                 <td className="num mono">{eur(r.amount)}</td>
-                                <td className="muted small">{(r.claims ?? []).map(c => `${c.payerName}: ${STATUS_LABELS[c.status] ?? c.status}`).join(" · ")}</td>
+                                <td className="muted small">{(r.claims ?? []).filter(c => !payer || c.payerName === payer)
+                                    .map(c => `${c.payerName}: ${STATUS_LABELS[c.status] ?? c.status}`).join(" · ")}</td>
                             </tr>
                         ))}
                         </tbody>
                     </table>
                     <div className="actions">
                         {invoices.length > SHOWN && !all && <button className="link" onClick={() => setAll(true)}>Alle {invoices.length} zeigen</button>}
-                        <button className="link" title={list.missing.length ? `Die Liste filtert nicht nach: ${list.missing.join(", ")}` : undefined}
-                                onClick={() => {
-                                    setYear(list.year);
-                                    navigate("/rechnungen", {state: list.state});
-                                }}>
-                            In der Rechnungsliste zeigen
-                        </button>
+                        {toList && (
+                            <button className="link" title={list.missing.length ? `Die Liste filtert nicht nach: ${list.missing.join(", ")}` : undefined}
+                                    onClick={() => {
+                                        setYear(list.year);
+                                        navigate("/rechnungen", {state: list.state});
+                                    }}>
+                                In der Rechnungsliste zeigen
+                            </button>
+                        )}
                     </div>
                 </>
             )}

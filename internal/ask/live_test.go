@@ -21,12 +21,13 @@ import (
 //
 // Server and model: KI_SERVER, KI_MODEL (defaults: the server in the home
 // network); the key: LLM_API_KEY or API_KEY in the .env of the repository.
-// KI_TEST_OUT=<file> saves the answers (made-up questions only).
+// KI_TEST_OUT=<file> saves the answers (made-up questions only); KI_FRAGEN=<file> uses another
+// question set (default testdata/fragen.json).
 func TestQuestionsLive(t *testing.T) {
 	if os.Getenv("KI_TEST") == "" {
 		t.Skip("KI_TEST=1 sends the question set to the AI server")
 	}
-	set, s, today := loadQuestions(t)
+	set, s, today := loadQuestions(t, env("KI_FRAGEN", "testdata/fragen.json"))
 	c := &ai.Client{URL: env("KI_SERVER", ai.DefaultURL), Model: env("KI_MODEL", ai.DefaultModel), Key: apiKey()}
 	if err := c.Health(t.Context()); err != nil {
 		t.Fatal(err)

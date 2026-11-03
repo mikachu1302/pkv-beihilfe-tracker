@@ -283,9 +283,9 @@ into the repo.
 - App name (working title: pkv-beihilfe-tracker; window title "PKV Beihilfe Tracker").
 - A local AI model in the home network to read documents the text recognition gets wrong: the
   server runs (llama.cpp, Qwen3-VL-8B on a spare Snapdragon laptop, OpenAI-compatible, LAN only).
-  Plans: [PLAN-v0.5.md](PLAN-v0.5.md) (reading documents, asking questions) and
-  [PLAN-v0.6.md](PLAN-v0.6.md) (checking invoices against Bescheid, cost plan, prescription);
-  test of accuracy and time per page first: [KI-TEST.md](KI-TEST.md), `scripts/ki-belegtest.py`.
+  Reading documents and asking questions are built ([PLAN-v0.5.md](PLAN-v0.5.md)); next:
+  [PLAN-v0.6.md](PLAN-v0.6.md) (checking invoices against Bescheid, cost plan, prescription).
+  Measuring: [KI-TEST.md](KI-TEST.md).
 - A screen to view and delete learned aliases and column layouts.
 - Phone upload: optional end-to-end encryption (key in the URL fragment); cropping and
   deskewing photos on the desktop.

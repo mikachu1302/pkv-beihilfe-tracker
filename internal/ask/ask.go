@@ -72,7 +72,7 @@ const (
 	StatusSubmitted   = "eingereicht"       // refund still open
 	StatusRefunded    = "erstattet"
 	StatusHeld        = "zurueckgehalten"
-	StatusNotRefunded = "nicht_erstattet" // not yet refunded: open, held or submitted
+	StatusNotRefunded = "nicht_erstattet" // still to come: open or submitted (a claim held back on purpose is not "open")
 )
 
 // Values of the other filters.
@@ -222,7 +222,7 @@ func claimMatches(c calc.ClaimView, q Query, payer string) bool {
 			return false
 		}
 	case StatusNotRefunded:
-		if c.Status != calc.StatusOpen && c.Status != calc.StatusHeld && c.Status != calc.StatusSubmitted {
+		if c.Status != calc.StatusOpen && c.Status != calc.StatusSubmitted {
 			return false
 		}
 	}

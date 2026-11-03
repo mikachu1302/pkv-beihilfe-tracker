@@ -84,6 +84,18 @@ describe("Fragen", () => {
         expect(screen.getByText("andere Seite")).toBeInTheDocument();
     });
 
+    it("shows the Ausstand without a way into the list", async () => {
+        const user = userEvent.setup();
+        svc.Ask.mockReturnValue(cancellable(Promise.resolve(answer({query: {...query, typ: "ausstand", filter: []},
+            chips: [{key: "typ", text: "Ausstand"}], answer: "Noch ausstehend: 1.165,40 €",
+            figures: [{label: "Beihilfe Bund: eingereicht, Erstattung offen", value: "700,00 €"}]}))));
+        renderAt("/", "/", <Ask/>);
+        await user.type(screen.getByLabelText("Frage"), "Was steht noch aus?{Enter}");
+        expect(await screen.findByText("Noch ausstehend: 1.165,40 €")).toBeInTheDocument();
+        expect(screen.getByText("Beihilfe Bund: eingereicht, Erstattung offen")).toBeInTheDocument();
+        expect(screen.queryByRole("button", {name: "In der Rechnungsliste zeigen"})).not.toBeInTheDocument();
+    });
+
     it("cancels a question and says when the server is away", async () => {
         const user = userEvent.setup();
         // As the Wails promise: cancelling rejects it.

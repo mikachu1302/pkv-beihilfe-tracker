@@ -116,9 +116,13 @@ func Normalize(q Query, question string, prev *Query, s *model.Settings, today c
 	}
 	if q.Kind == KindOutstanding || q.Kind == KindPremium {
 		q.Measure, q.GroupBy = "", ""
+		// The Ausstand is what is still owed – a status says nothing more.
+		q.Filters = slices.DeleteFunc(q.Filters, func(f Filter) bool { return f.Field == FieldStatus })
 	}
 	if q.Kind == KindPremium {
-		q.Filters = slices.DeleteFunc(q.Filters, func(f Filter) bool { return f.Field != FieldPayer })
+		// Only a PKV has a premium refund: with one PKV the payer says nothing.
+		single := len(payerNames(s, model.PKV)) == 1
+		q.Filters = slices.DeleteFunc(q.Filters, func(f Filter) bool { return f.Field != FieldPayer || single })
 	}
 	return q
 }
@@ -210,10 +214,12 @@ func (w question) followUp() bool {
 }
 
 var (
-	requestRe = regexp.MustCompile(`^ (schreib|formulier|erstell|verfass|send|schick|lösch|änder|trag)`)
+	requestRe = regexp.MustCompile(`^ (bitte )?(schreib|formulier|erstell|verfass|send|schick|lösch|änder|trag|reich|markier|buch|mach)`)
 	generalRe = regexp.MustCompile(`^ (was (ist|sind|bedeutet|heißt)|wie (funktioniert|wird|geht)|warum|erklär|wer )`)
-	listRe    = regexp.MustCompile(`^ (welche|zeig|liste|wo |bei welche[nmr]? rechnung)|welche[nmrs]? (rechnung|erstattung|beleg)`)
+	listRe    = regexp.MustCompile(`^ (bitte )?(welche|zeig|liste|wo |bei welche[nmr]? rechnung|gab es|gibt es)|welche[nmrs]? (rechnung|erstattung|beleg)`)
 	sumRe     = regexp.MustCompile(`^ was hat`)
+	openRe    = regexp.MustCompile(`^ (was|wie viel) (ist|steht)`) // "Was ist noch offen?": the Ausstand
+	notSentRe = regexp.MustCompile(`nicht (\S+ ){0,4}(eingereicht|einreich)`) // "noch nicht bei der PKV eingereicht"
 	refundRe  = regexp.MustCompile(`(vollständig|komplett|ganz|schon|bereits)? erstattet`)
 	dateRe    = regexp.MustCompile(`\d{1,2}\.\d{1,2}\.`)
 )
@@ -227,7 +233,7 @@ func (w question) general() bool { return generalRe.MatchString(w.text) }
 // aboutData: the question asks about the own invoices or refunds.
 func (w question) aboutData() bool {
 	return w.contains("rechnung", "erstatt", "eingereicht", "einreich", "klärung", "zurück", "frist", "bezahlt", "ausgegeben",
-		"ausgaben", "schuld", "steht", "stehen", "eigenanteil", "beleg")
+		"ausgaben", "schuld", "steht", "stehen", "eigenanteil", "beleg", "offen")
 }
 
 // kind decides by the form of the question; where it says nothing, a
@@ -238,9 +244,10 @@ func (w question) kind(k string, follow bool, prev *Query) string {
 		return KindPremium
 	case w.contains("wie viele"):
 		return KindCount
-	case w.contains("schuldet", "schulden") || w.owing() && !w.contains("welche", "erstattung"):
+	case w.contains("schuldet", "schulden") || w.owing() && !w.contains("welche", "erstattung") ||
+		w.contains("noch offen") && openRe.MatchString(w.text):
 		return KindOutstanding
-	case w.contains("am teuersten", "am meisten"):
+	case w.most():
 		return KindSum
 	case listRe.MatchString(w.text):
 		return KindList
@@ -253,9 +260,9 @@ func (w question) kind(k string, follow bool, prev *Query) string {
 	return k
 }
 
-// owing: "steht noch aus", "ausstehend".
+// owing: "steht noch aus", "ausstehend", "fehlt noch".
 func (w question) owing() bool {
-	return w.contains("noch aus", "steht aus", "stehen aus", "ausstehend")
+	return w.contains("noch aus", "steht aus", "stehen aus", "ausstehend", "fehlt", "fehlen")
 }
 
 // payer: the payer the question names – by name, or by kind ("Beihilfe",
@@ -337,15 +344,15 @@ func (w question) statusCue() bool {
 // status: the claim status the question names, "" if none clearly.
 func (w question) status(kind string) string {
 	switch {
-	case w.contains("nicht eingereicht", "noch nicht einreich"):
+	case notSentRe.MatchString(w.text):
 		return StatusOpen
 	case w.contains("zurückgehalten", "zurückhalten", "zurück"):
 		return StatusHeld
 	case w.contains("eingereicht") && w.contains("nicht erstattet", "aber"):
 		return StatusSubmitted
-	case w.contains("erstattung") && w.owing():
-		return StatusSubmitted
-	case w.contains("noch offen", "sind offen", " offen?", " offen "):
+	case w.contains("erstattung") && (w.owing() || w.contains("wart")):
+		return StatusSubmitted // "Welche Erstattungen stehen noch aus?", "warten auf die Erstattung"
+	case w.contains("noch offen", "sind offen", " offen?", " offen ", " offene"):
 		return StatusNotRefunded
 	case (kind == KindCount || kind == KindList) && refundRe.MatchString(w.text) &&
 		!w.contains("nicht erstattet", "zu wenig", "weniger", "mehr erstattet", "zu viel"):
@@ -368,9 +375,9 @@ func (w question) deviation() string {
 // paid: paid to the provider or not, "" if the question does not say.
 func (w question) paid() string {
 	switch {
-	case w.contains("nicht bezahlt", "unbezahlt", "nicht überwiesen", "noch zu bezahlen", "noch zu zahlen"):
+	case w.contains("nicht bezahlt", "unbezahlt", "nicht überwiesen", "zu bezahlen", "zu zahlen", "noch bezahlen", "noch zahlen", "noch überweisen"):
 		return No
-	case w.contains("sind bezahlt", "schon bezahlt", "bereits bezahlt", "bezahlte rechnung", "überwiesen"):
+	case w.contains("sind bezahlt", "schon bezahlt", "bereits bezahlt", "bezahlte rechnung", "ich überwiesen", "überwiesen habe"):
 		return Yes
 	}
 	return ""
@@ -448,22 +455,27 @@ func (w question) group(given string, follow bool, prev *Query) string {
 		return false
 	}
 	switch {
-	case by("monat") || w.contains("monatlich"):
+	case by("monat") || w.contains("monatlich", "welchen monat", "welchem monat"):
 		return GroupMonth
-	case by("jahr") || w.contains("jährlich"):
+	case by("jahr") || w.contains("jährlich", "welchem jahr", "welchen jahren"):
 		return GroupYear
-	case by("kategorie", "art"):
+	case by("kategorie", "art") || w.contains("welcher kategorie", "welchen kategorien"):
 		return GroupCategory
 	case by("kostenträger"):
 		return GroupPayer
-	case by("arzt", "ärzt", "behandler", "praxis") || w.contains("am teuersten", "am meisten") && w.contains("arzt", "behandler", "praxis", "wem"):
+	case by("arzt", "ärzt", "behandler", "praxis") || w.most() && w.contains("arzt", "behandler", "praxis", "wem"):
 		return GroupProvider
-	case w.contains("pro ", "nach ", " je ", "am meisten", "am teuersten"):
+	case w.contains("pro ", "nach ", " je ") || w.most():
 		return given
 	case follow:
 		return prev.GroupBy
 	}
 	return ""
+}
+
+// most: "am meisten", "am teuersten", "die meisten".
+func (w question) most() bool {
+	return w.contains("am meisten", "am teuersten", "die meisten", "die höchsten")
 }
 
 // measure: what is summed, by the words of the question; a follow-up
@@ -479,12 +491,13 @@ func (w question) measure(q Query, follow bool, prev *Query) string {
 		return "" // the overview: SOLL, IST, difference, open
 	case w.contains("eigenanteil", "selbst getragen", "selbst bezahlt"):
 		cue = MeasureOwnShare
-	case w.contains("differenz", "abweichung"):
-		cue = MeasureDiff
+	case w.contains("differenz", "abweichung") || q.Kind == KindSum && w.deviation() != "":
+		cue = MeasureDiff // "Wie viel hat die Beihilfe weniger erstattet als erwartet?"
 	case w.contains("nicht erstattet", "offen") || w.owing():
 		cue = MeasureOwed
-	case w.contains("erstattet", "erstattung") && q.Kind == KindSum:
-		cue = MeasureActual
+	case w.contains("erstattet", "erstattung") && q.Kind == KindSum ||
+		q.Get(FieldPayer) != "" && w.contains("überwiesen", "bekommen", "gezahlt", "ausgezahlt"):
+		cue = MeasureActual // "Wie viel hat die PKV überwiesen?": the payer paid – IST
 	case w.contains("ausgegeben", "ausgaben", "bezahlt", "gekostet", "kosten", "gesamtbetrag", "rechnungsbetrag", "teuer"):
 		cue = MeasureAmount
 	case w.contains(" soll"):
