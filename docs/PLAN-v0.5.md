@@ -90,6 +90,13 @@ a key answers 401 – as described.
 (health + `/v1/models` with the key + "model available?"). Never in the synced data folder: two
 devices may differ, and the key must not travel with the data.
 
+The API key is **entered by hand once per device** (decided 2026-11-03) in a password field and
+kept in the device configuration (`config.json` in the OS config folder, readable only by the
+user, 0600). It only goes one way: the frontend hands it to the backend once
+(`Svc.SetAIKey`) and afterwards only learns "a key is stored" and its last four characters
+("gespeichert (…7f3a)", with "Ändern" and "Entfernen"); only the backend sends it to the server.
+The `.env` file is for the test script on the development machine; the app does not read it.
+
 ### Frontend
 
 - Inbox review and invoice form: button "Mit KI auslesen" next to the recognised fields, shown
@@ -123,10 +130,10 @@ trying if the matcher misses cases the AI gets right (measure in the test).
 
 ## Open points
 
-1. **Where the key lives** (open): device config file (`config.json` in the OS config folder,
-   mode 0600 – simple, like the other device settings) or the OS keyring (Secret Service,
-   Keychain, Credential Manager – via `github.com/zalando/go-keyring`, one new dependency, needs a
-   running keyring on Linux). Recommendation: the config file; the key only guards a LAN service.
+1. **Where the key lives – decided 2026-11-03: the device config file**, entered by hand in the
+   settings (see Settings). Not the OS keyring: one more dependency and a keyring service on
+   Linux, for little gain – the key only guards a LAN service, and whoever uses the account can
+   read the data folder anyway.
 2. **When it runs – decided 2026-11-03: only on a manual trigger.** Every AI feature starts
    with a click ("Mit KI auslesen", later the same for Bescheide); nothing runs automatically –
    not when the OCR is unsure, not in the background for the inbox. (The server is shared and
