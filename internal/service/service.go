@@ -60,9 +60,10 @@ type Service struct {
 	backupErr     error
 	bg            sync.WaitGroup // background backups
 	upload        *upload.Server
-	inboxSeen     []string // inbox file names at the last reload
-	session       string   // temporary folder of this run (see sessionDir)
-	tmpRoot       string   // where session folders are made; "" = os.TempDir() (tests set it)
+	inboxSeen     []string             // inbox file names at the last reload
+	session       string               // temporary folder of this run (see sessionDir)
+	tmpRoot       string               // where session folders are made; "" = os.TempDir() (tests set it)
+	staged        map[string]stagedDoc // documents added in invoice forms, by ID
 
 	now func() time.Time
 }

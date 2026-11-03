@@ -1,6 +1,7 @@
 // Small presentational components shared by the pages.
 import {useId} from "react";
 import type {ReactNode} from "react";
+import {SOURCE} from "../lib/prefill";
 
 export function Notice({kind, children}: {kind?: "warn" | "bad" | "good"; children: ReactNode}) {
     return <div className={`notice ${kind ?? ""}`}>{children}</div>;
@@ -20,6 +21,13 @@ export function Empty({children}: {children: ReactNode}) {
 
 export function Badge({kind, children, title}: {kind?: "good" | "warn" | "bad"; children: ReactNode; title?: string}) {
     return <span className={`badge ${kind ?? ""}`} title={title}>{children}</span>;
+}
+
+/** Where a prefilled value came from (see SOURCE), or nothing. */
+export function SourceBadge({source}: {source?: string}) {
+    if (!source) return null;
+    const [label, kind] = SOURCE[source] ?? [source, undefined];
+    return <Badge kind={kind}>{label}</Badge>;
 }
 
 /**

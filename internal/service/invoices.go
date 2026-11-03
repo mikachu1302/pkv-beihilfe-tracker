@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -120,8 +121,11 @@ func validateInvoice(inv *model.Invoice) error {
 // SaveInvoice creates (empty ID) or updates an invoice. original is the
 // invoice as it was loaded into the form (nil for new invoices): if the
 // record changed in the meantime – e.g. on another device – only the fields
-// changed in the form are applied to the current version.
-func (s *Service) SaveInvoice(d InvoiceDTO, original *InvoiceDTO) (InvoiceDetailDTO, error) {
+// changed in the form are applied to the current version. staged are the
+// documents added in the form (StageFile/StageFiles): they move to belege/
+// and are attached. Documents removed in the form that no other record uses
+// go back into the inbox.
+func (s *Service) SaveInvoice(d InvoiceDTO, original *InvoiceDTO, staged []string) (InvoiceDetailDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	st, data, err := s.ready()
@@ -132,33 +136,84 @@ func (s *Service) SaveInvoice(d InvoiceDTO, original *InvoiceDTO) (InvoiceDetail
 	if err != nil {
 		return InvoiceDetailDTO{}, err
 	}
+	var before []string // attachments before saving
 	if inv.ID == "" {
 		inv.ID = s.newID()
+		inv.Attachments = nil // documents come only through staging
 	} else {
 		cur, err := findInvoice(data, inv.ID)
 		if err != nil {
 			return InvoiceDetailDTO{}, err
 		}
+		before = slices.Clone(cur.Attachments)
 		inv.Source = cur.Source // not part of the form
+		base := cloneInvoice(cur)
 		if original != nil && original.ID == inv.ID {
-			base, err := fromDTO(*original, &data.Settings, s.newID)
-			if err != nil {
+			if base, err = fromDTO(*original, &data.Settings, s.newID); err != nil {
 				return InvoiceDetailDTO{}, err
 			}
+			mine := inv.Attachments
 			if inv, err = rebase(base, inv, *cur); err != nil {
 				return InvoiceDetailDTO{}, err
 			}
+			inv.Attachments = mine
 		}
+		inv.Attachments = mergeAttachments(base.Attachments, inv.Attachments, before)
 	}
 	if err := validateInvoice(&inv); err != nil {
 		return InvoiceDetailDTO{}, err
+	}
+	pending, err := s.takeStaged(data, &inv, staged)
+	if err != nil {
+		return InvoiceDetailDTO{}, err
+	}
+	for _, p := range pending {
+		if _, err := st.AddDocument(p.content, filepath.Ext(p.name)); err != nil {
+			return InvoiceDetailDTO{}, fmt.Errorf("Beleg „%s“ konnte nicht abgelegt werden: %w", p.name, err)
+		}
+		inv.Attachments = append(inv.Attachments, p.doc)
+	}
+	if len(inv.Attachments) == 0 {
+		inv.Attachments = nil
 	}
 	saved, err := st.SaveInvoice(inv)
 	if err != nil {
 		return InvoiceDetailDTO{}, fmt.Errorf("Speichern fehlgeschlagen: %w", err)
 	}
 	replaceInvoice(data, saved)
-	return s.detail(&data.Settings, &saved), nil
+	s.discardStaged(stagedIDs(pending))
+	var removed []string
+	for _, a := range before {
+		if !slices.Contains(saved.Attachments, a) {
+			removed = append(removed, a)
+		}
+	}
+	out := s.detail(&data.Settings, &saved)
+	out.MovedToInbox = backToInbox(st, data, &saved, removed)
+	return out, nil
+}
+
+// mergeAttachments applies the form's changes to the attachments (base: as
+// loaded, mine: as saved in the form) to the current ones: pages removed in
+// the form go, pages another device added meanwhile stay. The form cannot
+// add pages itself (only through staging), so additions are ignored.
+func mergeAttachments(base, mine, cur []string) []string {
+	out := []string{}
+	for _, a := range cur {
+		if (slices.Contains(base, a) && !slices.Contains(mine, a)) || slices.Contains(out, a) {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
+func stagedIDs(p []pendingDoc) []string {
+	ids := make([]string, len(p))
+	for i, d := range p {
+		ids[i] = d.id
+	}
+	return ids
 }
 
 // rebase applies the changes from base to mine onto theirs (field by field):

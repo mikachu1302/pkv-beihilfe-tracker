@@ -1,34 +1,16 @@
 import {useEffect, useId, useRef, useState} from "react";
-import type {DragEvent} from "react";
 import {Desktop, Svc} from "../api";
 import type {AnalysisDTO, AnalyzeInputDTO, InboxItemDTO, InvoiceDTO, PayerDTO, PhoneUploadDTO, RefundReviewDTO} from "../api";
 import {useApp, useInboxChanged} from "../App";
 import {useConfirm, useToast} from "../components/feedback";
-import {Badge, Empty, ErrorNotice, Field, Notice} from "../components/ui";
+import {Badge, Empty, ErrorNotice, Field, Notice, SourceBadge} from "../components/ui";
 import {recognizePages, renderPdfPreview} from "../lib/capture";
+import {bySize, readAsDataURL, tooBigText, useFileDrop} from "../lib/files";
 import {CATEGORY_LABELS, errMsg, eur, plural, toInput, today} from "../lib/format";
 import {key, useSaveShortcut, useUnsavedChanges} from "../lib/shortcuts";
 import {useBackend} from "../lib/useBackend";
 import {useDialog} from "../lib/useDialog";
 import RefundReview from "./RefundReview";
-
-/** Largest file accepted by drag & drop – the same limit as the phone upload. */
-export const MAX_FILE_MB = 40;
-
-const SOURCE: Record<string, [string, "good" | "warn" | undefined]> = {
-    qr: ["aus GiroCode", "good"],
-    label: ["erkannt", undefined],
-    guess: ["bitte prüfen", "warn"],
-};
-
-function readAsDataURL(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => resolve(String(r.result));
-        r.onerror = () => reject(r.error);
-        r.readAsDataURL(file);
-    });
-}
 
 /** Posteingang: scans, photos and PDFs waiting to become invoices. */
 export default function Inbox() {
@@ -40,9 +22,7 @@ export default function Inbox() {
     const settings = useBackend(() => Svc.GetSettings(), [dataVersion]);
     const [selected, setSelected] = useState<string>("");
     const [phone, setPhone] = useState(false);
-    const [dragging, setDragging] = useState(false);
-    // dragenter/dragleave also fire when moving between child elements: count them.
-    const dragDepth = useRef(0);
+    const {dragging, handlers} = useFileDrop(files => void addDropped(files));
     const items = list.data ?? [];
     const current = items.find(i => i.name === selected) ?? items[0];
 
@@ -69,37 +49,13 @@ export default function Inbox() {
         }
     }
 
-    function onDragEnter(e: DragEvent) {
-        if (!e.dataTransfer.types.includes("Files")) return;
-        dragDepth.current++;
-        setDragging(true);
-    }
-
-    function onDragLeave(e: DragEvent) {
-        if (!e.dataTransfer.types.includes("Files")) return;
-        dragDepth.current = Math.max(0, dragDepth.current - 1);
-        if (dragDepth.current === 0) setDragging(false);
-    }
-
-    async function onDrop(e: DragEvent) {
-        e.preventDefault();
-        dragDepth.current = 0;
-        setDragging(false);
-        const files = [...e.dataTransfer.files];
-        if (!files.length) return;
-        const limit = MAX_FILE_MB * 1024 * 1024;
-        const fitting = files.filter(f => f.size <= limit);
-        const tooBig = files.filter(f => f.size > limit);
+    async function addDropped(files: File[]) {
+        const {fitting, tooBig} = bySize(files);
         try {
             for (const f of fitting) await Svc.AddToInbox(f.name, await readAsDataURL(f));
             const added = fitting.length ? `${plural(fitting.length, "Datei", "Dateien")} hinzugefügt` : "";
             if (tooBig.length === 0) toast.show(added);
-            else {
-                const names = tooBig.map(f => `„${f.name}“`).join(", ");
-                const one = tooBig.length === 1;
-                toast.show(`${names} ${one ? "ist" : "sind"} größer als ${MAX_FILE_MB} MB und ${one ? "wurde" : "wurden"} nicht hinzugefügt.` +
-                    (added ? ` ${added}.` : ""), true);
-            }
+            else toast.show(tooBigText(tooBig) + (added ? ` ${added}.` : ""), true);
         } catch (err) {
             toast.error(err);
         } finally {
@@ -118,7 +74,7 @@ export default function Inbox() {
     }
 
     return (
-        <div onDragEnter={onDragEnter} onDragOver={e => e.preventDefault()} onDragLeave={onDragLeave} onDrop={onDrop}>
+        <div {...handlers}>
             <div className="page-head">
                 <h1>Posteingang</h1>
                 <span className="muted small">Neue Belege aus dem Ordner „Eingang“, vom Handy oder per Drag &amp; Drop</span>
@@ -273,9 +229,7 @@ function InboxItem({item, payers, onDone, onDiscard}: {item: InboxItemDTO; payer
 
     const src = (field: string) => {
         const s = analysis?.sources?.[field];
-        if (!s) return undefined;
-        const [label, kind] = SOURCE[s] ?? [s, undefined];
-        return <Badge kind={kind}>{label}</Badge>;
+        return s ? <SourceBadge source={s}/> : undefined;
     };
     const set = (patch: Partial<InvoiceDTO>) => {
         touched.current = true;

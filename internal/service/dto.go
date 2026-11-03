@@ -121,6 +121,9 @@ type InvoiceRowDTO struct {
 type InvoiceDetailDTO struct {
 	Invoice InvoiceDTO    `json:"invoice"`
 	View    InvoiceRowDTO `json:"view"`
+	// MovedToInbox: documents removed in the form that went back into the
+	// inbox (SaveInvoice only).
+	MovedToInbox int `json:"movedToInbox"`
 }
 
 func markDTO(m model.Mark) MarkDTO {

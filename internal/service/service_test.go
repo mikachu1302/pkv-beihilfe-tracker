@@ -81,13 +81,13 @@ func TestSetupCreatesPayers(t *testing.T) {
 
 func TestInvoiceLifecycle(t *testing.T) {
 	s := newTestService(t)
-	if _, err := s.SaveInvoice(InvoiceDTO{Amount: "x"}, nil); err == nil || !strings.Contains(err.Error(), "kein gültiger Betrag") {
+	if _, err := s.SaveInvoice(InvoiceDTO{Amount: "x"}, nil, nil); err == nil || !strings.Contains(err.Error(), "kein gültiger Betrag") {
 		t.Fatalf("invalid input: %v", err)
 	}
-	if _, err := s.SaveInvoice(InvoiceDTO{}, nil); err == nil || !strings.Contains(err.Error(), "Behandler fehlt") {
+	if _, err := s.SaveInvoice(InvoiceDTO{}, nil, nil); err == nil || !strings.Contains(err.Error(), "Behandler fehlt") {
 		t.Fatalf("missing fields: %v", err)
 	}
-	det, err := s.SaveInvoice(sampleInvoice(), nil)
+	det, err := s.SaveInvoice(sampleInvoice(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestInvoiceLifecycle(t *testing.T) {
 	in.Note = "Kontrolle"
 	in.Claims[1].Held = true
 	in.Claims[1].Refunds = append(in.Claims[1].Refunds, RefundDTO{}) // empty new row is ignored
-	saved, err := s.SaveInvoice(in, nil)
+	saved, err := s.SaveInvoice(in, nil, nil)
 	if err != nil || saved.Invoice.Note != "Kontrolle" || claim(saved.View, "muster-pkv").Status != "held" ||
 		claim(saved.View, "beihilfe-bund").Actual != "180.20" {
 		t.Fatalf("round trip: %+v, %v", saved, err)
@@ -182,7 +182,7 @@ func TestBulkSubmitAndDashboard(t *testing.T) {
 	for _, a := range []string{"1000", "500", "300"} {
 		in := sampleInvoice()
 		in.Amount = a
-		det, err := s.SaveInvoice(in, nil)
+		det, err := s.SaveInvoice(in, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -287,7 +287,7 @@ func TestSpreadsheetImport(t *testing.T) {
 	}
 	// The same invoice already exists (entered by hand, other spelling): it is
 	// recognised, and the import would add what the spreadsheet knows more.
-	if _, err := s.SaveInvoice(InvoiceDTO{Provider: "dr.  MUSTER", InvoiceDate: "2026-03-14", Amount: "286.40"}, nil); err != nil {
+	if _, err := s.SaveInvoice(InvoiceDTO{Provider: "dr.  MUSTER", InvoiceDate: "2026-03-14", Amount: "286.40"}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	pv, err := s.PreviewSpreadsheet(path, "beihilfe-bund", "muster-pkv")
@@ -370,7 +370,7 @@ func TestExternalChangeIsPickedUp(t *testing.T) {
 	s := newTestService(t)
 	em := &fakeEmitter{}
 	s.SetEmitter(em)
-	if _, err := s.SaveInvoice(sampleInvoice(), nil); err != nil {
+	if _, err := s.SaveInvoice(sampleInvoice(), nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(150 * time.Millisecond)
@@ -390,7 +390,7 @@ func TestExternalChangeIsPickedUp(t *testing.T) {
 
 func TestSaveKeepsChangesFromAnotherDevice(t *testing.T) {
 	s := newTestService(t)
-	det, _ := s.SaveInvoice(sampleInvoice(), nil)
+	det, _ := s.SaveInvoice(sampleInvoice(), nil, nil)
 	original := det.Invoice
 
 	// Meanwhile another device renames the provider and ticks "eingereicht".
@@ -406,7 +406,7 @@ func TestSaveKeepsChangesFromAnotherDevice(t *testing.T) {
 	// The form, still showing the old state, only changed the note.
 	edited := original
 	edited.Note = "Rückfrage gestellt"
-	saved, err := s.SaveInvoice(edited, &original)
+	saved, err := s.SaveInvoice(edited, &original, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -418,7 +418,7 @@ func TestSaveKeepsChangesFromAnotherDevice(t *testing.T) {
 
 func TestBackups(t *testing.T) {
 	s := newTestService(t)
-	s.SaveInvoice(sampleInvoice(), nil)
+	s.SaveInvoice(sampleInvoice(), nil, nil)
 	if _, err := s.SetBackupDir(filepath.Join(s.st.Root(), "sicherung")); err == nil {
 		t.Error("backup folder inside the data folder accepted")
 	}
@@ -553,7 +553,7 @@ func refundFixture(t *testing.T, s *Service) []string {
 		{Provider: "Apotheke am Markt", InvoiceDate: "2026-03-05", Amount: "45,10"},
 		{Provider: "Apotheke am Markt", InvoiceDate: "2026-03-10", Amount: "12,50"},
 	} {
-		det, err := s.SaveInvoice(in, nil)
+		det, err := s.SaveInvoice(in, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -667,7 +667,7 @@ func TestExportsAndReminders(t *testing.T) {
 	s := newTestService(t)
 	ids := refundFixture(t, s)
 	// An old invoice: Beihilfe deadline (3 years after 2023-12-01) is near, not paid.
-	old, _ := s.SaveInvoice(InvoiceDTO{Provider: "Labor Alt", InvoiceDate: "2023-12-01", Amount: "50", Due: "2023-12-31"}, nil)
+	old, _ := s.SaveInvoice(InvoiceDTO{Provider: "Labor Alt", InvoiceDate: "2023-12-01", Amount: "50", Due: "2023-12-31"}, nil, nil)
 	s.SetMark(MarkChangeDTO{InvoiceID: ids[0], PayerID: "beihilfe-bund", Mark: MarkClarify, On: true, Note: "Rückfrage"})
 
 	rem, err := s.Reminders()
@@ -724,7 +724,7 @@ func tinyPNG() []byte {
 
 func TestAcceptDeviation(t *testing.T) {
 	s := newTestService(t)
-	det, _ := s.SaveInvoice(sampleInvoice(), nil)
+	det, _ := s.SaveInvoice(sampleInvoice(), nil, nil)
 	id := det.Invoice.ID
 	if _, err := s.SetMark(MarkChangeDTO{InvoiceID: id, PayerID: "beihilfe-bund", Mark: MarkAcceptDeviation, On: true}); err == nil {
 		t.Error("accepting without a refund must fail")
@@ -921,7 +921,7 @@ func TestSpreadsheetImportAgain(t *testing.T) {
 	det, _ := s.GetInvoice(id["Optik Ost"])
 	edit := det.Invoice
 	edit.Amount = "310.00"
-	if _, err := s.SaveInvoice(edit, &det.Invoice); err != nil {
+	if _, err := s.SaveInvoice(edit, &det.Invoice, nil); err != nil {
 		t.Fatal(err)
 	}
 

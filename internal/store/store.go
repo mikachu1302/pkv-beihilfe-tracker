@@ -623,6 +623,16 @@ func (s *Store) RemoveFromInbox(name string) error {
 	return s.remove(path)
 }
 
+// RemoveDocument deletes a stored document (a missing file is fine). The
+// caller makes sure no record refers to it any more.
+func (s *Store) RemoveDocument(name string) error {
+	path, err := s.DocumentPath(name)
+	if err != nil {
+		return err
+	}
+	return s.remove(path)
+}
+
 // DocumentPath returns the full path of a stored document.
 func (s *Store) DocumentPath(name string) (string, error) {
 	name, err := fileName(name)

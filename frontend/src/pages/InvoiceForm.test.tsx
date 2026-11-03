@@ -1,15 +1,20 @@
 import {screen, waitFor, within} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {beforeEach, describe, expect, it, vi} from "vitest";
-import type {InvoiceDTO} from "../api";
+import type {AnalysisDTO, InvoiceDTO, StagedDocDTO} from "../api";
 import {claimView, invoiceRow, noMark} from "../test/fixtures";
 import {renderAt} from "../test/render";
 import InvoiceForm from "./InvoiceForm";
 
 const svc = vi.hoisted(() => ({
     NewInvoice: vi.fn(), GetInvoice: vi.fn(), PreviewInvoice: vi.fn(), SaveInvoice: vi.fn(), DeleteInvoice: vi.fn(),
+    StageFiles: vi.fn(), StageFile: vi.fn(), DiscardStaged: vi.fn(), StagedToInbox: vi.fn(), AnalyzeDocument: vi.fn(),
+    DocumentPath: vi.fn(), DocumentsPDF: vi.fn(),
 }));
-vi.mock("../api", () => ({Svc: svc}));
+const desktop = vi.hoisted(() => ({ChooseFiles: vi.fn(), OpenPath: vi.fn()}));
+const capture = vi.hoisted(() => ({recognizePages: vi.fn(), renderPdfPreview: vi.fn()}));
+vi.mock("../api", () => ({Svc: svc, Desktop: desktop}));
+vi.mock("../lib/capture", () => capture);
 
 function claim(payerId: string) {
     return {payerId, eligible: "", rate: "", expected: "", submitted: noMark, refunded: noMark, clarify: noMark,
@@ -22,10 +27,23 @@ const blank: InvoiceDTO = {
     attachments: [], note: "",
 };
 
+const page: StagedDocDTO = {id: "0123456789abcdef.png", name: "rechnung.png", type: "image", url: "/datafile/staged/0123456789abcdef.png",
+    path: "/tmp/sitzung/staged/0123456789abcdef.png", size: 1000};
+
+function analysis(kind: string, found: Partial<InvoiceDTO>): AnalysisDTO {
+    return {kind, draft: {invoice: {...blank, invoiceDate: "", ...found}, view: invoiceRow("", ""), movedToInbox: 0},
+        sources: {amount: "qr", reference: "label"}, notes: []};
+}
+
 beforeEach(() => {
     vi.clearAllMocks();
     svc.NewInvoice.mockResolvedValue({invoice: blank, view: invoiceRow("", "", {amount: "0.00", expected: "0.00"})});
     svc.PreviewInvoice.mockResolvedValue({invoice: blank, view: invoiceRow("", "Dr. Muster")});
+    svc.DiscardStaged.mockResolvedValue(undefined);
+    svc.StageFiles.mockResolvedValue([page]);
+    desktop.ChooseFiles.mockResolvedValue(["/home/x/rechnung.png"]);
+    capture.recognizePages.mockResolvedValue({lines: [], qr: [], ocr: false, pages: 1, truncated: false});
+    capture.renderPdfPreview.mockResolvedValue(undefined);
 });
 
 describe("InvoiceForm", () => {
@@ -123,5 +141,83 @@ describe("InvoiceForm", () => {
         renderAt("/rechnung/neu", "/rechnung/neu", <InvoiceForm/>);
         await user.click(await screen.findByRole("button", {name: "Speichern"}));
         expect(await screen.findByText(/Behandler fehlt/)).toBeInTheDocument();
+    });
+
+    it("fills the empty fields from an added document and keeps typed ones", async () => {
+        const user = userEvent.setup();
+        svc.AnalyzeDocument.mockResolvedValue(analysis("invoice", {provider: "Dr. Muster", amount: "286.40", reference: "R-1"}));
+        svc.SaveInvoice.mockResolvedValue({invoice: {...blank, id: "x"}, view: invoiceRow("x", "Praxis", {year: 2026}), movedToInbox: 0});
+        renderAt("/rechnung/neu", "/rechnung/neu", <InvoiceForm/>);
+        await user.type(await screen.findByLabelText("Behandler *"), "Praxis Beispiel");
+        await user.click(screen.getByRole("button", {name: "+ Beleg hinzufügen …"}));
+
+        expect(await screen.findByText("2 Felder aus dem Beleg übernommen.")).toBeInTheDocument();
+        expect(capture.recognizePages).toHaveBeenCalledWith([expect.objectContaining({url: page.url, type: "image"})],
+            expect.any(Function), expect.any(AbortSignal));
+        expect(screen.getByLabelText("Behandler *")).toHaveValue("Praxis Beispiel");
+        expect(screen.getByLabelText("Betrag (€) *")).toHaveValue("286,40");
+        expect(screen.getByLabelText("Rechnungsnummer")).toHaveValue("R-1");
+        expect(screen.getByText("aus GiroCode")).toBeInTheDocument();
+        expect(screen.getByRole("img", {name: "Seite 1"})).toBeInTheDocument();
+
+        // Editing a prefilled field removes its badge.
+        await user.type(screen.getByLabelText("Betrag (€) *"), "0");
+        expect(screen.queryByText("aus GiroCode")).not.toBeInTheDocument();
+
+        await user.click(screen.getByRole("button", {name: "Speichern"}));
+        await waitFor(() => expect(svc.SaveInvoice).toHaveBeenCalled());
+        expect(svc.SaveInvoice.mock.calls[0][2]).toEqual([page.id]);
+    });
+
+    it("moves a recognised Bescheid into the inbox", async () => {
+        const user = userEvent.setup();
+        svc.AnalyzeDocument.mockResolvedValue(analysis("refund", {}));
+        svc.StagedToInbox.mockResolvedValue(["rechnung.png"]);
+        renderAt("/rechnung/neu", "/rechnung/neu", <InvoiceForm/>);
+        await user.click(await screen.findByRole("button", {name: "+ Beleg hinzufügen …"}));
+        await user.click(await screen.findByRole("button", {name: "In den Posteingang verschieben"}));
+        await waitFor(() => expect(svc.StagedToInbox).toHaveBeenCalledWith([page.id]));
+        expect(await screen.findByText("andere Seite")).toBeInTheDocument();
+    });
+
+    it("only attaches documents to an existing invoice; removed pages go back to the inbox", async () => {
+        const user = userEvent.setup();
+        const inv = {...blank, id: "a", provider: "Dr. Muster", amount: "286.40", attachments: ["aaa.pdf", "bbb.png"]};
+        svc.GetInvoice.mockResolvedValue({invoice: inv, view: invoiceRow("a", "Dr. Muster")});
+        svc.SaveInvoice.mockResolvedValue({invoice: inv, view: invoiceRow("a", "Dr. Muster", {year: 2026}), movedToInbox: 1});
+        svc.DocumentsPDF.mockResolvedValue("/tmp/Belege-1.pdf");
+        renderAt("/rechnung/a", "/rechnung/:id", <InvoiceForm/>);
+
+        await user.click(await screen.findByRole("button", {name: "Alle Seiten zusammen öffnen"}));
+        await waitFor(() => expect(desktop.OpenPath).toHaveBeenCalledWith("/tmp/Belege-1.pdf"));
+        expect(svc.DocumentsPDF).toHaveBeenCalledWith(["aaa.pdf", "bbb.png"]);
+
+        await user.click(screen.getByRole("button", {name: "Seite 1 entfernen"}));
+        expect(screen.getByText(/Die entfernte Seite kommt beim Speichern zurück in den Posteingang/)).toBeInTheDocument();
+        await user.click(screen.getByRole("button", {name: "+ Beleg hinzufügen …"}));
+        expect(await screen.findByRole("button", {name: "Seite 2 öffnen"})).toBeInTheDocument(); // bbb.png, then the new page
+        expect(screen.getByText("neu")).toBeInTheDocument();
+        expect(capture.recognizePages).not.toHaveBeenCalled();
+
+        await user.click(screen.getByRole("button", {name: "Speichern"}));
+        await waitFor(() => expect(svc.SaveInvoice).toHaveBeenCalled());
+        const [sent, original, staged] = svc.SaveInvoice.mock.calls[0];
+        expect(sent.attachments).toEqual(["bbb.png"]);
+        expect(original.attachments).toEqual(["aaa.pdf", "bbb.png"]);
+        expect(staged).toEqual([page.id]);
+        expect(await screen.findByText(/der entfernte Beleg liegt wieder im Posteingang/)).toBeInTheDocument();
+    });
+
+    it("asks before leaving with an added document and discards it", async () => {
+        const user = userEvent.setup();
+        const inv = {...blank, id: "a", provider: "Dr. Muster", amount: "286.40"};
+        svc.GetInvoice.mockResolvedValue({invoice: inv, view: invoiceRow("a", "Dr. Muster")});
+        const {unmount} = renderAt("/rechnung/a", "/rechnung/:id", <InvoiceForm/>);
+        await user.click(await screen.findByRole("button", {name: "+ Beleg hinzufügen …"}));
+        await screen.findByText("neu");
+        await user.click(screen.getByRole("button", {name: "Abbrechen"}));
+        expect(await screen.findByRole("alertdialog")).toHaveTextContent("noch nicht gespeichert");
+        unmount();
+        expect(svc.DiscardStaged).toHaveBeenCalledWith([page.id]);
     });
 });

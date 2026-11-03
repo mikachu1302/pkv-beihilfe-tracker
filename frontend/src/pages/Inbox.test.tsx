@@ -23,7 +23,7 @@ const draft: InvoiceDTO = {
 };
 
 function analysis(kind = "invoice"): AnalysisDTO {
-    return {kind, draft: {invoice: draft, view: invoiceRow("", draft.provider)}, sources: {amount: "qr", provider: "label", category: "guess"}, notes: []};
+    return {kind, draft: {invoice: draft, view: invoiceRow("", draft.provider), movedToInbox: 0}, sources: {amount: "qr", provider: "label", category: "guess"}, notes: []};
 }
 
 beforeEach(() => {

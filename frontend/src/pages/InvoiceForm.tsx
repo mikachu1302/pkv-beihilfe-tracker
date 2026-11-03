@@ -1,11 +1,16 @@
 import {useEffect, useId, useRef, useState} from "react";
+import type {ReactNode} from "react";
 import {useNavigate, useParams} from "react-router";
 import {Desktop, Svc} from "../api";
-import type {ClaimDTO, ClaimViewDTO, InvoiceDTO, InvoiceRowDTO, MarkDTO, RefundDTO} from "../api";
+import type {ClaimDTO, ClaimViewDTO, InvoiceDTO, InvoiceRowDTO, MarkDTO, RefundDTO, StagedDocDTO} from "../api";
 import {useApp} from "../App";
+import {DocThumb} from "../components/DocThumb";
 import {useConfirm, useToast} from "../components/feedback";
-import {Badge, ErrorNotice, Field, Loading, Notice} from "../components/ui";
-import {CATEGORY_LABELS, STATUS_LABELS, date, errMsg, eur, num, pct, toInput, today} from "../lib/format";
+import {Badge, ErrorNotice, Field, Loading, Notice, SourceBadge} from "../components/ui";
+import {recognizePages} from "../lib/capture";
+import {bySize, docType, docUrl, readAsDataURL, tooBigText, useFileDrop} from "../lib/files";
+import {CATEGORY_LABELS, STATUS_LABELS, date, errMsg, eur, num, pct, plural, toInput, today} from "../lib/format";
+import {fillEmpty} from "../lib/prefill";
 import {dialogOpen, key, mod, useKeydown, useSaveShortcut, useUnsavedChanges} from "../lib/shortcuts";
 
 /** Amounts arrive as "286.40"; the form shows and sends "286,40". */
@@ -48,6 +53,16 @@ function emptyClaim(payerId: string): ClaimDTO {
 
 const STATUS_KIND: Record<string, "good" | "warn" | undefined> = {refunded: "good", submitted: "warn"};
 
+/** State of reading the documents added to a new invoice. */
+interface Recognition {
+    status: string;
+    error: string;
+    notes: string[];
+    refund: boolean; // a Bescheid: booked in the inbox, not here
+}
+
+const NO_RECOGNITION: Recognition = {status: "", error: "", notes: [], refund: false};
+
 export default function InvoiceForm() {
     const {id} = useParams();
     const navigate = useNavigate();
@@ -68,8 +83,19 @@ export default function InvoiceForm() {
     const [initial, setInitial] = useState("");
     const timer = useRef<number>(undefined);
     const seq = useRef(0);
+    // Documents added in the form: they move to belege/ when it is saved.
+    const [staged, setStaged] = useState<StagedDocDTO[]>([]);
+    const stagedRef = useRef(staged);
+    stagedRef.current = staged;
+    // Fields filled from a document → where the value came from (badge until edited).
+    const [filled, setFilled] = useState<Record<string, string>>({});
+    const [recog, setRecog] = useState<Recognition>(NO_RECOGNITION);
+    const recogRun = useRef<AbortController | null>(null);
+    const invRef = useRef(inv);
+    invRef.current = inv;
+    const {dragging, handlers: dropHandlers} = useFileDrop(files => void addDropped(files));
 
-    const dirty = inv !== null && initial !== "" && snapshot(inv) !== initial;
+    const dirty = (inv !== null && initial !== "" && snapshot(inv) !== initial) || staged.length > 0;
     useUnsavedChanges(dirty);
     useSaveShortcut(() => void save("list"), inv !== null);
     useKeydown(e => {
@@ -84,8 +110,20 @@ export default function InvoiceForm() {
     };
     useEffect(() => () => window.clearTimeout(timer.current), []);
 
+    // Documents of a form that is left without saving are discarded.
+    const dropStaged = () => {
+        recogRun.current?.abort();
+        const ids = stagedRef.current.map(d => d.id);
+        if (ids.length) Svc.DiscardStaged(ids).catch(() => {});
+        setStaged([]);
+        setFilled({});
+        setRecog(NO_RECOGNITION);
+    };
+    useEffect(() => () => dropStaged(), []);
+
     useEffect(() => {
         cancelPreview();
+        dropStaged();
         setInv(null);
         setView(null);
         setLoadError("");
@@ -134,10 +172,101 @@ export default function InvoiceForm() {
         }, 250);
     }
 
+    async function addStaged(docs: StagedDocDTO[]) {
+        if (!docs.length) return;
+        const all = [...stagedRef.current, ...docs];
+        setStaged(all);
+        if (!id) await recognizeStaged(all);
+    }
+
+    async function chooseFiles() {
+        try {
+            const paths = await Desktop.ChooseFiles("Beleg hinzufügen", "PDF und Bilder", "*.pdf;*.jpg;*.jpeg;*.png;*.webp;*.heic");
+            if (paths?.length) await addStaged((await Svc.StageFiles(paths)) ?? []);
+        } catch (e) {
+            toast.error(e);
+        }
+    }
+
+    async function addDropped(files: File[]) {
+        const {fitting, tooBig} = bySize(files);
+        if (tooBig.length) toast.show(tooBigText(tooBig), true);
+        const docs: StagedDocDTO[] = [];
+        try {
+            for (const f of fitting) docs.push(await Svc.StageFile(f.name, await readAsDataURL(f)));
+        } catch (e) {
+            toast.error(e);
+        }
+        await addStaged(docs);
+    }
+
+    /** Reads the added documents (as pages of one) and fills the empty fields of a new invoice. */
+    async function recognizeStaged(docs: StagedDocDTO[]) {
+        recogRun.current?.abort();
+        const run = new AbortController();
+        recogRun.current = run;
+        const {signal} = run;
+        setRecog({...NO_RECOGNITION, status: "Beleg wird gelesen …"});
+        try {
+            const pages = docs.map(d => ({url: d.url, type: d.type, modified: d.id, size: d.size}));
+            const rec = await recognizePages(pages, m => !signal.aborted && setRecog(r => ({...r, status: m})), signal);
+            if (signal.aborted) return;
+            const a = await Svc.AnalyzeDocument({lines: rec.lines, qr: rec.qr});
+            if (signal.aborted || !invRef.current) return;
+            if (a.kind === "refund") {
+                setRecog({...NO_RECOGNITION, refund: true});
+                return;
+            }
+            const {next, filled: got} = fillEmpty(invRef.current, a.draft.invoice);
+            if (got.length) {
+                setFilled(f => Object.fromEntries([...Object.entries(f), ...got.map(k => [k, a.sources?.[k] ?? "label"])]));
+                update(next);
+            }
+            const notes = [...(a.notes ?? [])];
+            if (rec.truncated) notes.push(`Nur die ersten ${rec.pages} Seiten wurden gelesen.`);
+            const status = got.length
+                ? `${plural(got.length, "Feld", "Felder")} aus dem Beleg übernommen${rec.ocr ? " (per Texterkennung – bitte prüfen)" : ""}.`
+                : "Im Beleg wurde nichts für die leeren Felder gefunden.";
+            setRecog({...NO_RECOGNITION, status, notes});
+        } catch (e) {
+            if (!signal.aborted) setRecog({...NO_RECOGNITION, error: errMsg(e)});
+        }
+    }
+
+    async function stagedToInbox() {
+        try {
+            await Svc.StagedToInbox(staged.map(d => d.id));
+            setStaged([]);
+            setRecog(NO_RECOGNITION);
+            toast.show("Der Bescheid liegt jetzt im Posteingang");
+            navigate("/posteingang");
+        } catch (e) {
+            toast.error(e);
+        }
+    }
+
+    function removeStaged(doc: StagedDocDTO) {
+        Svc.DiscardStaged([doc.id]).catch(() => {});
+        const rest = staged.filter(d => d.id !== doc.id);
+        setStaged(rest);
+        if (rest.length === 0) setRecog(NO_RECOGNITION);
+    }
+
+    const open = (p: Promise<string>) => p.then(path => Desktop.OpenPath(path)).catch(toast.error);
+
     if (loadError) return <ErrorNotice error={loadError}/>;
     if (!inv || !view) return <Loading/>;
 
-    const set = (patch: Partial<InvoiceDTO>) => update({...inv, ...patch});
+    const set = (patch: Partial<InvoiceDTO>) => {
+        if (Object.keys(patch).some(k => k in filled)) {
+            setFilled(f => Object.fromEntries(Object.entries(f).filter(([k]) => !(k in patch))));
+        }
+        update({...inv, ...patch});
+    };
+    /** The source badge of a prefilled field, else the usual hint. */
+    const hint = (field: string, normal?: ReactNode) => (filled[field] ? <SourceBadge source={filled[field]}/> : normal);
+    const attachments = inv.attachments ?? [];
+    const removed = (original?.attachments ?? []).filter(a => !attachments.includes(a));
     const setClaim = (payerId: string, patch: Partial<ClaimDTO>) =>
         update({...inv, claims: (inv.claims ?? []).map(c => (c.payerId === payerId ? {...c, ...patch} : c))});
 
@@ -147,8 +276,13 @@ export default function InvoiceForm() {
         setSaving(true);
         setSaveError("");
         try {
-            const d = await Svc.SaveInvoice(inv, original);
-            toast.show("Rechnung gespeichert");
+            const d = await Svc.SaveInvoice(inv, original, staged.map(s => s.id));
+            setStaged([]);
+            setFilled({});
+            setRecog(NO_RECOGNITION);
+            toast.show(d.movedToInbox > 0
+                ? `Rechnung gespeichert – ${d.movedToInbox === 1 ? "der entfernte Beleg liegt" : `${d.movedToInbox} entfernte Belege liegen`} wieder im Posteingang`
+                : "Rechnung gespeichert");
             setYear(d.view.year);
             if (next === "new") {
                 if (id) navigate("/rechnung/neu");
@@ -182,7 +316,8 @@ export default function InvoiceForm() {
 
     const viewClaims = view.claims ?? [];
     return (
-        <>
+        <div {...dropHandlers}>
+            {dragging && <div className="dropzone">Dateien hier ablegen – sie werden als Belege dieser Rechnung übernommen</div>}
             <div className="page-head">
                 <h1>{id ? inv.provider || "Rechnung" : "Neue Rechnung"}</h1>
                 {view.year > 0 && <Badge>Leistungsjahr {view.year}</Badge>}
@@ -199,37 +334,37 @@ export default function InvoiceForm() {
             <fieldset className="panel">
                 <legend>Rechnung</legend>
                 <div className="grid">
-                    <Field label="Behandler *" htmlFor="provider">
+                    <Field label="Behandler *" htmlFor="provider" hint={hint("provider")}>
                         <input id="provider" autoFocus={!id} value={inv.provider} onChange={e => set({provider: e.target.value})}/>
                     </Field>
-                    <Field label="Kategorie" htmlFor="category">
+                    <Field label="Kategorie" htmlFor="category" hint={hint("category")}>
                         <select id="category" value={inv.category} onChange={e => set({category: e.target.value})}>
                             <option value="">–</option>
                             {Object.entries(CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                         </select>
                     </Field>
-                    <Field label="Betrag (€) *" htmlFor="amount">
+                    <Field label="Betrag (€) *" htmlFor="amount" hint={hint("amount")}>
                         <input id="amount" inputMode="decimal" value={inv.amount} placeholder="0,00" onChange={e => set({amount: e.target.value})}/>
                     </Field>
-                    <Field label="Rechnungsdatum *" htmlFor="invoiceDate">
+                    <Field label="Rechnungsdatum *" htmlFor="invoiceDate" hint={hint("invoiceDate")}>
                         <input id="invoiceDate" type="date" value={inv.invoiceDate} onChange={e => set({invoiceDate: e.target.value})}/>
                     </Field>
-                    <Field label="Behandlung von" htmlFor="serviceFrom" hint="Bestimmt Leistungsjahr und Beihilfe-Satz">
+                    <Field label="Behandlung von" htmlFor="serviceFrom" hint={hint("serviceFrom", "Bestimmt Leistungsjahr und Beihilfe-Satz")}>
                         <input id="serviceFrom" type="date" value={inv.serviceFrom} onChange={e => set({serviceFrom: e.target.value})}/>
                     </Field>
-                    <Field label="Behandlung bis" htmlFor="serviceTo">
+                    <Field label="Behandlung bis" htmlFor="serviceTo" hint={hint("serviceTo")}>
                         <input id="serviceTo" type="date" value={inv.serviceTo} onChange={e => set({serviceTo: e.target.value})}/>
                     </Field>
-                    <Field label="Rechnungsnummer" htmlFor="reference">
+                    <Field label="Rechnungsnummer" htmlFor="reference" hint={hint("reference")}>
                         <input id="reference" value={inv.reference} onChange={e => set({reference: e.target.value})}/>
                     </Field>
-                    <Field label="Zahlungsempfänger" htmlFor="payee" hint="z. B. Abrechnungsstelle">
+                    <Field label="Zahlungsempfänger" htmlFor="payee" hint={hint("payee", "z. B. Abrechnungsstelle")}>
                         <input id="payee" value={inv.payee} onChange={e => set({payee: e.target.value})}/>
                     </Field>
-                    <Field label="IBAN" htmlFor="iban">
+                    <Field label="IBAN" htmlFor="iban" hint={hint("iban")}>
                         <input id="iban" value={inv.iban} onChange={e => set({iban: e.target.value})}/>
                     </Field>
-                    <Field label="Fällig am" htmlFor="due">
+                    <Field label="Fällig am" htmlFor="due" hint={hint("due")}>
                         <input id="due" type="date" value={inv.due} onChange={e => set({due: e.target.value})}/>
                     </Field>
                     <Field label="Leistungsjahr" htmlFor="serviceYear" hint="Leer = aus dem Behandlungsdatum">
@@ -237,23 +372,43 @@ export default function InvoiceForm() {
                                placeholder={view.year ? String(view.year) : ""}
                                onChange={e => set({serviceYear: Number(e.target.value) || 0})}/>
                     </Field>
-                    <Field label="Bezahlt (an Behandler)">
+                    <Field label="Bezahlt (an Behandler)" hint={hint("paid")}>
                         <MarkField label="bezahlt" mark={inv.paid} onChange={paid => set({paid})}/>
                     </Field>
                     <Field label="Notiz" htmlFor="note" wide>
                         <textarea id="note" value={inv.note} onChange={e => set({note: e.target.value})}/>
                     </Field>
-                    {(inv.attachments ?? []).length > 0 && (
-                        <Field label="Belege" wide>
-                            <div className="row">
-                                {(inv.attachments ?? []).map((a, i) => (
-                                    <button key={a} onClick={() => Svc.DocumentPath(a).then(p => Desktop.OpenPath(p)).catch(toast.error)}>
-                                        Beleg {i + 1} öffnen
-                                    </button>
-                                ))}
-                            </div>
-                        </Field>
-                    )}
+                    <Field label="Belege" wide>
+                        <div className="doc-tiles">
+                            {attachments.map((a, i) => (
+                                <DocTile key={a} url={docUrl(a)} type={docType(a)} label={`Seite ${i + 1}`}
+                                         onOpen={() => open(Svc.DocumentPath(a))}
+                                         onRemove={() => set({attachments: attachments.filter(x => x !== a)})}/>
+                            ))}
+                            {staged.map((d, i) => (
+                                <DocTile key={d.id} url={d.url} type={d.type} label={`Seite ${attachments.length + i + 1}`} isNew title={d.name}
+                                         onOpen={() => open(Promise.resolve(d.path))} onRemove={() => removeStaged(d)}/>
+                            ))}
+                            <button type="button" className="doc-add" onClick={chooseFiles}>+ Beleg hinzufügen …</button>
+                        </div>
+                        {attachments.length > 1 && (
+                            <button type="button" className="link" onClick={() => open(Svc.DocumentsPDF(attachments))}>Alle Seiten zusammen öffnen</button>
+                        )}
+                        <p className="muted small">
+                            PDF oder Fotos hierher ziehen oder auswählen – mehrere Dateien werden Seiten desselben Belegs.
+                            {staged.length > 0 && " Neue Seiten werden beim Speichern im Ordner „belege“ abgelegt."}
+                            {removed.length > 0 && ` ${removed.length === 1 ? "Die entfernte Seite kommt" : "Die entfernten Seiten kommen"} beim Speichern zurück in den Posteingang.`}
+                        </p>
+                        {recog.status && <p className="muted small" role="status">{recog.status}</p>}
+                        {recog.error && <Notice kind="warn">{recog.error} Die Felder lassen sich von Hand ausfüllen.</Notice>}
+                        {recog.notes.map(n => <Notice key={n} kind={n.startsWith("Rezept erkannt –") ? undefined : "warn"}>{n}</Notice>)}
+                        {recog.refund && (
+                            <Notice kind="warn">
+                                Das ist wohl ein Erstattungsbescheid – Bescheide werden im Posteingang den Rechnungen zugeordnet.{" "}
+                                <button type="button" className="link" onClick={stagedToInbox}>In den Posteingang verschieben</button>
+                            </Notice>
+                        )}
+                    </Field>
                 </div>
             </fieldset>
 
@@ -287,7 +442,32 @@ export default function InvoiceForm() {
                 <span className="spacer"/>
                 {id && <button className="danger" onClick={remove}>Löschen</button>}
             </div>
-        </>
+        </div>
+    );
+}
+
+/** A page of the invoice's documents: preview, open, remove. */
+function DocTile({url, type, label, title, isNew, onOpen, onRemove}: {
+    url: string;
+    type: string;
+    label: string;
+    title?: string;
+    isNew?: boolean;
+    onOpen: () => void;
+    onRemove: () => void;
+}) {
+    return (
+        <div className="doc-tile" title={title}>
+            <button type="button" className="doc-open" onClick={onOpen} aria-label={`${label} öffnen`}>
+                <DocThumb url={url} type={type} label={label}/>
+            </button>
+            <div className="doc-meta">
+                <span>{label}</span>
+                {isNew && <Badge kind="good">neu</Badge>}
+                <span className="spacer"/>
+                <button type="button" className="link" onClick={onRemove} aria-label={`${label} entfernen`} title="Entfernen">✕</button>
+            </div>
+        </div>
     );
 }
 

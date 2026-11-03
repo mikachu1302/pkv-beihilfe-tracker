@@ -20,7 +20,8 @@ import (
 )
 
 // FilePrefix is the URL path under which the webview gets data folder files:
-// FilePrefix+"inbox/<name>" and FilePrefix+"doc/<name>".
+// FilePrefix+"inbox/<name>" and FilePrefix+"doc/<name>", and documents added
+// in the invoice form before it is saved: FilePrefix+"staged/<id>".
 const FilePrefix = "/datafile/"
 
 // phoneUploadTTL is how long the phone upload stays open at most.
@@ -256,6 +257,8 @@ func (s *Service) ServeFile(w http.ResponseWriter, r *http.Request) bool {
 		path, err = st.InboxPath(strings.TrimPrefix(rest, "inbox/"))
 	case strings.HasPrefix(rest, "doc/"):
 		path, err = st.DocumentPath(strings.TrimPrefix(rest, "doc/"))
+	case strings.HasPrefix(rest, "staged/"):
+		path, err = s.stagedPath(strings.TrimPrefix(rest, "staged/"))
 	default:
 		err = os.ErrNotExist
 	}
