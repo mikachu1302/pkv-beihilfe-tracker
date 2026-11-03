@@ -24,6 +24,8 @@ export default defineConfig({
         environment: "jsdom",
         globals: true,
         setupFiles: ["./src/test/setup.ts"],
+        // The contrast test reads the token files (?raw); other CSS stays empty in tests.
+        css: {include: [/src\/styles\/.*\.css/]},
         // Wails bindings are mocked in tests; the real runtime is not needed.
         server: {deps: {inline: ["@wailsio/runtime"]}},
     },

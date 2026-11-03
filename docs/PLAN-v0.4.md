@@ -1,6 +1,6 @@
 # v0.4.0 – Redesign, views and themes (plan)
 
-Status: planned, analysed · 2026-11-03 · mockups: the design canvas "PKV Beihilfe –
+Status: implemented (steps 1–7, see "Implementation") · 2026-11-03 · mockups: the design canvas "PKV Beihilfe –
 Designrichtungen" (private claude.ai artifact of the owner; board "A · Nachtschicht" and section
 "v0.3.0 · Drei Ansichten, hell und dunkel" – the mockups were made when the redesign was still
 planned for v0.3.0).
@@ -104,7 +104,8 @@ rows of overscan. Details:
 - Keyboard: ↑/↓ moves the selection and scrolls it into view (`scrollToIndex`); focus stays on
   the selected row even when rows are recycled.
 - Screen readers: `aria-rowcount` on the table and `aria-rowindex` on every rendered row, so the
-  position ("Zeile 120 von 300") is announced although only part of the rows exists.
+  position ("Zeile 120 von 300") is announced although only part of the rows exists. (Kompakt is
+  a list with `aria-setsize`/`aria-posinset` instead – see Implementation.)
 - The search of the browser (Strg+F) cannot find rows that are not rendered – the app's own search
   (Strg+F in the list) filters all invoices, as today.
 - Detail cards are fewer and taller; they use the same technique only if measurements show a need.
@@ -148,6 +149,47 @@ the same filters and search, the same sort order unless the table is sorted othe
    for all four design/theme combinations, headless screenshots of the main pages in each (the
    new views in the new design, light and dark);
    docs (README, PLAN).
+
+## Implementation (2026-11-03)
+
+All seven steps are done (commits "v0.4.0 step 1" … "step 7"). Decided or changed on the way:
+
+- **Design switch**: `public/boot.js` (a plain script from `public/`, allowed by `script-src
+  'self'`) sets `data-theme` and `data-design` from localStorage before the first paint;
+  `lib/theme.ts` / `lib/design.ts` take over, `AppearanceSync` applies the device configuration.
+  The `prefers-color-scheme` copies of the dark tokens are gone. The accent is split into
+  `--accent` (fill) and `--accent-fg` (text, lines, focus) in both designs – lime is no text
+  colour on white.
+- **Fonts**: `@fontsource-variable/space-grotesk` and `…/jetbrains-mono` 5.3.0 (pinned), only the
+  Latin and Latin Extended files (~100 KB); the OFL texts are copied to `public/licenses`.
+- **Menu**: the new design starts with the icon rail until the menu is expanded or collapsed
+  once (then the choice is kept, as before).
+- **One-time hint** ("Neues Aussehen … Klassisch verwenden / Verstanden"): only on devices that
+  had a data folder before v0.4.0 (`designHintSeen` is set when a device is set up), only in the
+  new design; choosing a design closes it too.
+- **Status pill**: "nicht eingereicht" instead of the mockup's "offen" – the same word as the
+  filter and the form, and not to be confused with "Erstattung offen".
+- **Bulk selection** in every view: checkbox in the Detail card, the Kompakt line and a selection
+  column of the table (sticky with the first column); "Alle auswählen" in the view bar.
+- **Detail**: a click on the card opens the invoice (as a row of the classic list); footer with
+  note, Klärung, deviation, hints, "Erstattung seit N Wochen offen" (the dashboard's 42-day rule,
+  now `calc.LongWaitDays`), documents and "Bescheid … verknüpft". Below the cards: count, amount,
+  "Nicht erstattet".
+- **Kompakt**: dots = progress (zurückgehalten 1, eingereicht 2, erstattet 3; the third red on
+  Klärung, orange on a deviation), always with the short text. "Offen" = SOLL − IST of claims not
+  held back or skipped. A click expands the line (so do the chevron and →), double click or Enter
+  opens. It scrolls with the page; a list with `aria-setsize`/`aria-posinset`, because an ARIA
+  table row cannot hold the expanded details.
+- **Tabelle**: list order until a column is sorted; ascending → descending → list order again.
+  The table fills the rest of the window (at least 360 px) so the sum row is in view; it scrolls
+  inside, both ways. Amounts without "€", dates as "TT.MM.JJ" (full date as tooltip).
+- **Settings · Darstellung**: design and default view as option cards (title = name of the
+  radio, text = its description); table options there and in the column chooser are the same.
+- **Tests**: views (cards, ticks, popovers, keyboard, view switch for the session, sorting,
+  column chooser, only visible rows in Tabelle and Kompakt), settings, appearance in the backend,
+  and `styles/contrast.test.ts`, which reads the token files and checks every text/background
+  pair of both designs in light and dark (≥ 4.5:1). Headless screenshots (server mode, Firefox)
+  of the main pages in all four combinations were checked by eye; they are not kept in the repo.
 
 ## Open points
 

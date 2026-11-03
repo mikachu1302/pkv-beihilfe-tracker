@@ -209,12 +209,15 @@ ServiceYear = Leistungsjahr · PremiumRefund = Beitragsrückerstattung.
   submitted or still to be submitted, plus deviations of refunded claims until accepted;
   held-back and skipped claims are not owed). A row opens
   the invoice when clicked anywhere outside its controls (also ✎ next to the name); notes show
-  as a "Notiz" badge with the text on hover.
+  as a "Notiz" badge with the text on hover. Since v0.4.0 the new design offers the views
+  Detail, Kompakt and Tabelle besides this table ("Klassische Liste"); see
+  [PLAN-v0.4.md](PLAN-v0.4.md).
 - **Rechnung**: detail form with SOLL/IST per payer, documents, refunds.
 - **Dashboard** per year; **Alle Jahre** (overview): per payer the Ausstand over all years
   (cards) and per year (column next to SOLL / IST).
 - **Posteingang**: drafts from scans and refund documents with review.
-- **Einstellungen**: payers, coverage periods, year settings, data folder, backups. Aliases
+- **Einstellungen**: payers, coverage periods, year settings, data folder, backups, Darstellung
+  (design, default view, colour scheme, table options – per device). Aliases
   and column layouts are learned from confirmed refund documents and kept, but there is no
   screen to edit them yet (section 15).
 
@@ -423,3 +426,17 @@ into the repo.
   "Speichern & nächste" and removing a page stop a running recognition, saving waits for
   documents still being taken over, the review of a Bescheid is read again when its pages change
   (or offers to), the merged document is selected, the first paint follows the system scheme.
+- **v0.4.0** (plan: [PLAN-v0.4.md](PLAN-v0.4.md)): design switch (new by default, classic) as
+  `data-design` next to `data-theme`; `public/boot.js` sets both before the first paint, so the
+  stylesheets need no `prefers-color-scheme` copies. Styles split into `styles/base.css` (shared),
+  `classic.css` and `new.css` (tokens; new-design rules scoped to `[data-design="new"]`, rules for
+  plain elements in `:where()`), `views.css` and `fonts.css` (Space Grotesk and JetBrains Mono from
+  `@fontsource-variable`, Latin only, OFL texts shipped). The accent is split into a fill
+  (`--accent`) and text/lines (`--accent-fg`). A test checks the text contrast of both designs in
+  light and dark from the token files. Invoice views in `pages/invoices/` share one set of props
+  (rows, selection, ticks, popovers); Tabelle and Kompakt render only the visible rows
+  (`@tanstack/react-virtual`, pinned) – Kompakt is a list with `aria-setsize`/`aria-posinset`
+  because an ARIA table row cannot hold the expanded details. Rows now carry the due date, claims
+  the days since submission (`calc.LongWaitDays`, shared with the reminders) and whether a refund
+  came from a Bescheid. Device config: `design`, `designHintSeen` (set when a device is set up, so
+  only existing devices see the hint), `view`, `table`.

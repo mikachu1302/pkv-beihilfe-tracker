@@ -6,7 +6,11 @@ the PKV, what came back, what is still open, and whether claiming from the PKV p
 compared with the premium refund (Beitragsrückerstattung). The user interface is German.
 
 - **Invoice list** with checkboxes per payer (eingereicht, erstattet, Klärungsbedarf, bezahlt)
-  that record the date; bulk "eingereicht" for several invoices.
+  that record the date; bulk "eingereicht" for several invoices. Four views: **Detail** (one card
+  per invoice with SOLL, IST and dates per payer), **Kompakt** (one line per invoice with status
+  dots, expandable), **Tabelle** (every field as a column like a spreadsheet: sortable, column
+  chooser, sum row – read only) and the classic list. Long lists stay fast: Tabelle and Kompakt
+  render only the visible rows.
 - **SOLL/IST per invoice and payer**; SOLL follows the share (50/50, 70/30 or 100 % PKV) at the
   date of treatment.
 - **Dashboard per year** (Leistungsjahr = year of treatment), comparison "claim from the PKV
@@ -31,7 +35,9 @@ compared with the premium refund (Beitragsrückerstattung). The user interface i
   There is no server and no account, and nothing runs in the cloud. Changes from other devices
   show up while the app runs; conflict copies are merged field by field.
 - **Backups**: daily zip snapshots to a second folder (USB stick, NAS, another cloud).
-- **Light and dark** colour scheme, or following the system – per device.
+- **Two designs**, chosen per device: the new one (default – calm surfaces, one accent colour,
+  amounts in a monospace face, an icon rail) and the classic look of v0.3 with the classic list;
+  each **light or dark**, or following the system.
 
 Status: all planned milestones (M1–M6) are done. Releases: push a tag `v1.2.3` – GitHub Actions
 builds the Windows installer, the macOS app and Linux packages. See [docs/PLAN.md](docs/PLAN.md).
