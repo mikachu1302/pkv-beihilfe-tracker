@@ -58,8 +58,10 @@ a key answers 401 – as described.
 3. The backend checks `/health`, sends one chat request with the pages and a JSON schema, and turns
    the answer into the same `extract.Draft` the OCR produces, with sources per field.
 4. The frontend fills the fields with the existing prefill logic (`lib/prefill.ts`): only empty
-   fields and values marked "bitte prüfen" are replaced; typed values never. A value the AI
-   confirms keeps its place.
+   fields and values marked "bitte prüfen" are replaced; typed values never. Where OCR and AI
+   disagree, the order of trust decides (open point 3): **GiroCode > AI confirmed by the OCR text
+   > OCR (label) > AI alone**; the value that loses is shown as a hint next to the field
+   ("Texterkennung: …" / "KI: …") instead of being dropped silently.
 
 ### Backend: `internal/airead` (new)
 
@@ -138,9 +140,9 @@ trying if the matcher misses cases the AI gets right (measure in the test).
    with a click ("Mit KI auslesen", later the same for Bescheide); nothing runs automatically –
    not when the OCR is unsure, not in the background for the inbox. (The server is shared and
    slow, and health data leaves the device only when the user asks for it.)
-3. **Conflicts** (open): when OCR (label) and AI disagree, which wins? Recommendation: GiroCode >
-   AI confirmed by OCR > OCR label > AI alone; a disagreement is shown as a hint ("Texterkennung:
-   …") instead of silently replacing.
+3. **Conflicts – decided 2026-11-03: GiroCode > AI confirmed by the OCR text > OCR (label) > AI
+   alone.** The losing value is shown as a hint next to the field, never replaced silently; a
+   value the user typed always stays.
 4. Is the 8B model good enough, or is the NPU path (Qwen3-VL-4B, faster, less exact) worth
    comparing? Decided by the test.
 5. Multi-page: one request or one per page (see Design) – decided by the test.
