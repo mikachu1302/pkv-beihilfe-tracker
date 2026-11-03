@@ -305,19 +305,28 @@ var stopwords = map[string]bool{
 	"mvz": true, "und": true, "fuer": true, "frau": true, "herr": true, "fa": true,
 }
 
-// normalize lowercases, folds umlauts and drops titles and legal forms.
-func normalize(s string) string {
-	s = strings.NewReplacer("ä", "ae", "ö", "oe", "ü", "ue", "ß", "ss",
-		"Ä", "ae", "Ö", "oe", "Ü", "ue").Replace(strings.ToLower(s))
-	words := strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+// Fold lowercases a text and writes umlauts out ("Müller" → "mueller"), also
+// when they come decomposed (a letter and a combining diaeresis, e.g. pasted text).
+func Fold(s string) string { return folder.Replace(strings.ToLower(s)) }
+
+var folder = strings.NewReplacer("a\u0308", "ae", "o\u0308", "oe", "u\u0308", "ue", "A\u0308", "ae", "O\u0308", "oe", "U\u0308", "ue",
+	"ä", "ae", "ö", "oe", "ü", "ue", "ß", "ss", "Ä", "ae", "Ö", "oe", "Ü", "ue")
+
+// NameWords are the words of a name as compared: folded, without punctuation,
+// titles and legal forms ("Praxis Dr. med. Anna Müller" → anna, mueller).
+func NameWords(s string) []string {
+	words := strings.FieldsFunc(Fold(s), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
 	out := words[:0]
 	for _, w := range words {
 		if !stopwords[w] {
 			out = append(out, w)
 		}
 	}
-	return strings.Join(out, " ")
+	return out
 }
+
+// normalize is the name as compared, as one string.
+func normalize(s string) string { return strings.Join(NameWords(s), " ") }
 
 func providerSimilarity(name string, inv *model.Invoice, aliases map[string]map[string]bool) float64 {
 	n := normalize(name)

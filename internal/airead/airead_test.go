@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -270,5 +271,62 @@ func TestReadErrors(t *testing.T) {
 	}()
 	if _, err := Read(ctx, c, ok); !errors.Is(err, context.Canceled) {
 		t.Errorf("cancel: %v", err)
+	}
+}
+
+// Findings of the review of 2026-11-03.
+func TestMergeConsistency(t *testing.T) {
+	// The period from two readings: an end before the start gives way.
+	text := `Praxis Dr. Beispiel
+Rechnungsdatum: 14.03.2026
+Behandlungsdatum: 05.03.2026
+Rechnungsbetrag 120,00 €`
+	a := Answer{Art: "rechnung", BehandlungVon: "2026-02-20", BehandlungBis: "2026-03-01"}
+	r := Merge(a, Input{Lines: lines(text), Now: now})
+	if r.Draft.ServiceFrom.String() != "2026-03-05" || !r.Draft.ServiceTo.IsZero() ||
+		r.Others["serviceTo"] != (Other{extract.SrcAI, "2026-03-01"}) || slices.Contains(r.FromAI, "serviceTo") {
+		t.Errorf("period %v–%v, others %+v, from AI %v", r.Draft.ServiceFrom, r.Draft.ServiceTo, r.Others, r.FromAI)
+	}
+
+	// Treatment dates are checked against the invoice date that is taken (the labelled one).
+	a = Answer{Art: "rechnung", Rechnungsdatum: "2025-03-14", BehandlungVon: "2026-03-03", BehandlungBis: "2026-03-10"}
+	r = Merge(a, Input{Lines: lines(invoiceText), Now: now})
+	if r.Draft.InvoiceDate.String() != "2026-03-14" || r.Draft.ServiceFrom.String() != "2026-03-03" ||
+		strings.Contains(strings.Join(r.Draft.Notes, " "), "Behandlung von") {
+		t.Errorf("dates %v %v, notes %v", r.Draft.InvoiceDate, r.Draft.ServiceFrom, r.Draft.Notes)
+	}
+
+	// A due date weeks ahead is fine (only invoice and treatment cannot lie in the future).
+	r = Merge(Answer{Rechnungsdatum: "2026-11-01", FaelligAm: "2026-12-15"}, Input{Now: now})
+	if r.Draft.Due.String() != "2026-12-15" {
+		t.Errorf("due %v, notes %v", r.Draft.Due, r.Draft.Notes)
+	}
+
+	// A part of the invoice number is no confirmation; the complete number stays.
+	for _, part := range []string{"0815", "2026"} {
+		r = Merge(Answer{Rechnungsnummer: part}, Input{Lines: lines(invoiceText), Now: now})
+		if r.Draft.Reference != "2026-0815" {
+			t.Errorf("AI %q: reference %q, others %+v", part, r.Draft.Reference, r.Others)
+		}
+	}
+
+	// The text recognition's note about its guessed amount goes when the AI's amount is taken.
+	receipt := `Stadt-Apotheke
+Ibuprofen 400 7,49
+Nasenspray 4,98`
+	r = Merge(Answer{Betrag: "12.47"}, Input{Lines: lines(receipt), Now: now})
+	if r.Draft.Amount.String() != "12.47" || slices.Contains(r.Draft.Notes, extract.NoteAmountGuessed) {
+		t.Errorf("amount %v, notes %v", r.Draft.Amount, r.Draft.Notes)
+	}
+
+	// Names compare as names: the provider of an earlier invoice confirms with or without "Praxis".
+	r = Merge(Answer{Behandler: "Praxis Dr. Anna Beispiel"}, Input{Now: now, Known: []string{"Dr. Anna Beispiel"}})
+	if r.Draft.Sources["provider"] != extract.SrcAIConfirmed {
+		t.Errorf("provider source %q", r.Draft.Sources["provider"])
+	}
+	// An IBAN needs the form, not only the checksum.
+	r = Merge(Answer{IBAN: "12345678901234567890"}, Input{Now: now})
+	if r.Draft.IBAN != "" {
+		t.Errorf("IBAN %q", r.Draft.IBAN)
 	}
 }

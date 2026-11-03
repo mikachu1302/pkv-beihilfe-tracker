@@ -231,7 +231,7 @@ func claimSummary(set *model.Settings, inv *model.Invoice) []string {
 			refunded += r.Amount
 		}
 		if len(c.Refunds) > 0 {
-			parts = append(parts, "erstattet "+refunded.DE()+" €")
+			parts = append(parts, "erstattet "+refunded.EUR())
 		}
 		if len(parts) > 0 {
 			out = append(out, name+": "+strings.Join(parts, ", "))

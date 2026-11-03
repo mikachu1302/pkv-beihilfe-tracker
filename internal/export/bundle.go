@@ -142,7 +142,7 @@ func writeCover(b Bundle, path string) error {
 	pdf.SetFont("Helvetica", "", 9)
 	var sum money.Cents
 	for i, it := range b.Items {
-		cells := []string{fmt.Sprint(i + 1), truncate(it.Provider, 38), it.ServiceDate.DE(), it.InvoiceDate.DE(), truncate(it.Reference, 14), it.Amount.DE() + " €"}
+		cells := []string{fmt.Sprint(i + 1), truncate(it.Provider, 38), it.ServiceDate.DE(), it.InvoiceDate.DE(), truncate(it.Reference, 14), it.Amount.EUR()}
 		for j, c := range cells {
 			align := "L"
 			if j == len(cells)-1 {
@@ -155,7 +155,7 @@ func writeCover(b Bundle, path string) error {
 	}
 	pdf.SetFont("Helvetica", "B", 9)
 	pdf.CellFormat(widths[0]+widths[1]+widths[2]+widths[3]+widths[4], 7, tr("Summe"), "", 0, "L", false, 0, "")
-	pdf.CellFormat(widths[5], 7, tr(sum.DE()+" €"), "", 1, "R", false, 0, "")
+	pdf.CellFormat(widths[5], 7, tr(sum.EUR()), "", 1, "R", false, 0, "")
 	pdf.Ln(6)
 	pdf.SetFont("Helvetica", "", 8)
 	pdf.SetTextColor(100, 107, 118)

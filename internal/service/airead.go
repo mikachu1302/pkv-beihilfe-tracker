@@ -42,7 +42,8 @@ type AIReadDTO struct {
 // maxPageBytes bounds one page image (a 1,400 px JPEG is a few hundred KB).
 const maxPageBytes = 8 << 20
 
-var pageTypes = []string{"data:image/jpeg;base64,", "data:image/png;base64,", "data:image/webp;base64,"}
+// pageTypes are the images the server reads (llama.cpp decodes JPEG and PNG; the app sends JPEG).
+var pageTypes = []string{"data:image/jpeg;base64,", "data:image/png;base64,"}
 
 // ReadWithAI reads a document with the local AI server and merges the
 // answer with the text recognition (GiroCode > AI confirmed > text

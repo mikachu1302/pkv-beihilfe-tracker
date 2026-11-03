@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/civil"
+	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/match"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/model"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/money"
 )
@@ -239,8 +240,45 @@ func TestNameMatches(t *testing.T) {
 		{"Zahnarzt", "Zahnarztpraxis Dr. Beispiel", true},
 		{"Dr.", "Dr. Muster", false},
 	} {
-		if nameMatches(c.want, c.name) != c.ok {
+		if nameMatches(match.NameWords(c.want), c.name) != c.ok {
 			t.Errorf("%q in %q: want %v", c.want, c.name, c.ok)
 		}
+	}
+}
+
+func TestRunFromReview(t *testing.T) {
+	// "ohne Klärungsbedarf": no claim needs clarifying (C and D have deviations, F is marked).
+	if r := run(t, Query{Kind: KindList, Filters: filters(FieldClarify, No)}); !slices.Equal(r.Invoices, []string{"B", "A"}) {
+		t.Errorf("without Klärungsbedarf %v", r.Invoices)
+	}
+	// An invoice amount has no share per payer: SOLL and IST instead (not the amount twice).
+	r := run(t, Query{Kind: KindSum, Measure: MeasureAmount, GroupBy: GroupPayer})
+	if len(r.Groups) != 2 || !strings.HasPrefix(r.Groups[0].Value, "SOLL ") {
+		t.Errorf("amount by payer %+v", r.Groups)
+	}
+	// IST by payer counts the refunded claims only (the PKV held C back).
+	r = run(t, Query{Kind: KindSum, Measure: MeasureActual, Years: []int{2025}, GroupBy: GroupPayer})
+	if !slices.Equal(r.Groups, []Group{{"Beihilfe Bund", 1, "200,00 €"}}) {
+		t.Errorf("IST by payer %+v", r.Groups)
+	}
+	// The largest cut first, as large as a surplus.
+	r = run(t, Query{Kind: KindSum, Measure: MeasureDiff, GroupBy: GroupProvider})
+	if r.Groups[0].Label != "Physiotherapie Lotte Probe" || r.Groups[0].Value != "-18,40 €" {
+		t.Errorf("difference by provider %+v", r.Groups)
+	}
+	// A list with an amount is sorted by it.
+	if r := run(t, Query{Kind: KindList, Measure: MeasureAmount}); !slices.Equal(r.Invoices, []string{"B", "C", "A", "F", "D"}) {
+		t.Errorf("by amount %v", r.Invoices)
+	}
+}
+
+func TestPremiumSeveralPKVs(t *testing.T) {
+	d := testData()
+	d.Settings.Payers = append(d.Settings.Payers, model.Payer{ID: "pkv2", Kind: model.PKV, Name: "Zweite PKV"})
+	d.Settings.Coverage[0].Shares = append(d.Settings.Coverage[0].Shares, model.Share{PayerID: "pkv2", Rate: money.Percent(10)})
+	d.Settings.Years = append(d.Settings.Years, model.YearSetting{Year: 2026, PayerID: "pkv2", ExpectedPremiumRefund: 10000})
+	r := Run(d, Query{Kind: KindPremium}, today)
+	if len(r.Figures) != 4 || !strings.HasPrefix(r.Figures[0].Label, "Muster PKV: ") || !strings.HasPrefix(r.Figures[2].Label, "Zweite PKV: ") {
+		t.Errorf("figures %+v", r.Figures)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/civil"
+	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/model"
 )
 
 // Chip is one part of how the app understood a question – shown with the
@@ -25,7 +26,6 @@ var (
 		FieldPaid:      {Yes: "bezahlt", No: "nicht bezahlt"},
 		FieldDeadline:  {Yes: "Frist bald"},
 		FieldStatus:    StatusLabels,
-		FieldCategory:  CategoryLabels,
 	}
 )
 
@@ -37,7 +37,7 @@ func Describe(q Query) []Chip {
 		out = append(out, Chip{Key: "jahre", Text: yearList(q.Years)})
 	}
 	for _, f := range q.Filters {
-		out = append(out, Chip{Key: f.Field, Text: FilterText(f)})
+		out = append(out, Chip{Key: f.Field, Text: filterText(f)})
 	}
 	if q.GroupBy != "" {
 		out = append(out, Chip{Key: "gruppierung", Text: GroupLabels[q.GroupBy]})
@@ -67,10 +67,15 @@ func kindText(q Query) string {
 	return "keine Frage zu den eigenen Daten"
 }
 
-// FilterText is a filter as the chip shows it.
-func FilterText(f Filter) string {
+// filterText is a filter as the chip shows it.
+func filterText(f Filter) string {
 	if l := valueLabels[f.Field][f.Value]; l != "" {
 		return l
+	}
+	if f.Field == FieldCategory {
+		if l := model.Category(f.Value).Label(); l != "" {
+			return l
+		}
 	}
 	switch f.Field {
 	case FieldProvider:
@@ -86,17 +91,6 @@ func FilterText(f Filter) string {
 		return word + f.Value
 	}
 	return f.Value // payer names, values the labels do not know
-}
-
-// MeasureLabel names a measure ("Erstattet (IST)").
-func MeasureLabel(m string) string { return measureLabels[m] }
-
-// YearsText: "2026", "2025 und 2026" (exported for the UI's year choice).
-func YearsText(years []int) string {
-	if len(years) == 0 {
-		return "alle Jahre"
-	}
-	return yearList(years)
 }
 
 // String is the query in one line (for logs and tests): "Anzahl · 2026 · nicht eingereicht".

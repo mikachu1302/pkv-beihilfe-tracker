@@ -7,16 +7,13 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"time"
+	"unicode/utf8"
 
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/ai"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/ask"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/calc"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/model"
 )
-
-// QuestionTimeout bounds the AI's work on one question (a few seconds usually).
-const QuestionTimeout = 60 * time.Second
 
 // QueryDTO is a query as the AI writes it (German keys, see internal/ask).
 type QueryDTO = ask.Query
@@ -72,16 +69,12 @@ func (s *Service) Ask(ctx context.Context, in AskInputDTO) (AnswerDTO, error) {
 	if question == "" {
 		return AnswerDTO{}, errors.New("bitte eine Frage eingeben")
 	}
-	if len([]rune(question)) > 500 {
+	if utf8.RuneCountInString(question) > 500 {
 		return AnswerDTO{}, errors.New("die Frage ist zu lang (höchstens 500 Zeichen)")
 	}
 	c, err := s.aiClient(false)
 	if err != nil {
 		return AnswerDTO{}, err
-	}
-	if c.Lock.Busy() {
-		// A document takes minutes; a question should not wait for it unnoticed.
-		return AnswerDTO{}, errors.New("Die KI liest gerade einen Beleg – die Frage bitte gleich noch einmal stellen")
 	}
 	s.mu.Lock()
 	_, data, err := s.ready()
@@ -89,15 +82,17 @@ func (s *Service) Ask(ctx context.Context, in AskInputDTO) (AnswerDTO, error) {
 		s.mu.Unlock()
 		return AnswerDTO{}, err
 	}
-	settings := data.Settings // a copy: the AI call runs without the lock
+	// The AI call runs without the lock: a copy of what it needs (the payers).
+	settings := model.Settings{Payers: slices.Clone(data.Settings.Payers)}
 	today := s.today()
 	s.mu.Unlock()
 
 	if err := c.Health(ctx); err != nil {
 		return AnswerDTO{}, err
 	}
-	a, err := c.Chat(ctx, ai.Request{Name: "abfrage", Schema: ask.Schema(&settings), MaxTokens: 400, Timeout: QuestionTimeout,
-		Messages: ask.Messages(&settings, today, in.History, question)})
+	req := ask.Request(&settings, today, in.History, question)
+	req.NoWait = true // reading a document takes minutes: a question does not wait for it unnoticed
+	a, err := c.Chat(ctx, req)
 	if err != nil {
 		return AnswerDTO{}, err
 	}
@@ -142,10 +137,12 @@ func (s *Service) RunQuery(q QueryDTO) (AnswerDTO, error) {
 	for _, g := range r.Groups {
 		out.Groups = append(out.Groups, GroupDTO(g))
 	}
+	byID := make(map[string]*model.Invoice, len(data.Invoices))
+	for i := range data.Invoices {
+		byID[data.Invoices[i].ID] = &data.Invoices[i]
+	}
 	for _, id := range r.Invoices {
-		i := slices.IndexFunc(data.Invoices, func(inv model.Invoice) bool { return inv.ID == id })
-		if i >= 0 {
-			inv := &data.Invoices[i]
+		if inv := byID[id]; inv != nil {
 			out.Invoices = append(out.Invoices, rowDTO(inv, calc.Invoice(&data.Settings, inv, today)))
 		}
 	}
@@ -186,8 +183,8 @@ func (s *Service) AskVocabulary() (AskVocabularyDTO, error) {
 	for _, st := range ask.Statuses {
 		v.Statuses = append(v.Statuses, ChoiceDTO{st, ask.StatusLabels[st]})
 	}
-	for _, c := range ask.Categories {
-		v.Categories = append(v.Categories, ChoiceDTO{c, ask.CategoryLabels[c]})
+	for _, c := range model.Categories {
+		v.Categories = append(v.Categories, ChoiceDTO{string(c), c.Label()})
 	}
 	for _, g := range ask.Groups[1:] {
 		v.Groups = append(v.Groups, ChoiceDTO{g, ask.GroupLabels[g]})

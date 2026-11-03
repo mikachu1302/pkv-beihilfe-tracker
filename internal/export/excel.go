@@ -23,11 +23,6 @@ var statusText = map[calc.Status]string{
 	calc.StatusSkipped:   "verzichtet",
 }
 
-var categoryText = map[model.Category]string{
-	model.CatDoctor: "Arzt", model.CatDentist: "Zahnarzt", model.CatPharmacy: "Apotheke", model.CatTherapy: "Heilmittel",
-	model.CatAids: "Hilfsmittel", model.CatHospital: "Krankenhaus", model.CatNaturopath: "Heilpraktiker", model.CatOther: "Sonstiges",
-}
-
 type sheet struct {
 	f    *excelize.File
 	name string
@@ -116,7 +111,7 @@ func Workbook(set *model.Settings, invoices []model.Invoice, allowances []model.
 			continue
 		}
 		v := calc.Invoice(set, in, today)
-		row := []any{v.Year, v.ServiceDate, in.InvoiceDate, in.Provider, categoryText[in.Category], in.Reference, in.Amount, in.Paid.Date}
+		row := []any{v.Year, v.ServiceDate, in.InvoiceDate, in.Provider, in.Category.Label(), in.Reference, in.Amount, in.Paid.Date}
 		for _, p := range set.Payers {
 			var cv *calc.ClaimView
 			for j := range v.Claims {

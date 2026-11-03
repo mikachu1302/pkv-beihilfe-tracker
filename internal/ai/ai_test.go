@@ -64,7 +64,7 @@ func TestErrors(t *testing.T) {
 		{"no key", Client{URL: srv.URL + "/v1"}, ErrKey, "HTTP 401"},
 		{"no JSON", Client{URL: srv.URL + "/v1", Key: "key"}, ErrAnswer, ""},
 		{"wrong path", Client{URL: srv.URL + "/api", Key: "key"}, ErrUnreachable, "endet auf /v1"},
-		{"bad address", Client{URL: "192.168.178.38:8080"}, ErrNotSet, "ungültige Serveradresse"},
+		{"bad address", Client{URL: "192.168.178.38:8080"}, ErrNotSet, "keine Serveradresse"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -183,18 +183,43 @@ func TestOneRequestAtATime(t *testing.T) {
 	if _, err := c.Chat(ctx, Request{}); !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("waiting request: %v", err)
 	}
-	if n := started.Load(); n != 1 || !lock.Busy() {
-		t.Errorf("%d requests reached the server, busy %v", n, lock.Busy())
+	if n := started.Load(); n != 1 {
+		t.Errorf("%d requests reached the server", n)
+	}
+	// A request that must not wait gives up at once.
+	if _, err := c.Chat(t.Context(), Request{NoWait: true}); !errors.Is(err, ErrBusy) {
+		t.Errorf("no wait: %v", err)
 	}
 	close(release)
 	if err := <-first; err != nil {
 		t.Fatal(err)
 	}
 	// Free again.
-	if lock.Busy() {
-		t.Error("still busy")
-	}
-	if _, err := c.Chat(t.Context(), Request{}); err != nil {
+	if _, err := c.Chat(t.Context(), Request{NoWait: true}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestKeyErrorsAndAddresses(t *testing.T) {
+	// A proxy that wants the key for /health too.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusUnauthorized) }))
+	t.Cleanup(srv.Close)
+	err := (&Client{URL: srv.URL + "/v1"}).Health(t.Context())
+	if !errors.Is(err, ErrKey) || !strings.Contains(err.Error(), "verlangt einen API-Schlüssel") {
+		t.Errorf("no key: %v", err)
+	}
+	err = (&Client{URL: srv.URL + "/v1", Key: "falsch"}).Health(t.Context())
+	if !errors.Is(err, ErrKey) || !strings.Contains(err.Error(), "den Schlüssel prüfen") {
+		t.Errorf("wrong key: %v", err)
+	}
+
+	for in, want := range map[string]string{
+		"http://10.0.0.5:8080": "http://10.0.0.5:8080/v1", " https://ki.local/v1/ ": "https://ki.local/v1",
+		"http://user:pass@10.0.0.5/v1": "", "10.0.0.5:8080": "", "ftp://x/v1": "", "http://x/v1?a=1": "",
+	} {
+		got, err := NormalizeURL(in)
+		if got != want || (want == "") != (err != nil) {
+			t.Errorf("NormalizeURL(%q) = %q, %v", in, got, err)
+		}
 	}
 }

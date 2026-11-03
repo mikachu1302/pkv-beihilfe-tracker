@@ -42,6 +42,7 @@ var (
 	ErrTimeout     = errors.New("Der KI-Server hat nicht rechtzeitig geantwortet")
 	ErrAnswer      = errors.New("Die Antwort des KI-Servers ist nicht lesbar")
 	ErrNotSet      = errors.New("KI ist nicht eingerichtet")
+	ErrBusy        = errors.New("Die KI ist gerade beschäftigt (liest einen Beleg oder beantwortet eine Frage) – bitte gleich noch einmal versuchen")
 )
 
 // Client sends requests to one server. The zero Lock lets requests run in
@@ -61,12 +62,18 @@ type Lock struct{ ch chan struct{} }
 // NewLock returns an open lock.
 func NewLock() *Lock { return &Lock{ch: make(chan struct{}, 1)} }
 
-// Busy reports whether a request is running.
-func (l *Lock) Busy() bool { return l != nil && len(l.ch) > 0 }
-
-func (l *Lock) acquire(ctx context.Context) (release func(), err error) {
+// acquire waits for the lock (or the context); with noWait it gives up at once with ErrBusy.
+func (l *Lock) acquire(ctx context.Context, noWait bool) (release func(), err error) {
 	if l == nil {
 		return func() {}, nil
+	}
+	if noWait {
+		select {
+		case l.ch <- struct{}{}:
+			return func() { <-l.ch }, nil
+		default:
+			return nil, ErrBusy
+		}
 	}
 	select {
 	case l.ch <- struct{}{}:
@@ -85,11 +92,29 @@ func (c *Client) client() *http.Client {
 
 // base is the API URL without a trailing slash; an error if it is no http(s) URL.
 func (c *Client) base() (string, error) {
-	u, err := url.Parse(strings.TrimSpace(c.URL))
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return "", fmt.Errorf("%w: ungültige Serveradresse „%s“ (Beispiel: %s)", ErrNotSet, c.URL, DefaultURL)
+	u, err := NormalizeURL(c.URL)
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", ErrNotSet, err)
 	}
-	return strings.TrimRight(u.String(), "/"), nil
+	return u, nil
+}
+
+// NormalizeURL checks and tidies a server address: http(s) with a host, no
+// user name or password in it (it would be shown in messages), no query; an
+// address without a path gets /v1 (llama.cpp, LM Studio and Ollama serve
+// the API there).
+func NormalizeURL(in string) (string, error) {
+	in = strings.TrimSpace(in)
+	u, err := url.Parse(in)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil ||
+		u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("„%s“ ist keine Serveradresse – Beispiel: %s", in, DefaultURL)
+	}
+	u.Path = strings.TrimRight(u.Path, "/")
+	if u.Path == "" {
+		u.Path = "/v1"
+	}
+	return u.String(), nil
 }
 
 // Health asks the server whether it is up (llama.cpp: GET /health, no key,
@@ -114,6 +139,8 @@ func (c *Client) Health(ctx context.Context) error {
 	switch {
 	case resp.StatusCode == http.StatusNotFound:
 		return nil
+	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
+		return c.keyError(resp.StatusCode) // a proxy in front of the server that wants the key for /health too
 	case resp.StatusCode == http.StatusServiceUnavailable:
 		// llama.cpp answers 503 while it loads the model.
 		return fmt.Errorf("%w: Der KI-Server startet noch (Modell wird geladen) – bitte gleich noch einmal versuchen", ErrUnreachable)
@@ -173,6 +200,7 @@ type Request struct {
 	Name      string        // name of the schema, e.g. "beleg"
 	MaxTokens int           // 0 = 800
 	Timeout   time.Duration // for this request, after the lock was taken; 0 = 60 s
+	NoWait    bool          // fail with ErrBusy instead of waiting for another request
 }
 
 // Timings are llama.cpp's speed figures of a request.
@@ -193,7 +221,7 @@ type Answer struct {
 // Chat sends one request (waiting for the lock first) and returns the JSON
 // object the model answered with.
 func (c *Client) Chat(ctx context.Context, r Request) (Answer, error) {
-	release, err := c.Lock.acquire(ctx)
+	release, err := c.Lock.acquire(ctx, r.NoWait)
 	if err != nil {
 		return Answer{}, err
 	}
@@ -303,7 +331,7 @@ func (c *Client) statusError(resp *http.Response) error {
 	msg := serverMessage(resp)
 	switch resp.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return fmt.Errorf("%w (HTTP %d) – in den Einstellungen unter „KI“ den Schlüssel prüfen", ErrKey, resp.StatusCode)
+		return c.keyError(resp.StatusCode)
 	case http.StatusNotFound:
 		if strings.Contains(strings.ToLower(msg), "model") {
 			return fmt.Errorf("%w: „%s“", ErrModel, c.Model)
@@ -319,6 +347,14 @@ func (c *Client) statusError(resp *http.Response) error {
 		return fmt.Errorf("Der KI-Server meldet einen Fehler (HTTP %d): %s", resp.StatusCode, msg)
 	}
 	return fmt.Errorf("Der KI-Server meldet einen Fehler (HTTP %d)", resp.StatusCode)
+}
+
+// keyError: the server refused the key – or wants one and none is stored.
+func (c *Client) keyError(status int) error {
+	if c.Key == "" {
+		return fmt.Errorf("%w: Der KI-Server verlangt einen API-Schlüssel (HTTP %d) – in den Einstellungen unter „KI“ eintragen", ErrKey, status)
+	}
+	return fmt.Errorf("%w (HTTP %d) – in den Einstellungen unter „KI“ den Schlüssel prüfen", ErrKey, status)
 }
 
 // serverMessage is the error text of an OpenAI-style error body, shortened.

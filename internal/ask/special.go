@@ -23,6 +23,8 @@ func premium(d Data, q Query, today civil.Date) Result {
 	payer := payerID(d.Settings, q.Get(FieldPayer))
 	r := Result{Invoices: []string{}}
 	var answers []string
+	// With several PKVs the figures name the PKV.
+	several := len(payerNames(d.Settings, model.PKV)) > 1 && payer == ""
 	for _, y := range calc.Years(d.Settings, d.Invoices, d.Allowances, today) {
 		if !slices.Contains(years, y.Year) {
 			continue
@@ -32,19 +34,26 @@ func premium(d Data, q Query, today civil.Date) Result {
 			if pr == nil || payer != "" && p.PayerID != payer {
 				continue
 			}
-			prefix := ""
+			var prefix []string
 			if len(years) > 1 {
-				prefix = strconv.Itoa(y.Year) + ": "
+				prefix = append(prefix, strconv.Itoa(y.Year))
+			}
+			if several {
+				prefix = append(prefix, p.PayerName)
+			}
+			pre := strings.Join(prefix, " · ")
+			if pre != "" {
+				pre += ": "
 			}
 			r.Figures = append(r.Figures,
-				Figure{prefix + "Alles einreichen: PKV zahlt", eur(pr.ClaimAll)},
-				Figure{prefix + "Nicht einreichen: Rückerstattung", eur(pr.HoldTotal)})
+				Figure{pre + "Alles einreichen: PKV zahlt", pr.ClaimAll.EUR()},
+				Figure{pre + "Nicht einreichen: Rückerstattung", pr.HoldTotal.EUR()})
 			var a string
 			switch {
 			case pr.Advantage > 0:
-				a = fmt.Sprintf("Einreichen lohnt sich: %s mehr als die Beitragsrückerstattung", eur(pr.Advantage))
+				a = fmt.Sprintf("Einreichen lohnt sich: %s mehr als die Beitragsrückerstattung", pr.Advantage.EUR())
 			case pr.Advantage < 0:
-				a = fmt.Sprintf("Nicht einreichen lohnt sich: die Beitragsrückerstattung bringt %s mehr", eur(-pr.Advantage))
+				a = fmt.Sprintf("Nicht einreichen lohnt sich: die Beitragsrückerstattung bringt %s mehr", (-pr.Advantage).EUR())
 			default:
 				a = "Beide Wege ergeben gleich viel"
 			}
@@ -73,7 +82,7 @@ func outstanding(d Data, q Query, today civil.Date) Result {
 		count                       int
 	}
 	byPayer := map[string]*acc{}
-	var owing []match
+	var owing []hit
 	for _, m := range selection(d, q, today) {
 		var owed money.Cents
 		for _, c := range m.claims {
@@ -120,18 +129,18 @@ func outstanding(d Data, q Query, today civil.Date) Result {
 	var parts []string
 	for _, a := range payers {
 		name := payerName(d.Settings, a.id)
-		parts = append(parts, name+" "+eur(a.total))
-		r.Groups = append(r.Groups, Group{Label: name, Count: a.count, Value: eur(a.total)})
+		parts = append(parts, name+" "+a.total.EUR())
+		r.Groups = append(r.Groups, Group{Label: name, Count: a.count, Value: a.total.EUR()})
 		for _, f := range []struct {
 			label string
 			v     money.Cents
 		}{{"eingereicht, Erstattung offen", a.submitted}, {"noch nicht eingereicht", a.open}, {"Abweichungen erstatteter Rechnungen", a.deviations}} {
 			if f.v != 0 {
-				r.Figures = append(r.Figures, Figure{name + ": " + f.label, eur(f.v)})
+				r.Figures = append(r.Figures, Figure{name + ": " + f.label, f.v.EUR()})
 			}
 		}
 	}
-	r.Answer = fmt.Sprintf("Noch ausstehend: %s", eur(sum))
+	r.Answer = fmt.Sprintf("Noch ausstehend: %s", sum.EUR())
 	if len(payers) > 1 {
 		r.Answer += " – " + strings.Join(parts, ", ")
 	}
@@ -146,8 +155,11 @@ func payerIndex(s *model.Settings, id string) int {
 	return i
 }
 
-// yearList: "2026", "2025 und 2026".
+// yearList: "2026", "2025 und 2026"; "alle Jahre" for none.
 func yearList(years []int) string {
+	if len(years) == 0 {
+		return "alle Jahre"
+	}
 	s := make([]string, len(years))
 	for i, y := range years {
 		s[i] = strconv.Itoa(y)

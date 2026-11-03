@@ -248,3 +248,34 @@ func TestAsk(t *testing.T) {
 		t.Errorf("vocabulary %+v %v", v, err)
 	}
 }
+
+func TestAIInputChecks(t *testing.T) {
+	s := newTestService(t)
+	if _, err := s.SetAISettings(AISettingsDTO{URL: "http://nutzer:geheim@10.0.0.5:8080/v1"}); err == nil {
+		t.Error("address with a password accepted")
+	}
+	if _, err := s.SetAIKey("abc\x00def"); err == nil {
+		t.Error("key with a control character accepted")
+	}
+
+	// A question while a document is read fails at once.
+	started, release := make(chan struct{}), make(chan struct{})
+	withAI(t, s, &aitest.Server{Answer: func(r aitest.Request) string {
+		if strings.Contains(r.Text("system"), "Belege") {
+			close(started)
+			<-release
+		}
+		return `{"typ":"anzahl"}`
+	}})
+	reading := make(chan error)
+	go func() {
+		_, err := s.ReadWithAI(t.Context(), AIReadInputDTO{Pages: []string{"data:image/jpeg;base64,/9j/AA=="}})
+		reading <- err
+	}()
+	<-started
+	if _, err := s.Ask(t.Context(), AskInputDTO{Question: "Wie viele Rechnungen?"}); !errors.Is(err, ai.ErrBusy) {
+		t.Errorf("busy: %v", err)
+	}
+	close(release)
+	<-reading
+}

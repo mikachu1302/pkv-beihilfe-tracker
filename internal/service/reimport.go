@@ -320,7 +320,7 @@ func fieldText(key, v string) string {
 	switch {
 	case key == "amount" || strings.HasPrefix(key, "refund:"):
 		if c, err := money.Parse(v); err == nil {
-			return c.DE() + " €"
+			return c.EUR()
 		}
 	case key == "invoiceDate" || key == "serviceFrom" || key == "paid" || strings.HasPrefix(key, "submitted:"):
 		if d, err := civil.Parse(v); err == nil {

@@ -146,6 +146,9 @@ func (c Cents) DE() string {
 	return fmt.Sprintf("%s%s,%02d", sign, b.String(), v%100)
 }
 
+// EUR returns the German format with the currency sign: "-1.234,50 €".
+func (c Cents) EUR() string { return c.DE() + " €" }
+
 // Abs returns the absolute amount.
 func (c Cents) Abs() Cents {
 	if c < 0 {

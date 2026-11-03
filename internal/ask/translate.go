@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/ai"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/civil"
@@ -21,15 +22,15 @@ type Turn struct {
 	Query    Query  `json:"abfrage"`
 }
 
-// MaxTurns is how many earlier questions go along (for follow-ups such as "und 2025?").
-const MaxTurns = 2
+// maxTurns is how many earlier questions go along (for follow-ups such as "und 2025?").
+const maxTurns = 2
 
 // Schema is the JSON schema of a query for these settings (payer names as
 // the allowed values), with the properties in the order the model writes them.
 func Schema(s *model.Settings) json.RawMessage {
-	vals := FilterValues(s)
+	vals := filterValues(s)
 	var filters []any
-	for _, f := range FilterFields {
+	for _, f := range filterFields {
 		value := map[string]any{"type": "string"}
 		if v := vals[f]; v != nil {
 			value = map[string]any{"enum": v}
@@ -43,8 +44,8 @@ func Schema(s *model.Settings) json.RawMessage {
 		key  string
 		prop any
 	}{
-		{"typ", map[string]any{"type": "string", "enum": Kinds}},
-		{"messgroesse", map[string]any{"type": "string", "enum": Measures}},
+		{"typ", map[string]any{"type": "string", "enum": kinds}},
+		{"messgroesse", map[string]any{"type": "string", "enum": measures}},
 		{"jahre", map[string]any{"type": "array", "items": map[string]any{"type": "integer"}}},
 		{"filter", map[string]any{"type": "array", "items": map[string]any{"anyOf": filters}}},
 		{"gruppierung", map[string]any{"type": "string", "enum": Groups}},
@@ -66,24 +67,9 @@ func Schema(s *model.Settings) json.RawMessage {
 	return json.RawMessage(b.String())
 }
 
-// payerNames: the names of the payers of one kind, joined ("Beihilfe Bund").
-func payerNames(s *model.Settings, kind model.PayerKind) []string {
-	var out []string
-	for _, p := range s.Payers {
-		if p.Kind == kind {
-			out = append(out, p.Name)
-		}
-	}
-	return out
-}
-
-// System is the instructions for the model: today, the vocabulary and examples.
-func System(s *model.Settings, today civil.Date) string {
+// system is the instructions for the model: today, the vocabulary and examples.
+func system(s *model.Settings, today civil.Date) string {
 	bh, pkv := first(payerNames(s, model.Beihilfe), "Beihilfe"), first(payerNames(s, model.PKV), "PKV")
-	var payers []string
-	for _, p := range s.Payers {
-		payers = append(payers, p.Name)
-	}
 	examples := []Turn{
 		{"Wie viele Rechnungen aus 2025 sind noch nicht eingereicht?", Query{Kind: KindCount, Years: []int{2025},
 			Filters: []Filter{{FieldStatus, StatusOpen}}}},
@@ -111,7 +97,7 @@ Heute ist der %s. Kostenträger: %s. Kategorien: %s.
 - Nachfragen („und 2025?“, „nur die vom Zahnarzt“): die vorige Abfrage übernehmen und nur das Genannte ändern.
 
 Beispiele:
-`, today.DE(), strings.Join(payers, ", "), strings.Join(Categories, ", "), today.Year(), strings.Join(payerNames(s, model.Beihilfe), " oder "),
+`, today.DE(), strings.Join(payerNames(s, ""), ", "), strings.Join(categories(), ", "), today.Year(), strings.Join(payerNames(s, model.Beihilfe), " oder "),
 		strings.Join(payerNames(s, model.PKV), " oder "))
 	for _, e := range examples {
 		fmt.Fprintf(&b, "Frage: %s\nAbfrage: %s\n", e.Question, e.Query.JSON())
@@ -139,14 +125,23 @@ func (q Query) JSON() string {
 }
 
 // Messages is the request for a question: the instructions, the last
-// MaxTurns questions with the queries the app ran, the question.
+// maxTurns questions with the queries the app ran, the question.
 func Messages(s *model.Settings, today civil.Date, history []Turn, question string) []ai.Message {
-	msgs := []ai.Message{{Role: "system", Content: System(s, today)}}
-	if len(history) > MaxTurns {
-		history = history[len(history)-MaxTurns:]
+	msgs := []ai.Message{{Role: "system", Content: system(s, today)}}
+	if len(history) > maxTurns {
+		history = history[len(history)-maxTurns:]
 	}
 	for _, t := range history {
 		msgs = append(msgs, ai.Message{Role: "user", Content: t.Question}, ai.Message{Role: "assistant", Content: t.Query.JSON()})
 	}
 	return append(msgs, ai.Message{Role: "user", Content: question})
+}
+
+// QuestionTimeout bounds the AI's work on one question (a few seconds usually).
+const QuestionTimeout = 60 * time.Second
+
+// Request is the request for a question: schema, instructions, history.
+func Request(s *model.Settings, today civil.Date, history []Turn, question string) ai.Request {
+	return ai.Request{Name: "abfrage", Schema: Schema(s), MaxTokens: 400, Timeout: QuestionTimeout,
+		Messages: Messages(s, today, history, question)}
 }

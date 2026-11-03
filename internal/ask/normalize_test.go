@@ -67,7 +67,7 @@ func checkQuery(q Query, want map[string]any) []string {
 		wrong = append(wrong, fmt.Sprintf("jahre %v zu viel", q.Years))
 	}
 	if want["typ"] != KindUnsupported {
-		for _, k := range append(slices.Clone(FilterFields), "gruppierung") {
+		for _, k := range append(slices.Clone(filterFields), "gruppierung") {
 			if _, ok := want[k]; !ok && got[k] != "" {
 				wrong = append(wrong, fmt.Sprintf("%s „%s“ zu viel", k, got[k]))
 			}
@@ -124,10 +124,10 @@ func TestNormalizeRecordedAnswers(t *testing.T) {
 				right++
 			}
 		}
-		share := right * 100 / len(answers)
-		t.Logf("%s: %d von %d richtig (%d %%)\n%s", name, right, len(answers), share, report.String())
-		if share < 90 {
-			t.Errorf("%s: only %d %% right after the corrections", name, share)
+		t.Logf("%s: %d von %d richtig (%d %%)\n%s", name, right, len(answers), right*100/len(answers), report.String())
+		// The answers are fixed, so is the result: every miss is a regression.
+		if right != len(answers) {
+			t.Errorf("%s: %d of %d right after the corrections", name, right, len(answers))
 		}
 	}
 }

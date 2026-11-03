@@ -40,12 +40,6 @@ var measureLabels = map[string]string{
 	MeasureDiff: "Differenz (IST − SOLL)", MeasureOwed: "Noch offen", MeasureOwnShare: "Eigenanteil",
 }
 
-// CategoryLabels are the names of the categories (as in the app).
-var CategoryLabels = map[string]string{
-	"arzt": "Arzt", "zahnarzt": "Zahnarzt", "apotheke": "Apotheke", "heilmittel": "Heilmittel", "hilfsmittel": "Hilfsmittel",
-	"krankenhaus": "Krankenhaus", "heilpraktiker": "Heilpraktiker", "sonstiges": "Sonstiges",
-}
-
 var months = []string{"Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"}
 
 // Run answers the query from the data. today counts for deadlines, waiting
@@ -72,14 +66,14 @@ func Run(d Data, q Query, today civil.Date) Result {
 	case q.Kind == KindSum && q.Measure == "":
 		// "SOLL und IST der Beihilfe": the payer figures together.
 		for _, m := range []string{MeasureExpected, MeasureActual, MeasureDiff, MeasureOwed} {
-			r.Figures = append(r.Figures, Figure{measureLabels[m], eur(total(ms, m))})
+			r.Figures = append(r.Figures, Figure{measureLabels[m], total(ms, m).EUR()})
 		}
-		r.Answer = fmt.Sprintf("SOLL %s, IST %s (%s)", eur(total(ms, MeasureExpected)), eur(total(ms, MeasureActual)), n)
+		r.Answer = fmt.Sprintf("SOLL %s, IST %s (%s)", total(ms, MeasureExpected).EUR(), total(ms, MeasureActual).EUR(), n)
 	case q.Kind == KindSum:
-		r.Answer = fmt.Sprintf("%s: %s (%s)", measureLabels[q.Measure], eur(total(ms, q.Measure)), n)
+		r.Answer = fmt.Sprintf("%s: %s (%s)", measureLabels[q.Measure], total(ms, q.Measure).EUR(), n)
 	default: // a list
 		m := cmp.Or(q.Measure, MeasureAmount)
-		r.Answer = fmt.Sprintf("%s, %s zusammen %s", n, measureLabels[m], eur(total(ms, m)))
+		r.Answer = fmt.Sprintf("%s, %s zusammen %s", n, measureLabels[m], total(ms, m).EUR())
 	}
 	if q.GroupBy != "" {
 		r.Groups = groups(d.Settings, ms, q)
@@ -90,17 +84,21 @@ func Run(d Data, q Query, today civil.Date) Result {
 // relevant drops the invoices a payer figure says nothing about: "Was hat
 // die PKV erstattet?" counts the refunded ones, "Was ist noch offen?" those
 // with something owed.
-func relevant(ms []match, measure string) []match {
-	var keep func(c calc.ClaimView) bool
+func relevant(ms []hit, measure string) []hit {
+	keep := claimCounts(measure)
+	return slices.DeleteFunc(ms, func(m hit) bool { return !slices.ContainsFunc(m.claims, keep) })
+}
+
+// claimCounts: whether a claim says something about the measure (IST and
+// difference: refunded; open: something owed; the others: every claim).
+func claimCounts(measure string) func(calc.ClaimView) bool {
 	switch measure {
 	case MeasureActual, MeasureDiff:
-		keep = func(c calc.ClaimView) bool { return c.Status == calc.StatusRefunded }
+		return func(c calc.ClaimView) bool { return c.Status == calc.StatusRefunded }
 	case MeasureOwed:
-		keep = func(c calc.ClaimView) bool { return c.Owed() != 0 }
-	default:
-		return ms
+		return func(c calc.ClaimView) bool { return c.Owed() != 0 }
 	}
-	return slices.DeleteFunc(ms, func(m match) bool { return !slices.ContainsFunc(m.claims, keep) })
+	return func(calc.ClaimView) bool { return true }
 }
 
 func unsupported(q Query) Result {
@@ -111,7 +109,7 @@ func unsupported(q Query) Result {
 	return Result{Answer: a, Invoices: []string{}}
 }
 
-func total(ms []match, measure string) money.Cents {
+func total(ms []hit, measure string) money.Cents {
 	var sum money.Cents
 	for _, m := range ms {
 		sum += value(m, measure)
@@ -120,11 +118,11 @@ func total(ms []match, measure string) money.Cents {
 }
 
 // order lists the invoices: by the size of the measure asked for (largest
-// first), else the newest treatment first.
-func order(ms []match, measure string) []string {
+// first, a cut as large as a surplus), else the newest treatment first.
+func order(ms []hit, measure string) []string {
 	sorted := slices.Clone(ms)
-	slices.SortStableFunc(sorted, func(a, b match) int {
-		if measure != "" && measure != MeasureAmount {
+	slices.SortStableFunc(sorted, func(a, b hit) int {
+		if measure != "" {
 			if c := cmp.Compare(value(b, measure).Abs(), value(a, measure).Abs()); c != 0 {
 				return c
 			}
@@ -139,11 +137,16 @@ func order(ms []match, measure string) []string {
 }
 
 // groups splits the matches by the grouping of q. By payer, an invoice
-// counts once for each payer it has a claim with.
-func groups(s *model.Settings, ms []match, q Query) []Group {
+// counts once for each payer it has a claim with that says something about
+// the measure; an invoice amount has no share per payer, so SOLL and IST
+// are shown instead.
+func groups(s *model.Settings, ms []hit, q Query) []Group {
 	measure := q.Measure
 	if q.Kind == KindList {
 		measure = cmp.Or(measure, MeasureAmount) // as the list's total
+	}
+	if q.GroupBy == GroupPayer && (measure == MeasureAmount || measure == MeasureOwnShare) {
+		measure = ""
 	}
 	type acc struct {
 		key, label string
@@ -153,7 +156,7 @@ func groups(s *model.Settings, ms []match, q Query) []Group {
 		actual     money.Cents
 	}
 	byKey := map[string]*acc{}
-	add := func(key, label string, m match) {
+	add := func(key, label string, m hit) {
 		a := byKey[key]
 		if a == nil {
 			a = &acc{key: key, label: label}
@@ -181,13 +184,12 @@ func groups(s *model.Settings, ms []match, q Query) []Group {
 				add(d.String()[:7], months[d.Time().Month()-1]+" "+strconv.Itoa(d.Year()), m)
 			}
 		case GroupCategory:
-			c := string(m.inv.Category)
-			add(c, cmp.Or(CategoryLabels[c], "ohne Kategorie"), m)
+			add(string(m.inv.Category), cmp.Or(m.inv.Category.Label(), "ohne Kategorie"), m)
 		case GroupProvider:
 			p := strings.TrimSpace(m.inv.Provider)
 			add(strings.ToLower(p), cmp.Or(p, "ohne Behandler"), m)
 		case GroupPayer:
-			for _, c := range m.claims {
+			for _, c := range slices.DeleteFunc(slices.Clone(m.claims), func(c calc.ClaimView) bool { return !claimCounts(measure)(c) }) {
 				one := m
 				one.claims = []calc.ClaimView{c}
 				add(c.PayerID, payerName(s, c.PayerID), one)
@@ -208,7 +210,7 @@ func groups(s *model.Settings, ms []match, q Query) []Group {
 				return c
 			}
 		default:
-			if c := cmp.Compare(b.sum, a.sum); c != 0 {
+			if c := cmp.Compare(b.sum.Abs(), a.sum.Abs()); c != 0 {
 				return c
 			}
 		}
@@ -220,9 +222,9 @@ func groups(s *model.Settings, ms []match, q Query) []Group {
 		switch {
 		case q.Kind == KindCount:
 		case measure == "":
-			g.Value = "SOLL " + eur(a.expected) + " · IST " + eur(a.actual)
+			g.Value = "SOLL " + a.expected.EUR() + " · IST " + a.actual.EUR()
 		default:
-			g.Value = eur(a.sum)
+			g.Value = a.sum.EUR()
 		}
 		out[i] = g
 	}
@@ -235,9 +237,6 @@ func payerName(s *model.Settings, id string) string {
 	}
 	return id
 }
-
-// eur formats an amount: "1.234,56 €".
-func eur(c money.Cents) string { return c.DE() + " €" }
 
 // invoices: "1 Rechnung", "12 Rechnungen".
 func invoices(n int) string {

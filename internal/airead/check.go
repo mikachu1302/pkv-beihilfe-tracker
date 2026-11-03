@@ -8,6 +8,7 @@ import (
 
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/civil"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/extract"
+	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/match"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/money"
 )
 
@@ -18,9 +19,10 @@ const (
 	treatGrace   = 31           // days the treatment may end after the invoice date (invoices issued in advance)
 	maxDueAfter  = 366          // days between invoice date and due date
 	pastYears    = 10           // how old a document may be
-	futureMargin = 31           // days a date may lie in the future
-	ibanNote     = "Die IBAN der KI (%s) hat eine falsche Prüfziffer – nicht übernommen."
+	futureMargin = 31           // days a date of the past (invoice, treatment) may lie in the future
 )
+
+const ibanNote = "Die IBAN der KI (%s) ist ungültig (Form oder Prüfziffer) – nicht übernommen."
 
 // check turns the model's answer into values the app can take: tidied up,
 // implausible ones dropped (with a note), each with its source – confirmed
@@ -47,13 +49,13 @@ func check(a Answer, ocr extract.Draft, ev extract.Evidence, in Input) (map[stri
 
 	provider := text(a.Behandler)
 	put("provider", provider, isKnown(in.Known, provider))
-	if payee := text(a.Zahlungsempfaenger); !strings.EqualFold(compact(payee), compact(provider)) {
+	if payee := text(a.Zahlungsempfaenger); !sameName(payee, provider) {
 		put("payee", payee, false)
 	}
 	ref := text(a.Rechnungsnummer)
 	put("reference", ref, ev.HasText(ref))
-	if iban := strings.ToUpper(strings.ReplaceAll(text(a.IBAN), " ", "")); iban != "" {
-		if extract.ValidIBAN(iban) {
+	if raw := text(a.IBAN); raw != "" {
+		if iban, ok := extract.NormIBAN(raw); ok {
 			put("iban", iban, ev.HasText(iban))
 		} else {
 			notes = append(notes, fmt.Sprintf(ibanNote, iban))
@@ -82,32 +84,35 @@ func check(a Answer, ocr extract.Draft, ev extract.Evidence, in Input) (map[stri
 	return out, notes
 }
 
-// checkDates reads the dates of the answer and keeps the plausible ones: not
-// more than pastYears old or more than a month ahead, the treatment not
-// after the invoice (a month's grace), its end not before its start, the
-// due date within a year after the invoice. dropped tells what was dropped.
+// checkDates reads the dates of the answer and keeps the plausible ones:
+// invoice and treatment not more than pastYears old or more than a month
+// ahead, the treatment not after the invoice (a month's grace), its end not
+// before its start, the due date within a year after the invoice. dropped
+// tells what was dropped.
 func checkDates(a Answer, ocr extract.Draft, today civil.Date) (map[string]civil.Date, string) {
 	var bad []string
-	read := func(s, label string) civil.Date {
+	read := func(s, label string, future bool) civil.Date {
 		s = text(s)
 		if s == "" {
 			return civil.Date{}
 		}
 		d, err := civil.Parse(s)
-		if err != nil || d.Before(today.AddYears(-pastYears)) || d.After(today.AddDays(futureMargin)) {
+		if err != nil || d.Before(today.AddYears(-pastYears)) || !future && d.After(today.AddDays(futureMargin)) {
 			bad = append(bad, fmt.Sprintf("%s „%s“", label, s))
 			return civil.Date{}
 		}
 		return d
 	}
-	inv := read(a.Rechnungsdatum, "Rechnungsdatum")
-	from := read(a.BehandlungVon, "Behandlung von")
-	to := read(a.BehandlungBis, "Behandlung bis")
-	due := read(a.FaelligAm, "Fällig am")
+	inv := read(a.Rechnungsdatum, "Rechnungsdatum", false)
+	from := read(a.BehandlungVon, "Behandlung von", false)
+	to := read(a.BehandlungBis, "Behandlung bis", false)
+	due := read(a.FaelligAm, "Fällig am", true) // bounded by the invoice date below
 
-	// Checked against the invoice date that will most likely be taken.
+	// Checked against the invoice date Merge will take: the text
+	// recognition's when it found one next to a label or in a GiroCode
+	// (it beats an AI date), else the AI's.
 	invoice := inv
-	if invoice.IsZero() {
+	if !ocr.InvoiceDate.IsZero() && (inv.IsZero() || trust[ocrSource(ocr, "invoiceDate")] > trust[extract.SrcAI]) {
 		invoice = ocr.InvoiceDate
 	}
 	late := func(d civil.Date) bool { return !invoice.IsZero() && d.After(invoice.AddDays(treatGrace)) }
@@ -145,11 +150,14 @@ func text(s string) string {
 	return s
 }
 
-// isKnown: name is the provider of an earlier invoice (ignoring case, spaces and punctuation).
+// isKnown: name is the provider of an earlier invoice (compared as names:
+// "Praxis Dr. Anna Beispiel" is "Dr. Anna Beispiel").
 func isKnown(known []string, name string) bool {
-	if name == "" {
-		return false
-	}
-	c := compact(name)
-	return slices.ContainsFunc(known, func(k string) bool { return strings.EqualFold(compact(k), c) })
+	return name != "" && slices.ContainsFunc(known, func(k string) bool { return sameName(k, name) })
+}
+
+// sameName compares names without case, umlauts, punctuation, titles and legal forms.
+func sameName(a, b string) bool {
+	x, y := match.NameWords(a), match.NameWords(b)
+	return len(x) > 0 && slices.Equal(x, y)
 }

@@ -255,6 +255,17 @@ const (
 	CatOther      Category = "sonstiges"
 )
 
+// Categories lists the categories in the order of the app.
+var Categories = []Category{CatDoctor, CatDentist, CatPharmacy, CatTherapy, CatAids, CatHospital, CatNaturopath, CatOther}
+
+var categoryLabels = map[Category]string{
+	CatDoctor: "Arzt", CatDentist: "Zahnarzt", CatPharmacy: "Apotheke", CatTherapy: "Heilmittel",
+	CatAids: "Hilfsmittel", CatHospital: "Krankenhaus", CatNaturopath: "Heilpraktiker", CatOther: "Sonstiges",
+}
+
+// Label is the German name of the category ("" for none or an unknown one).
+func (c Category) Label() string { return categoryLabels[c] }
+
 // AllowanceHospitalDay is the Allowance.Kind of a Krankenhaustagegeld.
 const AllowanceHospitalDay = "krankenhaustagegeld"
 

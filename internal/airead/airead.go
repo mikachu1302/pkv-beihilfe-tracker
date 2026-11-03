@@ -14,12 +14,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/ai"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/civil"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/extract"
+	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/match"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/model"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/money"
 )
@@ -122,8 +124,13 @@ var fields = []struct{ key, text string }{
 
 var (
 	kinds      = []string{"rechnung", "bescheid", "rezept", "sonstiges"}
-	categories = []string{"", string(model.CatDoctor), string(model.CatDentist), string(model.CatPharmacy), string(model.CatTherapy),
-		string(model.CatAids), string(model.CatHospital), string(model.CatNaturopath), string(model.CatOther)}
+	categories = func() []string {
+		out := []string{""} // none
+		for _, c := range model.Categories {
+			out = append(out, string(c))
+		}
+		return out
+	}()
 )
 
 const system = "Du liest Belege der deutschen privaten Krankenversicherung und Beihilfe aus: Arztrechnungen, " +
@@ -202,11 +209,16 @@ func Merge(a Answer, in Input) Result {
 		case o.value == "":
 			r.take(f, m)
 		case same(f, o.value, m.value):
-			// Read twice the same way: confirmed (a GiroCode stays the GiroCode).
+			// Read twice the same way: confirmed (a GiroCode stays the GiroCode),
+			// in the words of the more trusted reading.
+			v := o.value
+			if trust[m.source] > trust[o.source] {
+				v = m.value
+			}
 			if o.source != extract.SrcQR {
 				o.source = extract.SrcAIConfirmed
 			}
-			r.take(f, field{o.value, o.source})
+			r.take(f, field{v, o.source})
 			r.Confirmed++
 			continue
 		case trust[m.source] > trust[o.source]:
@@ -221,6 +233,8 @@ func Merge(a Answer, in Input) Result {
 			r.Confirmed++
 		}
 	}
+	r.period()
+	r.notes()
 	for f, s := range r.Draft.Sources {
 		if s == "" {
 			delete(r.Draft.Sources, f)
@@ -233,6 +247,36 @@ func Merge(a Answer, in Input) Result {
 		r.Draft.Notes = append(r.Draft.Notes, "Die KI hält das für einen Erstattungsbescheid – dann bitte als Erstattungsbeleg behandeln.")
 	}
 	return r
+}
+
+// period keeps the treatment period in order: start and end may come from
+// different readings, and an end before the start cannot be saved. The
+// less trusted of the two then gives way (and shows as the other reading).
+func (r *Result) period() {
+	d := &r.Draft
+	if d.ServiceFrom.IsZero() || d.ServiceTo.IsZero() || !d.ServiceTo.Before(d.ServiceFrom) {
+		return
+	}
+	loser := "serviceTo"
+	if trust[d.Sources["serviceFrom"]] < trust[d.Sources["serviceTo"]] {
+		loser = "serviceFrom"
+	}
+	r.Others[loser] = Other{Source: d.Sources[loser], Value: valuesOf(*d)[loser].value}
+	set(d, loser, "")
+	delete(d.Sources, loser)
+	r.FromAI = slices.DeleteFunc(r.FromAI, func(f string) bool { return f == loser })
+}
+
+// notes drops the text recognition's notes about values that were replaced
+// and checks the merged dates again.
+func (r *Result) notes() {
+	d := &r.Draft
+	d.Notes = slices.DeleteFunc(d.Notes, func(n string) bool {
+		return n == extract.NoteAmountGuessed && d.Sources["amount"] != extract.SrcGuess || n == extract.NoteServiceAfterInvoice
+	})
+	if !d.ServiceFrom.IsZero() && !d.InvoiceDate.IsZero() && d.ServiceFrom.After(d.InvoiceDate) {
+		d.Notes = append(d.Notes, extract.NoteServiceAfterInvoice)
+	}
 }
 
 // take sets field f of the draft to v.
@@ -266,22 +310,29 @@ func ocrSource(d extract.Draft, f string) string {
 	return extract.SrcLabel
 }
 
-// same compares two values of a field: texts without case, spaces and punctuation.
-func same(f, a, b string) bool {
+// same compares two values of a field: names as names, numbers without
+// case and punctuation – and an invoice number the AI read in part (the
+// text recognition's "2026-0815", the AI's "0815") as the same, so the
+// complete one stays.
+func same(f, ocr, ai string) bool {
 	switch f {
 	case "amount", "invoiceDate", "serviceFrom", "serviceTo", "due", "category":
-		return a == b
+		return ocr == ai
+	case "provider", "payee":
+		return sameName(ocr, ai)
+	case "reference":
+		o, a := match.Fold(ocr), match.Fold(ai)
+		o, a = strings.Map(alnum, o), strings.Map(alnum, a)
+		return o == a || len(a) >= 4 && strings.Contains(o, a)
 	}
-	return strings.EqualFold(compact(a), compact(b))
+	return extract.SameText(ocr, ai)
 }
 
-func compact(s string) string {
-	return strings.Map(func(r rune) rune {
-		if r == ' ' || r == '.' || r == '-' || r == ',' || r == '/' {
-			return -1
-		}
+func alnum(r rune) rune {
+	if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
 		return r
-	}, s)
+	}
+	return -1
 }
 
 // field is a value with its source.

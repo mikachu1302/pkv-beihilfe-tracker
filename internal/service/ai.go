@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/ai"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/config"
@@ -84,7 +84,7 @@ func (s *Service) SetAISettings(in AISettingsDTO) (AISettingsDTO, error) {
 // SetAIKey stores the API key of the AI server on this device; "" removes it.
 func (s *Service) SetAIKey(key string) (AISettingsDTO, error) {
 	key = strings.TrimSpace(key)
-	if strings.ContainsAny(key, " \t\r\n") {
+	if strings.ContainsFunc(key, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
 		return AISettingsDTO{}, errors.New("Der Schlüssel enthält Leerzeichen – bitte genau so einfügen, wie er auf dem Server steht")
 	}
 	if err := s.updateConfig("API-Schlüssel", func(c *config.Config) { c.AI.Key = key }); err != nil {
@@ -93,23 +93,12 @@ func (s *Service) SetAIKey(key string) (AISettingsDTO, error) {
 	return s.AISettings(), nil
 }
 
-// serverURL checks and tidies a server address: http(s) with a host; "" is
-// the default; an address without a path gets /v1 (llama.cpp, LM Studio,
-// Ollama all serve the API there).
+// serverURL checks and tidies a server address (see ai.NormalizeURL); "" is the default.
 func serverURL(in string) (string, error) {
-	in = strings.TrimSpace(in)
-	if in == "" {
+	if strings.TrimSpace(in) == "" {
 		return ai.DefaultURL, nil
 	}
-	u, err := url.Parse(in)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
-		return "", fmt.Errorf("„%s“ ist keine Serveradresse – Beispiel: %s", in, ai.DefaultURL)
-	}
-	u.Path = strings.TrimRight(u.Path, "/")
-	if u.Path == "" {
-		u.Path = "/v1"
-	}
-	return u.String(), nil
+	return ai.NormalizeURL(in)
 }
 
 // aiClient is the client for the configured server. Off counts as not set

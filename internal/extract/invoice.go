@@ -43,6 +43,13 @@ const (
 	SrcAI          = "ai"
 )
 
+// Notes about fields of a draft (internal/airead drops them when the AI's
+// value replaces the field).
+const (
+	NoteAmountGuessed       = "Kein „Rechnungsbetrag“ gefunden – größter Betrag übernommen"
+	NoteServiceAfterInvoice = "Behandlungsdatum liegt nach dem Rechnungsdatum – bitte prüfen"
+)
+
 // Draft is what was recognised.
 type Draft struct {
 	Kind        string
@@ -177,7 +184,7 @@ func Analyze(lines []Line, qr []string, now time.Time) Draft {
 		} else if v := largestAmount(text); v > 0 {
 			d.Amount = v
 			set("amount", SrcGuess)
-			d.Notes = append(d.Notes, "Kein „Rechnungsbetrag“ gefunden – größter Betrag übernommen")
+			d.Notes = append(d.Notes, NoteAmountGuessed)
 		}
 	}
 
@@ -265,7 +272,7 @@ func Analyze(lines []Line, qr []string, now time.Time) Draft {
 		}
 	}
 	if !d.ServiceFrom.IsZero() && !d.InvoiceDate.IsZero() && d.ServiceFrom.After(d.InvoiceDate) {
-		d.Notes = append(d.Notes, "Behandlungsdatum liegt nach dem Rechnungsdatum – bitte prüfen")
+		d.Notes = append(d.Notes, NoteServiceAfterInvoice)
 	}
 
 	// Invoice number: after the label, or – in a table header such as

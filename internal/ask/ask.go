@@ -2,16 +2,17 @@
 // a question into a Query – a fixed JSON shape with German keys, as the
 // model writes it – and this package runs the query on the data with the
 // same calculations as the invoice list, the dashboard and the year
-// overview. Deterministic: no AI, no I/O.
+// overview. Deterministic, no network (internal/ai is only used for the
+// message types of the request).
 package ask
 
 import (
 	"slices"
 	"strings"
-	"unicode"
 
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/calc"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/civil"
+	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/match"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/model"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/money"
 )
@@ -94,31 +95,44 @@ const (
 
 // The values the query model knows, defaults first.
 var (
-	Kinds    = []string{KindCount, KindSum, KindList, KindPremium, KindOutstanding, KindUnsupported}
-	Measures = []string{"", MeasureAmount, MeasureExpected, MeasureActual, MeasureDiff, MeasureOwed, MeasureOwnShare}
+	kinds    = []string{KindCount, KindSum, KindList, KindPremium, KindOutstanding, KindUnsupported}
+	measures = []string{"", MeasureAmount, MeasureExpected, MeasureActual, MeasureDiff, MeasureOwed, MeasureOwnShare}
 	Statuses = []string{StatusOpen, StatusSubmitted, StatusRefunded, StatusHeld, StatusNotRefunded}
 	Groups   = []string{"", GroupYear, GroupMonth, GroupPayer, GroupProvider, GroupCategory}
-	// Categories in the order of the app.
-	Categories = []string{string(model.CatDoctor), string(model.CatDentist), string(model.CatPharmacy), string(model.CatTherapy),
-		string(model.CatAids), string(model.CatHospital), string(model.CatNaturopath), string(model.CatOther)}
 )
 
-// FilterValues are the allowed values per filter field; nil = free text.
-// Payer names come from the settings.
-func FilterValues(s *model.Settings) map[string][]string {
-	var payers []string
-	for _, p := range s.Payers {
-		payers = append(payers, p.Name)
+// categories are the category values in the order of the app.
+func categories() []string {
+	out := make([]string, len(model.Categories))
+	for i, c := range model.Categories {
+		out[i] = string(c)
 	}
+	return out
+}
+
+// filterValues are the allowed values per filter field; nil = free text.
+// Payer names come from the settings.
+func filterValues(s *model.Settings) map[string][]string {
 	return map[string][]string{
-		FieldPayer: payers, FieldStatus: Statuses, FieldDeviation: {TooLittle, TooMuch}, FieldClarify: {Yes, No},
-		FieldPaid: {Yes, No}, FieldDeadline: {Yes}, FieldCategory: Categories, FieldProvider: nil, FieldFrom: nil, FieldTo: nil,
+		FieldPayer: payerNames(s, ""), FieldStatus: Statuses, FieldDeviation: {TooLittle, TooMuch}, FieldClarify: {Yes, No},
+		FieldPaid: {Yes, No}, FieldDeadline: {Yes}, FieldCategory: categories(), FieldProvider: nil, FieldFrom: nil, FieldTo: nil,
 	}
 }
 
-// FilterFields are the filter fields in the order the model is told about them.
-var FilterFields = []string{FieldPayer, FieldStatus, FieldDeviation, FieldClarify, FieldPaid, FieldDeadline, FieldCategory,
+// filterFields are the filter fields in the order the model is told about them.
+var filterFields = []string{FieldPayer, FieldStatus, FieldDeviation, FieldClarify, FieldPaid, FieldDeadline, FieldCategory,
 	FieldProvider, FieldFrom, FieldTo}
+
+// payerNames are the names of the payers of one kind ("" = all), in the order of the settings.
+func payerNames(s *model.Settings, kind model.PayerKind) []string {
+	var out []string
+	for _, p := range s.Payers {
+		if kind == "" || p.Kind == kind {
+			out = append(out, p.Name)
+		}
+	}
+	return out
+}
 
 // Get returns the value of a filter field ("" if the query has none).
 func (q Query) Get(field string) string {
@@ -137,8 +151,8 @@ type Data struct {
 	Allowances []model.Allowance
 }
 
-// match is an invoice that matches a query, with the claims that count.
-type match struct {
+// hit is an invoice that matches a query, with the claims that count.
+type hit struct {
 	inv    *model.Invoice
 	view   calc.InvoiceView
 	claims []calc.ClaimView // of the payer asked for that meet the claim conditions
@@ -149,11 +163,12 @@ type match struct {
 // deviation, Klärungsbedarf, deadline) – an invoice matches when one of its
 // claims meets all claim conditions. Claims marked "wird nicht eingereicht"
 // never count: the payer is out of it.
-func selection(d Data, q Query, today civil.Date) []match {
+func selection(d Data, q Query, today civil.Date) []hit {
 	payer := payerID(d.Settings, q.Get(FieldPayer))
+	provider := match.NameWords(q.Get(FieldProvider))
 	from, _ := civil.Parse(q.Get(FieldFrom))
 	to, _ := civil.Parse(q.Get(FieldTo))
-	var out []match
+	var out []hit
 	for i := range d.Invoices {
 		inv := &d.Invoices[i]
 		if inv.Deleted || len(q.Years) > 0 && !slices.Contains(q.Years, inv.ServiceYear()) {
@@ -172,7 +187,7 @@ func selection(d Data, q Query, today civil.Date) []match {
 		if c := q.Get(FieldCategory); c != "" && string(inv.Category) != c {
 			continue
 		}
-		if p := q.Get(FieldProvider); p != "" && !nameMatches(p, inv.Provider) && !nameMatches(p, inv.Payee) {
+		if q.Get(FieldProvider) != "" && !nameMatches(provider, inv.Provider) && !nameMatches(provider, inv.Payee) {
 			continue
 		}
 		date := inv.ServiceDate()
@@ -181,15 +196,23 @@ func selection(d Data, q Query, today civil.Date) []match {
 		}
 		v := calc.Invoice(d.Settings, inv, today)
 		var claims []calc.ClaimView
+		clarified := false // "ohne Klärungsbedarf": no claim of the payer asked for needs clarifying
 		for _, c := range v.Claims {
-			if c.Status != calc.StatusSkipped && claimMatches(c, q, payer) {
+			if c.Status == calc.StatusSkipped || payer != "" && c.PayerID != payer {
+				continue
+			}
+			clarified = clarified || needsClarifying(c)
+			if claimMatches(c, q) {
 				claims = append(claims, c)
 			}
+		}
+		if q.Get(FieldClarify) == No && clarified {
+			continue
 		}
 		if len(claims) == 0 && (payer != "" || hasClaimFilter(q)) {
 			continue
 		}
-		out = append(out, match{inv: inv, view: v, claims: claims})
+		out = append(out, hit{inv: inv, view: v, claims: claims})
 	}
 	return out
 }
@@ -200,10 +223,12 @@ func hasClaimFilter(q Query) bool {
 	})
 }
 
-func claimMatches(c calc.ClaimView, q Query, payer string) bool {
-	if payer != "" && c.PayerID != payer {
-		return false
-	}
+// needsClarifying: Klärungsbedarf as the list's filter has it – marked, or
+// suggested by a deviation above the tolerance.
+func needsClarifying(c calc.ClaimView) bool { return c.Clarify.Done() || c.SuggestClarify }
+
+// claimMatches: the claim meets the claim conditions of q (the payer is checked by the caller).
+func claimMatches(c calc.ClaimView, q Query) bool {
 	switch q.Get(FieldStatus) {
 	case StatusOpen:
 		if c.Status != calc.StatusOpen && c.Status != calc.StatusHeld {
@@ -237,17 +262,8 @@ func claimMatches(c calc.ClaimView, q Query, payer string) bool {
 			return false
 		}
 	}
-	// Klärungsbedarf as the list's filter: marked, or suggested by a deviation above the tolerance.
-	clarify := c.Clarify.Done() || c.SuggestClarify
-	switch q.Get(FieldClarify) {
-	case Yes:
-		if !clarify {
-			return false
-		}
-	case No:
-		if clarify {
-			return false
-		}
+	if q.Get(FieldClarify) == Yes && !needsClarifying(c) {
+		return false
 	}
 	if q.Get(FieldDeadline) == Yes && !c.DeadlineSoon() {
 		return false
@@ -268,14 +284,14 @@ func payerID(s *model.Settings, name string) string {
 	return "-" // asked for a payer the settings do not know: nothing matches
 }
 
-// nameMatches: the words of want appear in name, ignoring case, umlauts,
-// punctuation and titles ("Dr. Muster" finds "Praxis Dr. med. Muster").
-func nameMatches(want, name string) bool {
-	w, n := words(want), words(name)
-	if len(w) == 0 || len(n) == 0 {
+// nameMatches: the words want (as match.NameWords makes them) appear at
+// the start of words of name ("Dr. Muster" finds "Praxis Dr. med. Muster").
+func nameMatches(want []string, name string) bool {
+	n := match.NameWords(name)
+	if len(want) == 0 || len(n) == 0 {
 		return false
 	}
-	for _, x := range w {
+	for _, x := range want {
 		if !slices.ContainsFunc(n, func(y string) bool { return strings.HasPrefix(y, x) }) {
 			return false
 		}
@@ -283,22 +299,9 @@ func nameMatches(want, name string) bool {
 	return true
 }
 
-var titles = map[string]bool{"dr": true, "med": true, "dent": true, "prof": true, "praxis": true}
-
-func words(s string) []string {
-	s = strings.NewReplacer("ä", "ae", "ö", "oe", "ü", "ue", "ß", "ss").Replace(strings.ToLower(s))
-	var out []string
-	for _, w := range strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
-		if !titles[w] {
-			out = append(out, w)
-		}
-	}
-	return out
-}
-
 // value is the measure for one matched invoice: invoice amounts as they
 // are, payer figures over the claims that count.
-func value(m match, measure string) money.Cents {
+func value(m hit, measure string) money.Cents {
 	var sum money.Cents
 	switch measure {
 	case MeasureAmount:

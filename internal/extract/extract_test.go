@@ -320,14 +320,30 @@ func TestProviderAndNumberEdgeCasesFromReview(t *testing.T) {
 }
 
 func TestEvidence(t *testing.T) {
-	ev := NewEvidence([]Line{{Text: "Rechnungs-Nr.: 2026/0815"}, {Text: "IBAN DE89 3704 0044 0532 0130 00"}, {Text: "Summe 1.234,56 €"}})
+	ev := NewEvidence([]Line{{Text: "Rechnungs-Nr.: 2026/0815 vom 14.03.2026"}, {Text: "IBAN DE89 3704 0044 0532 0130 00"},
+		{Text: "Summe 1.234,56 €"}, {Text: "Rechnungsjahr 2026"}})
 	if !ev.HasAmount(123456) || ev.HasAmount(1234) {
 		t.Error("amounts")
 	}
-	if !ev.HasText("2026-0815") || !ev.HasText("de89370400440532013000") || ev.HasText("Nr") || ev.HasText("0815 IBAN") {
-		t.Error("text")
+	for v, want := range map[string]bool{
+		"2026-0815": true, "2026/0815": true, "de89370400440532013000": true, "DE89 3704 0044 0532 0130 00": true,
+		"0815": false, "2026": false, "Nr": false, "0815 IBAN": false, "Rechnungsjahr": false, "8370400440": false,
+	} {
+		if ev.HasText(v) != want {
+			t.Errorf("HasText(%q) = %v", v, !want)
+		}
 	}
-	if !ValidIBAN("DE89 3704 0044 0532 0130 00") || ValidIBAN("DE89 3704 0044 0532 0130 01") {
-		t.Error("IBAN")
+	for v, want := range map[string]string{"DE89 3704 0044 0532 0130 00": "DE89370400440532013000", "de89370400440532013000": "DE89370400440532013000"} {
+		if got, ok := NormIBAN(v); !ok || got != want {
+			t.Errorf("NormIBAN(%q) = %q %v", v, got, ok)
+		}
+	}
+	for _, v := range []string{"DE89 3704 0044 0532 0130 01", "12345678901234567890", "DE8937040044"} {
+		if _, ok := NormIBAN(v); ok {
+			t.Errorf("NormIBAN(%q) accepted", v)
+		}
+	}
+	if !SameText("R-4711", "r 4711") || SameText("R-4711", "R-4712") {
+		t.Error("SameText")
 	}
 }
