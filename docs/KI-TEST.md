@@ -31,7 +31,8 @@ Programms ansehen.
    unternehmen“.
 2. **Feste Adresse im Netz**: im Router dem Galaxy Book immer dieselbe IPv4-Adresse geben (bei
    der FRITZ!Box: Heimnetz → Netzwerk → Gerät bearbeiten → „Diesem Netzwerkgerät immer die gleiche
-   IPv4-Adresse zuweisen“). Die Adresse zeigt `ipconfig` (IPv4-Adresse), z. B. `192.168.178.50`.
+   IPv4-Adresse zuweisen“). Die Adresse zeigt `ipconfig` (IPv4-Adresse). **Das Galaxy Book hat die
+   feste Adresse `192.168.178.38`** – sie steht in allen Befehlen unten.
 3. **Netzwerkprofil „Privat“** (Einstellungen → Netzwerk und Internet → WLAN/Ethernet →
    Netzwerkprofiltyp), damit die Freigabe nur im Heimnetz gilt.
 
@@ -48,11 +49,11 @@ Programms ansehen.
    New-NetFirewallRule -DisplayName "KI-Server LM Studio" -Direction Inbound -Protocol TCP -LocalPort 1234 -Action Allow -Profile Private
    ```
 
-Adresse für den Test: `http://192.168.178.50:1234/v1`
+Adresse für den Test: `http://192.168.178.38:1234/v1`
 
 **Alternativ Ollama:** installieren, `ollama pull qwen3-vl:8b`, die Umgebungsvariable
 `OLLAMA_HOST` auf `0.0.0.0:11434` setzen (Systemeigenschaften → Umgebungsvariablen), Ollama neu
-starten, Firewall für Port 11434 öffnen. Adresse: `http://192.168.178.50:11434/v1`
+starten, Firewall für Port 11434 öffnen. Adresse: `http://192.168.178.38:11434/v1`
 
 ## 2b. Weg B: Nexa SDK (NPU)
 
@@ -73,7 +74,7 @@ starten, Firewall für Port 11434 öffnen. Adresse: `http://192.168.178.50:11434
    (`nexa serve --help` zeigt die Optionen, falls sich etwas geändert hat.)
 5. Firewall für Port 8080 öffnen (wie oben, mit `-LocalPort 8080`).
 
-Adresse für den Test: `http://192.168.178.50:8080/v1`
+Adresse für den Test: `http://192.168.178.38:8080/v1`
 
 ## 3. Testbelege zusammenstellen
 
@@ -102,10 +103,10 @@ Fotos ImageMagick – beides ist unter Fedora meist schon da):
 
 ```sh
 # Verbindung prüfen und den Modellnamen ablesen
-python3 scripts/ki-belegtest.py modelle --server http://192.168.178.50:1234/v1
+python3 scripts/ki-belegtest.py modelle --server http://192.168.178.38:1234/v1
 
 # Test (Modellname wie von „modelle“ angezeigt)
-python3 scripts/ki-belegtest.py test ~/Belegtest --server http://192.168.178.50:1234/v1 --modell qwen3-vl-8b
+python3 scripts/ki-belegtest.py test ~/Belegtest --server http://192.168.178.38:1234/v1 --modell qwen3-vl-8b
 ```
 
 Optionen: `--schluessel …` (API-Schlüssel), `--max-seite 1600` (Bilder vor dem Senden auf diese

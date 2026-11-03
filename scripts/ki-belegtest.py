@@ -6,9 +6,9 @@ Schickt jeden Beleg eines Ordners an einen OpenAI-kompatiblen Server im
 lokalen Netz (LM Studio, Nexa, Ollama, llama.cpp), misst die Zeit und
 vergleicht die Felder mit den erwarteten Werten aus erwartet.json.
 
-    python3 scripts/ki-belegtest.py modelle --server http://192.168.178.50:1234/v1
+    python3 scripts/ki-belegtest.py modelle --server http://192.168.178.38:1234/v1
     python3 scripts/ki-belegtest.py vorlage ~/Belegtest
-    python3 scripts/ki-belegtest.py test ~/Belegtest --server http://192.168.178.50:1234/v1 --modell qwen3-vl-8b
+    python3 scripts/ki-belegtest.py test ~/Belegtest --server http://192.168.178.38:1234/v1 --modell qwen3-vl-8b
 
 Ein Beleg ist eine Bilddatei (jpg, png, webp), eine PDF-Datei (jede Seite
 ein Bild) oder ein Unterordner (seine Dateien sind die Seiten, nach Namen
@@ -290,7 +290,7 @@ def main():
     sub = ap.add_subparsers(dest="befehl", required=True)
 
     def server_args(p):
-        p.add_argument("--server", required=True, help="OpenAI-kompatible Adresse, z. B. http://192.168.178.50:1234/v1")
+        p.add_argument("--server", required=True, help="OpenAI-kompatible Adresse, z. B. http://192.168.178.38:1234/v1")
         p.add_argument("--schluessel", default="", help="API-Schlüssel, falls der Server einen verlangt")
 
     m = sub.add_parser("modelle", help="Modelle auflisten, die der Server anbietet")
