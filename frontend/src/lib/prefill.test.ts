@@ -24,6 +24,14 @@ describe("fillEmpty", () => {
         expect(filled).not.toContain("paid");
     });
 
+    it("replaces values a new form starts with, unless changed", () => {
+        const fresh = {...blank, invoiceDate: "2026-11-03"}; // today, set by the new form
+        expect(fillEmpty(fresh, found, fresh).next.invoiceDate).toBe("2026-01-02");
+        const typed = {...fresh, invoiceDate: "2026-10-30"};
+        expect(fillEmpty(typed, found, fresh).next.invoiceDate).toBe("2026-10-30");
+        expect(fillEmpty(fresh, found).next.invoiceDate).toBe("2026-11-03"); // without defaults: kept
+    });
+
     it("ignores a missing amount", () => {
         expect(fillEmpty(blank, {...found, amount: "0.00"}).filled).not.toContain("amount");
     });

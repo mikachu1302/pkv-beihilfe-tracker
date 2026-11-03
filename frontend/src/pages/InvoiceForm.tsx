@@ -93,6 +93,8 @@ export default function InvoiceForm() {
     const recogRun = useRef<AbortController | null>(null);
     const invRef = useRef(inv);
     invRef.current = inv;
+    // A new invoice as it started (today as invoice date …): such values count as empty for prefilling.
+    const blankRef = useRef<InvoiceDTO | null>(null);
     const {dragging, handlers: dropHandlers} = useFileDrop(files => void addDropped(files));
 
     const dirty = (inv !== null && initial !== "" && snapshot(inv) !== initial) || staged.length > 0;
@@ -130,6 +132,7 @@ export default function InvoiceForm() {
         setChangedElsewhere(false);
         (id ? Svc.GetInvoice(id) : Svc.NewInvoice()).then(
             d => {
+                blankRef.current = id ? null : forForm(d.invoice);
                 setInv(forForm(d.invoice));
                 setInitial(snapshot(forForm(d.invoice)));
                 setOriginal(id ? d.invoice : null);
@@ -217,7 +220,7 @@ export default function InvoiceForm() {
                 setRecog({...NO_RECOGNITION, refund: true});
                 return;
             }
-            const {next, filled: got} = fillEmpty(invRef.current, a.draft.invoice);
+            const {next, filled: got} = fillEmpty(invRef.current, a.draft.invoice, blankRef.current ?? undefined);
             if (got.length) {
                 setFilled(f => Object.fromEntries([...Object.entries(f), ...got.map(k => [k, a.sources?.[k] ?? "label"])]));
                 update(next);
@@ -288,6 +291,7 @@ export default function InvoiceForm() {
                 if (id) navigate("/rechnung/neu");
                 else {
                     const blank = await Svc.NewInvoice();
+                    blankRef.current = forForm(blank.invoice);
                     setInv(forForm(blank.invoice));
                     setInitial(snapshot(forForm(blank.invoice)));
                     setOriginal(null);

@@ -143,7 +143,11 @@ make uninstall
 4. **Sicherung einrichten:** *Einstellungen → Sicherung* – ein zweiter Ordner (USB-Stick, NAS,
    anderer Cloud-Ordner) für tägliche Zip-Kopien. Besonders wichtig ohne Cloud.
 5. **Belege erfassen:** im *Posteingang* per Handy (QR-Code scannen – Handy und Computer im selben
-   WLAN), per Drag & Drop oder über den Ordner `Eingang` im Datenordner.
+   WLAN), per Drag & Drop oder über den Ordner `Eingang` im Datenordner – oder direkt im
+   Rechnungsformular mit „Beleg hinzufügen“. Für Belege mit mehreren Seiten auf dem Handy
+   „Mehrseitiger Beleg“ wählen; im Posteingang lassen sich Fotos auch nachträglich zu einem Beleg
+   zusammenfassen (die App schlägt zusammengehörige Seiten vor). Ein Unterordner in `Eingang`
+   gilt als ein Beleg mit seinen Dateien als Seiten.
 
 ## Wo liegt was?
 

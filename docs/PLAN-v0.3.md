@@ -1,6 +1,6 @@
 # v0.3.0 – Documents in the invoice form, multi-page documents (plan)
 
-Status: in progress · plan 2026-11-03
+Status: implemented (steps 1–7), review pending · plan 2026-11-03
 
 The redesign (new look, views Detail/Kompakt/Tabelle, switch between classic and new design)
 follows in v0.4.0 – see [PLAN-v0.4.md](PLAN-v0.4.md).

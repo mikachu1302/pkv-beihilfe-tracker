@@ -74,6 +74,7 @@ The tax effect of the BRE and BRE tiers are out of scope (user decision).
 <data folder>/                     chosen on first start; anywhere
   einstellungen.json               payers, coverage periods, year settings, aliases
   Eingang/                         new scans/PDFs from phone, mail or scanner – picked up by the app
+    <name>/01 …, 02 …              a folder in it: one document of several pages (v0.3.0)
   belege/<sha256>.<ext>            documents, named by content (never change → never conflict)
   2026/
     rechnungen/<id>.json           one invoice
@@ -82,8 +83,8 @@ The tax effect of the BRE and BRE tiers are out of scope (user decision).
     leistungen/<id>.json           benefits without an invoice (Krankenhaustagegeld)
 ```
 
-Device-local settings (path of the data folder, device ID, backup folder) live in the OS
-config folder (`internal/config`), not in the data folder.
+Device-local settings (path of the data folder, device ID, backup folder, colour scheme) live
+in the OS config folder (`internal/config`), not in the data folder.
 
 Record file:
 
@@ -393,3 +394,15 @@ into the repo.
   Linux is built on Ubuntu 22.04 so the binary runs on glibc ≥ 2.35. The Linux packages install
   to `/usr/bin`, depend on GTK3 and WebKitGTK 4.1 and use the SVG icon.
 - Claim deadlines from 29 February end on 28 February in non-leap years (§ 188 Abs. 3 BGB).
+- **v0.3.0** (plan: [PLAN-v0.3.md](PLAN-v0.3.md)): documents in the invoice form – added files
+  wait in a session folder outside the data folder until the form is saved; for a new invoice
+  they are recognised and fill only empty fields (values a new form starts with, such as today
+  as invoice date, count as empty); a removed page that no other record uses goes back into the
+  inbox. Multi-page documents: a folder in `Eingang/` is one document (pages "01 …", renumbered
+  through hidden temporary names); merge, reorder and split in the inbox; content-only merge
+  suggestions (`extract.SuggestGroups`: page numbers, invoice number, continuation page – only
+  when unambiguous); the phone page's "Mehrseitiger Beleg" mode (header `X-Beleg`); Bescheide
+  keep further pages in `RefundDoc.MorePages` (no schema bump, see the field). Recognition reads
+  up to 12 pages per document, results are cached per file. Theme switch (system/light/dark) per
+  device. Verified headless (server mode + Playwright/Firefox) with made-up pages: the two pages
+  were suggested in the right order, merged, and all fields recognised across both pages.

@@ -13,7 +13,11 @@ compared with the premium refund (Beitragsrückerstattung). The user interface i
   vs. keep the premium refund", overview of all years.
 - **Capture**: scans, photos and PDFs land in the inbox – from the phone (QR code, no app
   needed), by drag & drop or through the `Eingang/` folder; text recognition and the GiroCode
-  pre-fill the invoice (everything runs on the device).
+  pre-fill the invoice (everything runs on the device). Documents can also be added right in the
+  invoice form, where they fill the fields that are still empty.
+- **Multi-page documents**: several photos become one document – merged in the inbox (the app
+  suggests pages that belong together, from their content), photographed as "Mehrseitiger Beleg"
+  on the phone, or added together in the form; recognition reads all pages.
 - **Refund documents** (Beihilfebescheid, PKV-Leistungsabrechnung) are read the same way; their
   lines are matched to invoices by amount, date and name, checked against the payout, and booked
   as refunds after a review.
@@ -27,6 +31,7 @@ compared with the premium refund (Beitragsrückerstattung). The user interface i
   There is no server and no account, and nothing runs in the cloud. Changes from other devices
   show up while the app runs; conflict copies are merged field by field.
 - **Backups**: daily zip snapshots to a second folder (USB stick, NAS, another cloud).
+- **Light and dark** colour scheme, or following the system – per device.
 
 Status: all planned milestones (M1–M6) are done. Releases: push a tag `v1.2.3` – GitHub Actions
 builds the Windows installer, the macOS app and Linux packages. See [docs/PLAN.md](docs/PLAN.md).

@@ -339,6 +339,8 @@ table.refunds input { padding: 3px 6px; }
 .page-preview figcaption { margin-bottom: 4px; }
 .page-strip { margin: 8px 0 4px; }
 .page-strip .doc-tile { cursor: grab; }
+.page-strip .doc-meta button.link { font-size: 17px; line-height: 1; padding: 2px 5px; }
+.page-strip .doc-meta button.link:disabled { opacity: .35; }
 .page-strip .doc-tile.dragging { opacity: .5; }
 .inbox-detail { display: grid; grid-template-columns: minmax(260px, 520px) 1fr; gap: 16px; align-items: start; }
 .preview-wrap { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px; max-height: 80vh; overflow: auto; }

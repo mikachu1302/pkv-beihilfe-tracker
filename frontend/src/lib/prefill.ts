@@ -13,15 +13,16 @@ const TEXT_FIELDS = ["provider", "payee", "iban", "reference", "category", "invo
 
 /**
  * Copies what the document says into the fields that are still empty –
- * nothing the user typed is overwritten. Returns the new form and the names
- * of the fields it filled. `found` is the recognised draft as the backend
- * sends it (amount "286.40").
+ * nothing the user typed is overwritten. A field still holding the value a
+ * new form starts with (`defaults`, e.g. today as invoice date) counts as
+ * empty. Returns the new form and the names of the fields it filled.
+ * `found` is the recognised draft as the backend sends it (amount "286.40").
  */
-export function fillEmpty(cur: InvoiceDTO, found: InvoiceDTO): {next: InvoiceDTO; filled: string[]} {
+export function fillEmpty(cur: InvoiceDTO, found: InvoiceDTO, defaults?: InvoiceDTO): {next: InvoiceDTO; filled: string[]} {
     const next: InvoiceDTO = {...cur};
     const filled: string[] = [];
     for (const f of TEXT_FIELDS) {
-        if (found[f] && !cur[f].trim()) {
+        if (found[f] && found[f] !== cur[f] && (!cur[f].trim() || (defaults !== undefined && cur[f] === defaults[f]))) {
             next[f] = found[f];
             filled.push(f);
         }
