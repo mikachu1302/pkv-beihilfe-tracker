@@ -3,6 +3,7 @@
 // keyboard navigation between invoices.
 import {useLayoutEffect, useRef, useState} from "react";
 import type {KeyboardEvent as ReactKeyboardEvent} from "react";
+import {useVirtualizer} from "@tanstack/react-virtual";
 import type {ClaimViewDTO, InvoiceRowDTO, MarkChangeDTO, PayerDTO} from "../../api";
 import {date, eur, num, toInput, today} from "../../lib/format";
 import {useDialog} from "../../lib/useDialog";
@@ -162,10 +163,12 @@ export function opensInvoice(target: HTMLElement): boolean {
  * keep their usual meaning. scrollTo brings a row into view first
  * (virtualised lists render only the visible rows).
  */
-export function useRowNav(ids: string[], {open, toggle, scrollTo, keys}: {
+export function useRowNav(ids: string[], {open, toggle, scrollTo, keys, rendered}: {
     open: (id: string) => void;
     toggle: (id: string) => void;
     scrollTo?: (index: number) => void;
+    /** The ids rendered now (virtualised lists): the tab stop moves to the first of them when the current row is not. */
+    rendered?: string[];
     /** Further keys of a view (e.g. → to expand); return true when used. */
     keys?: (e: ReactKeyboardEvent, id: string) => boolean;
 }) {
@@ -173,6 +176,7 @@ export function useRowNav(ids: string[], {open, toggle, scrollTo, keys}: {
     const container = useRef<HTMLElement | null>(null);
     const pending = useRef<string | null>(null);
     const current = cursor !== null && ids.includes(cursor) ? cursor : ids[0] ?? null;
+    const tabStop = rendered && current !== null && !rendered.includes(current) ? rendered[0] ?? current : current;
 
     // Focus the row moved to as soon as it is rendered.
     useLayoutEffect(() => {
@@ -227,7 +231,7 @@ export function useRowNav(ids: string[], {open, toggle, scrollTo, keys}: {
         current,
         item: (id: string) => ({
             "data-row-id": id,
-            tabIndex: id === current ? 0 : -1,
+            tabIndex: id === tabStop ? 0 : -1,
             onKeyDown: (e: ReactKeyboardEvent) => onKeyDown(e, id),
             onFocus: (e: React.FocusEvent) => {
                 if (e.target === e.currentTarget) setCursor(id);
@@ -235,3 +239,48 @@ export function useRowNav(ids: string[], {open, toggle, scrollTo, keys}: {
         }),
     };
 }
+
+/**
+ * Renders only the visible items of a list that scrolls with the page (the
+ * `.content` element) – Detail cards and Kompakt lines. Items may differ in
+ * height: they are measured (put `measure` as ref and `data-index` on each).
+ * Without a scrolling page (tests, unusual layouts) all items are rendered.
+ */
+export function usePageVirtualizer(count: number, {estimateSize, getItemKey, gap = 0}: {
+    estimateSize: (index: number) => number;
+    getItemKey: (index: number) => string;
+    /** Space between two rendered items (CSS margin between them, not on the spacers). */
+    gap?: number;
+}) {
+    const list = useRef<HTMLElement | null>(null);
+    const [page, setPage] = useState<HTMLElement | null>(null);
+    const [margin, setMargin] = useState(0);
+
+    // Where the list starts below the top of the page. Measured after every
+    // render (the bulk bar or notices above may have changed it, and every
+    // scroll renders again); state is only set when the value changed, so
+    // this settles after one pass.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useLayoutEffect(() => {
+        const el = list.current;
+        const content = el?.closest<HTMLElement>(".content") ?? null;
+        if (content !== page) setPage(content);
+        if (el && content) {
+            const m = Math.round(el.getBoundingClientRect().top - content.getBoundingClientRect().top + content.scrollTop);
+            if (m !== margin) setMargin(m);
+        }
+    });
+
+    const virtual = useVirtualizer({count, getScrollElement: () => page, estimateSize, overscan: 8, scrollMargin: margin, getItemKey, gap});
+    const items = page ? virtual.getVirtualItems() : Array.from({length: count}, (_, index) => ({index, start: margin, end: margin}));
+    return {
+        list,
+        items,
+        /** Heights of the spacers that stand in for the items above and below. */
+        top: page && items.length ? items[0].start - margin : 0,
+        bottom: page && items.length ? virtual.getTotalSize() - (items[items.length - 1].end - margin) : 0,
+        measure: page ? virtual.measureElement : undefined,
+        scrollTo: (index: number) => virtual.scrollToIndex(index, {align: "auto"}),
+    };
+}
+

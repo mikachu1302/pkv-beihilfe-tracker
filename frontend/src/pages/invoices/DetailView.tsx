@@ -1,24 +1,41 @@
 // "Detail" (default view of the new design): one card per invoice – the
 // invoice on the left, one column per payer with status, SOLL, IST,
-// difference and the ticks, a footer with note, documents and hints.
+// difference and the ticks, a footer with note, documents and hints. Only
+// the visible cards are rendered (usePageVirtualizer, a feed of articles).
 import type {CSSProperties} from "react";
 import {Link} from "react-router";
 import type {ClaimViewDTO, InvoiceRowDTO, PayerDTO} from "../../api";
 import {MarkBox} from "../../components/MarkBox";
 import {CATEGORY_LABELS, date, eur, num, pct, plural, shortDate} from "../../lib/format";
-import {ClaimPopover, ClarifyFlag, claimOf, claimState, deadlineText, markBase, opensInvoice, payerClass, useRowNav} from "./shared";
+import {ClaimPopover, ClarifyFlag, claimOf, claimState, deadlineText, markBase, opensInvoice, payerClass, usePageVirtualizer, useRowNav} from "./shared";
 import type {ViewProps} from "./shared";
+
+/** Space between two cards in px (views.css: article + article). */
+const CARD_GAP = 12;
 
 export function DetailView(v: ViewProps) {
     const {rows, payers} = v;
-    const nav = useRowNav(rows.map(r => r.id), {open: v.open, toggle: v.toggleOne});
+    const pv = usePageVirtualizer(rows.length, {estimateSize: () => 190, getItemKey: i => rows[i].id, gap: CARD_GAP});
+    const nav = useRowNav(rows.map(r => r.id), {open: v.open, toggle: v.toggleOne, scrollTo: pv.scrollTo,
+        rendered: pv.items.map(i => rows[i.index].id)});
     const total = rows.reduce((s, r) => s + num(r.amount), 0);
     const own = rows.reduce((s, r) => s + num(r.ownShare), 0);
     return (
-        <section className="inv-cards" aria-label="Rechnungen, Detailansicht" ref={el => {
-            nav.container.current = el;
-        }}>
-            {rows.map(r => <InvoiceCard key={r.id} row={r} payers={payers} v={v} nav={nav.item(r.id)}/>)}
+        <section className="inv-cards">
+            <div role="feed" aria-label="Rechnungen, Detailansicht" aria-busy="false" ref={el => {
+                pv.list.current = el;
+                nav.container.current = el;
+            }}>
+                {pv.top > 0 && <div aria-hidden="true" style={{height: pv.top}}/>}
+                {pv.items.map(item => {
+                    const r = rows[item.index];
+                    return (
+                        <InvoiceCard key={r.id} row={r} payers={payers} v={v} nav={nav.item(r.id)}
+                                     slot={{index: item.index, count: rows.length, measure: pv.measure}}/>
+                    );
+                })}
+                {pv.bottom > 0 && <div aria-hidden="true" style={{height: pv.bottom}}/>}
+            </div>
             <p className="inv-total">
                 <span>{plural(rows.length, "Rechnung", "Rechnungen")}</span>
                 <span>Betrag <strong className="num">{eur(total)}</strong></span>
@@ -28,11 +45,13 @@ export function DetailView(v: ViewProps) {
     );
 }
 
-function InvoiceCard({row: r, payers, v, nav}: {
+function InvoiceCard({row: r, payers, v, nav, slot}: {
     row: InvoiceRowDTO;
     payers: PayerDTO[];
     v: ViewProps;
     nav: ReturnType<ReturnType<typeof useRowNav>["item"]>;
+    /** Position in the list, and the virtualiser's measuring ref. */
+    slot: {index: number; count: number; measure?: (el: HTMLElement | null) => void};
 }) {
     const href = `/rechnung/${encodeURIComponent(r.id)}`;
     const selected = v.selected.has(r.id);
@@ -41,6 +60,7 @@ function InvoiceCard({row: r, payers, v, nav}: {
     const label = `${r.provider || "Rechnung ohne Namen"}, ${date(r.serviceDate)}, ${eur(r.amount)}`;
     return (
         <article className={`inv-card ${selected ? "sel" : ""}`} aria-label={label} {...nav}
+                 ref={slot.measure} data-index={slot.index} aria-posinset={slot.index + 1} aria-setsize={slot.count}
                  onClick={e => opensInvoice(e.target as HTMLElement) && v.open(r.id)}>
             <div className="inv-grid" style={{"--payers": payers.length} as CSSProperties}>
                 <div className="inv-main">

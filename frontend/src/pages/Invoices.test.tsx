@@ -241,6 +241,29 @@ describe("Invoices, new design", () => {
         expect(await screen.findByRole("columnheader", {name: "Muster PKV"})).toBeInTheDocument();
     });
 
+    it("renders only the visible cards when the page scrolls", async () => {
+        const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
+        Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+            configurable: true, get() {
+                const el = this as HTMLElement;
+                return el.classList.contains("content") ? 800 : el.tagName === "ARTICLE" ? 190 : 0;
+            },
+        });
+        try {
+            svc.ListInvoices.mockResolvedValue(Array.from({length: 300}, (_, i) => invoiceRow(`r${i}`, `Praxis ${i + 1}`)));
+            renderAt("/", "/", <main className="content"><Invoices/></main>);
+            const feed = await screen.findByRole("feed", {name: "Rechnungen, Detailansicht"});
+            await waitFor(() => expect(within(feed).getAllByRole("article").length).toBeLessThan(30));
+            const cards = within(feed).getAllByRole("article");
+            expect(cards.length).toBeGreaterThan(3);
+            expect(cards[0]).toHaveAttribute("aria-setsize", "300");
+            expect(cards[0]).toHaveAttribute("aria-posinset", "1");
+            expect(screen.getByText("300 Rechnungen")).toBeInTheDocument();
+        } finally {
+            if (height) Object.defineProperty(HTMLElement.prototype, "offsetHeight", height);
+        }
+    });
+
     it("has no view switch in the classic design", async () => {
         applyDesign("classic");
         renderAt("/", "/", <Invoices/>);

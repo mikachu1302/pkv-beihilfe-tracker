@@ -109,6 +109,9 @@ rows of overscan. Details:
 - The search of the browser (Strg+F) cannot find rows that are not rendered – the app's own search
   (Strg+F in the list) filters all invoices, as today.
 - Detail cards are fewer and taller; they use the same technique only if measurements show a need.
+  (Measured 2026-11-03 with 436 invoices, "alle Jahre", Firefox headless: rendering all cards took
+  ~470 ms and 32 000 DOM nodes, selecting one invoice ~200 ms – so the cards are virtualised too:
+  80 ms, 1 100 nodes, ~15 ms. The classic list stays as it is: ~370 ms, ~260 ms per tick.)
 
 **Klassische Liste** – today's invoice table with all its functions (ticks, popovers, bulk bar).
 
@@ -185,6 +188,10 @@ All seven steps are done (commits "v0.4.0 step 1" … "step 7"). Decided or chan
   inside, both ways. Amounts without "€", dates as "TT.MM.JJ" (full date as tooltip).
 - **Settings · Darstellung**: design and default view as option cards (title = name of the
   radio, text = its description); table options there and in the column chooser are the same.
+- **Virtualised lists and the keyboard**: the tab stop of the roving tabindex moves to the first
+  rendered row when the current one is scrolled out of the rendered range – otherwise Tab could
+  not reach the list after scrolling. Detail is a `feed` of articles with
+  `aria-setsize`/`aria-posinset`.
 - **Tests**: views (cards, ticks, popovers, keyboard, view switch for the session, sorting,
   column chooser, only visible rows in Tabelle and Kompakt), settings, appearance in the backend,
   and `styles/contrast.test.ts`, which reads the token files and checks every text/background

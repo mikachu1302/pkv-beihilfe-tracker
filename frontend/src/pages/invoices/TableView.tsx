@@ -171,12 +171,13 @@ export function TableView(v: ViewProps & {options: TableOptions}) {
         scrollPaddingEnd: options.sum ? SUM_HEIGHT : 0,
         getItemKey: i => rows[i].id,
     });
+    const items = virtual.getVirtualItems();
     const nav = useRowNav(rows.map(r => r.id), {
         open: v.open, toggle: v.toggleOne,
         scrollTo: i => virtual.scrollToIndex(i, {align: "auto"}),
+        rendered: items.map(i => rows[i.index].id),
     });
 
-    const items = virtual.getVirtualItems();
     const top = items.length ? items[0].start - HEAD_HEIGHT : 0;
     const bottom = items.length ? virtual.getTotalSize() - (items[items.length - 1].end - HEAD_HEIGHT) : 0;
     const width = 36 + cols.reduce((s, c) => s + c.width, 0);

@@ -1,17 +1,16 @@
 // "Kompakt": one line per invoice – date, provider, amount, per payer three
 // status dots with a short text, the open amount and flags. A line expands
 // (chevron, click or →) to everything the Detail card shows, ticks included.
-// Only the visible lines are rendered; the page scrolls (no own scroll
-// area), expanded lines are measured.
-import {useLayoutEffect, useRef, useState} from "react";
+// Only the visible lines are rendered (usePageVirtualizer); the page
+// scrolls, expanded lines are measured.
+import {useState} from "react";
 import type {CSSProperties, KeyboardEvent as ReactKeyboardEvent} from "react";
 import {Link} from "react-router";
-import {useVirtualizer} from "@tanstack/react-virtual";
 import type {ClaimViewDTO, InvoiceRowDTO, PayerDTO} from "../../api";
 import {MarkBox} from "../../components/MarkBox";
 import {CATEGORY_LABELS, date, eur, num, plural, shortDate} from "../../lib/format";
 import {footerItems, PayerColumn} from "./DetailView";
-import {claimOf, claimState, opensInvoice, payerClass, useRowNav} from "./shared";
+import {claimOf, claimState, opensInvoice, payerClass, usePageVirtualizer, useRowNav} from "./shared";
 import type {ViewProps} from "./shared";
 
 const LINE_HEIGHT = 46;
@@ -68,31 +67,8 @@ function flags(r: InvoiceRowDTO): {mark: string; text: string; tone: string}[] {
 export function CompactView(v: ViewProps) {
     const {rows, payers} = v;
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
-    const list = useRef<HTMLDivElement | null>(null);
-    const [page, setPage] = useState<HTMLElement | null>(null);
-    const [margin, setMargin] = useState(0);
-
-    // The page scrolls; the list starts this far below the top of the page.
-    // Measured after every render (the bulk bar or notices above may have
-    // changed it, and every scroll renders again); state is only set when the
-    // value changed, so this settles after one pass.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    useLayoutEffect(() => {
-        const el = list.current;
-        const content = el?.closest<HTMLElement>(".content") ?? null;
-        if (content !== page) setPage(content);
-        if (el && content) {
-            const m = Math.round(el.getBoundingClientRect().top - content.getBoundingClientRect().top + content.scrollTop);
-            if (m !== margin) setMargin(m);
-        }
-    });
-
-    const virtual = useVirtualizer({
-        count: rows.length,
-        getScrollElement: () => page,
+    const pv = usePageVirtualizer(rows.length, {
         estimateSize: i => (expanded.has(rows[i].id) ? LINE_HEIGHT + 170 : LINE_HEIGHT),
-        overscan: 10,
-        scrollMargin: margin,
         getItemKey: i => rows[i].id,
     });
 
@@ -103,7 +79,8 @@ export function CompactView(v: ViewProps) {
     });
     const nav = useRowNav(rows.map(r => r.id), {
         open: v.open, toggle: v.toggleOne,
-        scrollTo: i => virtual.scrollToIndex(i, {align: "auto"}),
+        scrollTo: pv.scrollTo,
+        rendered: pv.items.map(i => rows[i.index].id),
         keys: (e: ReactKeyboardEvent, id: string) => {
             if (e.key === "ArrowRight") setOpen(id, true);
             else if (e.key === "ArrowLeft") setOpen(id, false);
@@ -112,10 +89,6 @@ export function CompactView(v: ViewProps) {
         },
     });
 
-    // Without a scrolling page (tests, unusual layouts) all lines are rendered.
-    const items = page ? virtual.getVirtualItems() : rows.map((_, index) => ({index, start: margin, end: margin}));
-    const top = page && items.length ? items[0].start - margin : 0;
-    const bottom = page && items.length ? virtual.getTotalSize() - (items[items.length - 1].end - margin) : 0;
     const style = {"--payers": payers.length} as CSSProperties;
     const total = rows.reduce((s, r) => s + num(r.amount), 0);
     const open = rows.reduce((s, r) => s + openAmount(r), 0);
@@ -133,21 +106,21 @@ export function CompactView(v: ViewProps) {
                 <span/>
             </div>
             <div ref={el => {
-                list.current = el;
+                pv.list.current = el;
                 nav.container.current = el;
             }} role="list">
-                {top > 0 && <div aria-hidden="true" style={{height: top}}/>}
-                {items.map(item => {
+                {pv.top > 0 && <div aria-hidden="true" style={{height: pv.top}}/>}
+                {pv.items.map(item => {
                     const r = rows[item.index];
                     return (
-                        <div key={r.id} data-index={item.index} ref={page ? virtual.measureElement : undefined} role="listitem"
+                        <div key={r.id} data-index={item.index} ref={pv.measure} role="listitem"
                              aria-setsize={rows.length} aria-posinset={item.index + 1}>
                             <CompactLine row={r} payers={payers} v={v} nav={nav.item(r.id)}
                                          expanded={expanded.has(r.id)} setExpanded={on => setOpen(r.id, on)}/>
                         </div>
                     );
                 })}
-                {bottom > 0 && <div aria-hidden="true" style={{height: bottom}}/>}
+                {pv.bottom > 0 && <div aria-hidden="true" style={{height: pv.bottom}}/>}
             </div>
             <div className="compact-line compact-sum">
                 <span/>
