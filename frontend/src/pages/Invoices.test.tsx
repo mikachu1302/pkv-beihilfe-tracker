@@ -1,6 +1,8 @@
 import {screen, waitFor, within} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import {beforeEach, describe, expect, it, vi} from "vitest";
+import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
+import {setAppearance, setSessionView} from "../lib/appearance";
+import {applyDesign} from "../lib/design";
 import {claimView, invoiceRow, settings} from "../test/fixtures";
 import {renderAt} from "../test/render";
 import Invoices, {matchesFilter} from "./Invoices";
@@ -41,7 +43,15 @@ function figures(tag: string) {
     };
 }
 
-describe("Invoices", () => {
+afterEach(() => {
+    applyDesign("new");
+    setSessionView(null);
+    setAppearance(null);
+});
+
+describe("Invoices, classic list", () => {
+    beforeEach(() => applyDesign("classic"));
+
     it("lists invoices with one column group per payer", async () => {
         renderAt("/", "/", <Invoices/>);
         expect(await screen.findByText("Dr. Muster")).toBeInTheDocument();
@@ -147,5 +157,94 @@ describe("Invoices", () => {
     it("has an edit link per row", async () => {
         renderAt("/", "/", <Invoices/>);
         expect(await screen.findByRole("link", {name: "Dr. Muster bearbeiten"})).toHaveAttribute("href", "/rechnung/a");
+    });
+});
+
+const appearance = {theme: "", design: "new", designHint: false, view: "detail", table: {dense: false, sum: true, hidden: []}};
+
+describe("Invoices, new design", () => {
+    it("starts with the detail view: one card per invoice with a column per payer", async () => {
+        renderAt("/", "/", <Invoices/>);
+        const card = await screen.findByRole("article", {name: "Dr. Muster, 03.03.2026, 286,40 €"});
+        expect(within(card).getByText("Beihilfe")).toBeInTheDocument();
+        expect(within(card).getAllByText("nicht eingereicht")).toHaveLength(2);
+        expect(screen.getByRole("button", {name: "Detail"})).toHaveAttribute("aria-pressed", "true");
+        const other = screen.getByRole("article", {name: /Apotheke am Markt/});
+        expect(within(other).getByText("eingereicht", {selector: ".pill"})).toBeInTheDocument();
+        expect(within(other).getByText("zurückgehalten", {selector: ".pill"})).toBeInTheDocument();
+        expect(screen.getByText("2 Rechnungen")).toBeInTheDocument();
+    });
+
+    it("ticks and asks for refunds in the card as in the list", async () => {
+        const user = userEvent.setup();
+        svc.SetMark.mockResolvedValue(rows[0]);
+        renderAt("/", "/", <Invoices/>);
+        const card = await screen.findByRole("article", {name: /Dr. Muster/});
+        await user.click(within(card).getAllByLabelText("eingereicht")[0]);
+        expect(svc.SetMark).toHaveBeenCalledWith({invoiceId: "a", payerId: "bh", mark: "submitted", on: true, date: "", note: "", amount: ""});
+        await user.click(within(card).getAllByLabelText("erstattet")[0]);
+        expect(screen.getByLabelText("Erstattet (€)")).toHaveValue("200,48");
+    });
+
+    it("lists note, waiting time and documents below the card", async () => {
+        svc.ListInvoices.mockResolvedValue([invoiceRow("a", "Dr. Muster", {
+            note: "Rückfrage zur Ziffer 5", attachments: 2,
+            claims: [claimView("bh", "Beihilfe", "beihilfe", {status: "submitted", submitted: {done: true, date: "2026-08-01", note: ""}, waitingDays: 50, longWait: true})],
+        })]);
+        renderAt("/", "/", <Invoices/>);
+        expect(await screen.findByText("Notiz: Rückfrage zur Ziffer 5")).toBeInTheDocument();
+        expect(screen.getByText("Beihilfe: Erstattung seit 7 Wochen offen")).toBeInTheDocument();
+        expect(screen.getByText("2 Belege")).toBeInTheDocument();
+    });
+
+    it("moves between invoices with the arrow keys, opens with Enter and selects with Space", async () => {
+        const user = userEvent.setup();
+        renderAt("/", "/", <Invoices/>);
+        const first = await screen.findByRole("article", {name: /Dr. Muster/});
+        const second = screen.getByRole("article", {name: /Apotheke am Markt/});
+        expect(first).toHaveAttribute("tabindex", "0");
+        expect(second).toHaveAttribute("tabindex", "-1");
+        first.focus();
+        await user.keyboard("{ArrowDown}");
+        expect(second).toHaveFocus();
+        await user.keyboard(" ");
+        expect(screen.getByText("1 Rechnung ausgewählt")).toBeInTheDocument();
+        await user.keyboard("{ArrowUp}");
+        expect(first).toHaveFocus();
+        await user.keyboard("{Enter}");
+        expect(await screen.findByText("andere Seite")).toBeInTheDocument();
+    });
+
+    it("selects all invoices for bulk actions", async () => {
+        const user = userEvent.setup();
+        renderAt("/", "/", <Invoices/>);
+        await screen.findByRole("article", {name: /Dr. Muster/});
+        await user.click(screen.getByLabelText("Alle auswählen"));
+        expect(screen.getByText("2 Rechnungen ausgewählt")).toBeInTheDocument();
+    });
+
+    it("switches the view for this session; the settings decide the default", async () => {
+        const user = userEvent.setup();
+        const view = renderAt("/", "/", <Invoices/>);
+        await screen.findByRole("article", {name: /Dr. Muster/});
+        await user.click(screen.getByRole("button", {name: "Klassische Liste"}));
+        expect(screen.getByRole("columnheader", {name: "Muster PKV"})).toBeInTheDocument();
+        expect(screen.queryByRole("article")).not.toBeInTheDocument();
+        view.unmount();
+
+        renderAt("/", "/", <Invoices/>); // still the classic list (same session)
+        expect(await screen.findByRole("columnheader", {name: "Muster PKV"})).toBeInTheDocument();
+        setSessionView(null);
+        expect(await screen.findByRole("article", {name: /Dr. Muster/})).toBeInTheDocument();
+        setAppearance({...appearance, view: "classic"});
+        expect(await screen.findByRole("columnheader", {name: "Muster PKV"})).toBeInTheDocument();
+    });
+
+    it("has no view switch in the classic design", async () => {
+        applyDesign("classic");
+        renderAt("/", "/", <Invoices/>);
+        await screen.findByText("Dr. Muster");
+        expect(screen.queryByRole("group", {name: "Ansicht"})).not.toBeInTheDocument();
+        expect(screen.queryByRole("article")).not.toBeInTheDocument();
     });
 });

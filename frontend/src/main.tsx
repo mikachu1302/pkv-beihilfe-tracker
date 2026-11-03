@@ -8,6 +8,7 @@ import "./styles/fonts.css";
 import "./styles/classic.css";
 import "./styles/base.css";
 import "./styles/new.css";
+import "./styles/views.css";
 
 initTheme(); // before the first paint: no flash of the wrong colours
 

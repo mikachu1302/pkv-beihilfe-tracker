@@ -13,6 +13,10 @@ import (
 // DeadlineWarnDays: open claims are flagged this many days before their deadline.
 const DeadlineWarnDays = 90
 
+// LongWaitDays: a submitted claim without refund after this many days is
+// waiting long (a reminder on the dashboard, a hint in the list).
+const LongWaitDays = 42
+
 // Status of a claim.
 type Status string
 
@@ -54,6 +58,11 @@ type ClaimView struct {
 	// Deadline to file the claim (only for open/held claims of payers with a deadline).
 	Deadline     civil.Date `json:"deadline"`
 	DeadlineDays int        `json:"deadlineDays"` // days left, negative when missed
+
+	// WaitingDays: days since the claim was submitted, while it waits for the refund.
+	WaitingDays int `json:"waitingDays"`
+	// FromDoc: a refund was taken from a refund document (Bescheid).
+	FromDoc bool `json:"fromDoc"`
 }
 
 // InvoiceView is an invoice with the derived values of all its claims.
@@ -113,6 +122,7 @@ func claimView(s *model.Settings, inv *model.Invoice, payerID string, today civi
 	}
 	for _, r := range c.Refunds {
 		cv.Actual += r.Amount
+		cv.FromDoc = cv.FromDoc || r.DocID != ""
 	}
 	cv.Status = ClaimStatus(c)
 	if cv.Status == StatusRefunded {
@@ -122,6 +132,9 @@ func claimView(s *model.Settings, inv *model.Invoice, payerID string, today civi
 	if p.ClaimDeadlineYears > 0 && !inv.InvoiceDate.IsZero() && (cv.Status == StatusOpen || cv.Status == StatusHeld) {
 		cv.Deadline = inv.InvoiceDate.AddYears(p.ClaimDeadlineYears)
 		cv.DeadlineDays = today.DaysUntil(cv.Deadline)
+	}
+	if cv.Status == StatusSubmitted && !c.Submitted.Date.IsZero() {
+		cv.WaitingDays = -today.DaysUntil(c.Submitted.Date)
 	}
 	return cv
 }

@@ -94,6 +94,11 @@ type ClaimViewDTO struct {
 	SuggestClarify     bool    `json:"suggestClarify"`
 	Deadline           string  `json:"deadline"`
 	DeadlineDays       int     `json:"deadlineDays"`
+	// WaitingDays since submitted while waiting for the refund; LongWait
+	// when longer than the dashboard reminder allows.
+	WaitingDays int  `json:"waitingDays"`
+	LongWait    bool `json:"longWait"`
+	FromDoc     bool `json:"fromDoc"` // a refund comes from a Bescheid
 }
 
 // InvoiceRowDTO is an invoice with its derived values, as shown in lists.
@@ -107,6 +112,7 @@ type InvoiceRowDTO struct {
 	Year        int            `json:"year"`
 	Amount      string         `json:"amount"`
 	Paid        MarkDTO        `json:"paid"`
+	Due         string         `json:"due"` // payment due date, "" if none
 	Claims      []ClaimViewDTO `json:"claims"`
 	Expected    string         `json:"expected"`
 	Actual      string         `json:"actual"`
@@ -176,7 +182,7 @@ func rowDTO(inv *model.Invoice, v calc.InvoiceView) InvoiceRowDTO {
 	r := InvoiceRowDTO{
 		ID: inv.ID, Provider: inv.Provider, Category: string(inv.Category), Reference: inv.Reference,
 		InvoiceDate: inv.InvoiceDate.String(), ServiceDate: v.ServiceDate.String(), Year: v.Year,
-		Amount: inv.Amount.String(), Paid: markDTO(inv.Paid), Expected: v.Expected.String(),
+		Amount: inv.Amount.String(), Paid: markDTO(inv.Paid), Due: inv.Due.String(), Expected: v.Expected.String(),
 		Actual: v.Actual.String(), OwnShare: v.OwnShare.String(), Settled: v.Settled, Note: inv.Note,
 		Attachments: len(inv.Attachments), Claims: []ClaimViewDTO{}, Warnings: []WarningDTO{},
 	}
@@ -189,6 +195,7 @@ func rowDTO(inv *model.Invoice, v calc.InvoiceView) InvoiceRowDTO {
 			Refunded: markDTO(c.Refunded), Clarify: markDTO(c.Clarify), Held: ic.Held, Skip: ic.Skip,
 			KeepsPremiumRefund: c.KeepsPremiumRefund, SuggestClarify: c.SuggestClarify,
 			Deadline: c.Deadline.String(), DeadlineDays: c.DeadlineDays,
+			WaitingDays: c.WaitingDays, LongWait: c.WaitingDays > calc.LongWaitDays, FromDoc: c.FromDoc,
 		})
 	}
 	for _, w := range v.Warnings {

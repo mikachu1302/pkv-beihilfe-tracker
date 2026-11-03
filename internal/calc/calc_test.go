@@ -115,6 +115,21 @@ func TestDeadline(t *testing.T) {
 	}
 }
 
+func TestWaitingAndFromDoc(t *testing.T) {
+	s := settings70()
+	inv := model.Invoice{InvoiceDate: d("2026-01-10"), Amount: eur("100"), Claims: map[string]model.Claim{
+		"bh":  {Submitted: model.Mark{Date: d("2026-02-01")}},
+		"pkv": {Submitted: model.Mark{Date: d("2026-02-01")}, Refunds: []model.Refund{{Amount: eur("30"), DocID: "doc1"}}},
+	}}
+	v := Invoice(s, &inv, d("2026-03-20"))
+	if bh := claimOf(v, "bh"); bh.WaitingDays != 47 || bh.FromDoc {
+		t.Errorf("bh: waiting %d, from doc %v", bh.WaitingDays, bh.FromDoc)
+	}
+	if pkv := claimOf(v, "pkv"); pkv.WaitingDays != 0 || !pkv.FromDoc {
+		t.Errorf("pkv (refunded): waiting %d, from doc %v", pkv.WaitingDays, pkv.FromDoc)
+	}
+}
+
 func TestFullPKV(t *testing.T) {
 	s := &model.Settings{
 		Payers:   []model.Payer{{ID: "pkv", Kind: model.PKV, Name: "PKV"}},

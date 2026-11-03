@@ -4,14 +4,21 @@ import {Desktop, Svc} from "../api";
 import type {ClaimViewDTO, InvoiceRowDTO, MarkChangeDTO, PayerDTO, YearDTO} from "../api";
 import {useApp} from "../App";
 import {useConfirm, useToast} from "../components/feedback";
-import {MarkBox} from "../components/MarkBox";
 import {OutstandingCards} from "../components/Outstanding";
-import {Badge, Empty, ErrorNotice, Loading, YearSelect} from "../components/ui";
-import {CATEGORY_LABELS, date, eur, num, plural, toInput, today} from "../lib/format";
+import {Empty, ErrorNotice, Loading, YearSelect} from "../components/ui";
+import {setSessionView, useInvoiceView, VIEW_LABELS} from "../lib/appearance";
+import type {InvoiceView} from "../lib/appearance";
+import {useDesign} from "../lib/design";
+import {eur, num, plural, today} from "../lib/format";
 import {useBackend} from "../lib/useBackend";
-import {useDialog} from "../lib/useDialog";
 import {dialogOpen, isTyping, key, mod, useKeydown} from "../lib/shortcuts";
+import {ClassicList} from "./invoices/ClassicList";
+import {DetailView} from "./invoices/DetailView";
+import type {Pop, ViewProps} from "./invoices/shared";
 import {exportExcel} from "./Overview";
+
+/** The views of the new design, in the order of the switch. */
+const VIEWS: InvoiceView[] = ["detail", "classic"];
 
 type Filter = "all" | "open" | "submitted" | "clarify" | "deadline" | "unpaid" | "warnings";
 
@@ -45,15 +52,11 @@ export function matchesFilter(r: InvoiceRowDTO, f: Filter): boolean {
     }
 }
 
-interface Pop {
-    rowId: string;
-    payerId: string;
-    kind: "refund" | "clarify";
-}
-
 export default function Invoices() {
     const {year, setYear, dataVersion} = useApp();
     const navigate = useNavigate();
+    const design = useDesign();
+    const view = useInvoiceView();
     const toast = useToast();
     const confirm = useConfirm();
     const years = useBackend(() => Svc.Years(), [dataVersion]);
@@ -92,14 +95,6 @@ export default function Invoices() {
     const visible = rows.filter(r => matchesFilter(r, filter) &&
         (!q || `${r.provider} ${r.reference} ${r.note}`.toLowerCase().includes(q)));
 
-    /** Opens the invoice when a row is clicked anywhere but on its checkboxes, buttons or links. */
-    function openFromRow(e: React.MouseEvent, id: string) {
-        const target = e.target as HTMLElement;
-        if (target.closest("input, button, a, label, select, textarea, .popover, [role=dialog], td:first-child, .markbox")) return;
-        if (window.getSelection()?.toString()) return; // the user is selecting text
-        navigate(`/rechnung/${encodeURIComponent(id)}`);
-    }
-
     async function change(ch: MarkChangeDTO) {
         try {
             const row = await Svc.SetMark(ch);
@@ -136,9 +131,10 @@ export default function Invoices() {
         return n;
     });
 
-    const sum = (pick: (r: InvoiceRowDTO) => string) => visible.reduce((s, r) => s + num(pick(r)), 0);
-    const claimSum = (payerId: string, field: "expected" | "actual") =>
-        visible.reduce((s, r) => s + num((r.claims ?? []).find(c => c.payerId === payerId)?.[field]), 0);
+    const viewProps: ViewProps = {
+        rows: visible, payers, selected, toggleOne, allSelected, toggleAll, pop, setPop, change, toggleRefunded, toggleClarify,
+        open: id => navigate(`/rechnung/${encodeURIComponent(id)}`),
+    };
 
     const yearList = years.data ?? [year];
     return (
@@ -153,6 +149,19 @@ export default function Invoices() {
                 <button onClick={() => exportExcel(toast, year)}>Excel</button>
                 <button className="primary" onClick={() => navigate("/rechnung/neu")}>Neue Rechnung</button>
             </div>
+            {design === "new" && (
+                <div className="view-bar">
+                    <ViewSwitch view={view}/>
+                    {view !== "classic" && visible.length > 0 && (
+                        <div className="view-tools">
+                            <label className="inline">
+                                <input type="checkbox" checked={allSelected} onChange={toggleAll}/>
+                                Alle auswählen
+                            </label>
+                        </div>
+                    )}
+                </div>
+            )}
             <OutstandingForYear year={year} version={figures}/>
             <div className="chips mb-3">
                 {FILTERS.map(([f, label]) => {
@@ -176,183 +185,18 @@ export default function Invoices() {
                         ? <>Für {year === 0 ? "diesen Zeitraum" : year} sind noch keine Rechnungen erfasst. <Link to="/rechnung/neu">Neue Rechnung</Link> oder <Link to="/import">Excel importieren</Link>.</>
                         : "Keine Rechnung passt zum Filter."}
                 </Empty>
-            ) : (
-                <div className="table-wrap">
-                    <table className="invoices">
-                        <thead>
-                        <tr>
-                            <th className="check-col"><input type="checkbox" aria-label="Alle auswählen" checked={allSelected} onChange={toggleAll}/></th>
-                            <th>Behandlung</th>
-                            <th>Behandler</th>
-                            <th className="num">Betrag</th>
-                            <th>Bezahlt</th>
-                            {payers.map(p => <th key={p.id} className="payer" colSpan={2}>{p.name}</th>)}
-                            <th className="num" title="Rechnungsbetrag minus Erstattungen">Nicht erstattet</th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        {visible.map(r => (
-                            <tr key={r.id} className={`clickable ${selected.has(r.id) ? "sel" : ""}`}
-                                onClick={e => openFromRow(e, r.id)}>
-                                <td><input type="checkbox" aria-label={`${r.provider} auswählen`} checked={selected.has(r.id)} onChange={() => toggleOne(r.id)}/></td>
-                                <td>
-                                    {date(r.serviceDate)}
-                                    {r.invoiceDate !== r.serviceDate && <div className="sub">Rechnung {date(r.invoiceDate)}</div>}
-                                </td>
-                                <td>
-                                    <Link className="provider-link" to={`/rechnung/${encodeURIComponent(r.id)}`}>{r.provider || "(ohne Namen)"}</Link>
-                                    {"\u00a0"}<Link className="edit-link" to={`/rechnung/${encodeURIComponent(r.id)}`}
-                                               aria-label={`${r.provider || "Rechnung"} bearbeiten`} title="Rechnung öffnen und bearbeiten">✎</Link>
-                                    {(r.warnings ?? []).length > 0 && (
-                                        <> <Badge kind="warn" title={(r.warnings ?? []).map(w => w.text).join("\n")}>⚠ {(r.warnings ?? []).length}</Badge></>
-                                    )}
-                                    {r.note.trim() !== "" && (
-                                        <> <span className="badge note-badge" title={r.note} aria-label={`Notiz: ${r.note}`}>Notiz</span></>
-                                    )}
-                                    <div className="sub">{[CATEGORY_LABELS[r.category], r.reference].filter(Boolean).join(" · ")}</div>
-                                </td>
-                                <td className="num">{eur(r.amount)}</td>
-                                <td>
-                                    <MarkBox label="bezahlt" mark={r.paid}
-                                             onToggle={on => change({invoiceId: r.id, payerId: "", mark: "paid", on, date: "", note: "", amount: ""})}
-                                             onDate={d => change({invoiceId: r.id, payerId: "", mark: "paid", on: true, date: d, note: "", amount: ""})}/>
-                                </td>
-                                {payers.map(p => {
-                                    const c = (r.claims ?? []).find(x => x.payerId === p.id);
-                                    if (!c) return <td key={p.id} colSpan={2} className="payer-first muted small">–</td>;
-                                    return (
-                                        <ClaimCells key={p.id} row={r} claim={c} pop={pop} setPop={setPop} change={change}
-                                                    toggleRefunded={on => toggleRefunded(r, c, on)}
-                                                    toggleClarify={() => toggleClarify(r, c)}/>
-                                    );
-                                })}
-                                <td className="num">{eur(r.ownShare)}</td>
-                            </tr>
-                        ))}
-                        </tbody>
-                        <tfoot>
-                        <tr>
-                            <td/>
-                            <td colSpan={2}>{plural(visible.length, "Rechnung", "Rechnungen")}</td>
-                            <td className="num">{eur(sum(r => r.amount))}</td>
-                            <td/>
-                            {payers.map(p => (
-                                <td key={p.id} className="amounts payer-first" colSpan={2}>
-                                    SOLL {eur(claimSum(p.id, "expected"))} · IST {eur(claimSum(p.id, "actual"))}
-                                </td>
-                            ))}
-                            <td className="num">{eur(sum(r => r.ownShare))}</td>
-                        </tr>
-                        </tfoot>
-                    </table>
-                </div>
-            )}
+            ) : view === "detail" ? <DetailView {...viewProps}/> : <ClassicList {...viewProps}/>}
         </>
     );
 }
 
-function ClaimCells({row, claim: c, pop, setPop, change, toggleRefunded, toggleClarify}: {
-    row: InvoiceRowDTO;
-    claim: ClaimViewDTO;
-    pop: Pop | null;
-    setPop: (p: Pop | null) => void;
-    change: (ch: MarkChangeDTO) => Promise<void>;
-    toggleRefunded: (on: boolean) => void;
-    toggleClarify: () => void;
-}) {
-    const base = {invoiceId: row.id, payerId: c.payerId, note: "", amount: ""};
-    const open = pop?.rowId === row.id && pop.payerId === c.payerId ? pop.kind : null;
-    const diff = num(c.diff);
+/** Detail, Kompakt, Tabelle or the classic list (new design only). */
+function ViewSwitch({view}: {view: InvoiceView}) {
     return (
-        <>
-            <td className="amounts payer-first" title={`Satz ${c.rate} %`}>
-                <span className="muted small">SOLL</span> {eur(c.expected)}
-                <span className="ist">
-                    <span className="muted small">IST</span> {c.status === "refunded" ? eur(c.actual) : "–"}
-                    {c.status === "refunded" && diff !== 0 && <span className={`small ${diff < 0 ? "neg" : "pos"}`}> ({eur(c.diff)})</span>}
-                </span>
-            </td>
-            <td className="rel">
-                <div className="markstack">
-                    <span className="markline">
-                        <MarkBox label="eingereicht" mark={c.submitted}
-                                 onToggle={on => change({...base, mark: "submitted", on, date: ""})}
-                                 onDate={d => change({...base, mark: "submitted", on: true, date: d})}/>
-                        <button type="button" className={`flag ${c.clarify.done ? "on" : c.suggestClarify ? "suggest" : ""}`}
-                                aria-pressed={c.clarify.done}
-                                aria-label={`Klärungsbedarf ${c.payerName}`}
-                                title={c.clarify.done ? `Klärungsbedarf seit ${date(c.clarify.date)}${c.clarify.note ? `: ${c.clarify.note}` : ""}`
-                                    : c.suggestClarify ? "IST weicht vom SOLL ab – Klärungsbedarf markieren?" : "Klärungsbedarf markieren"}
-                                onClick={toggleClarify}>⚑</button>
-                    </span>
-                    <MarkBox label="erstattet" mark={c.refunded.done || num(c.actual) !== 0 ? {...c.refunded, done: true} : c.refunded}
-                             onToggle={toggleRefunded}/>
-                    <span className="sub">
-                        {c.held && "zurückgehalten "}
-                        {c.skip && "verzichtet "}
-                        {c.deadline && c.deadlineDays <= 90 && (
-                            <span className={c.deadlineDays < 0 ? "neg" : ""}>
-                                {c.deadlineDays < 0 ? `Frist abgelaufen (${date(c.deadline)})` : `Frist bis ${date(c.deadline)}`}
-                            </span>
-                        )}
-                    </span>
-                </div>
-                {open === "refund" && (
-                    <RefundPopover claim={c} onCancel={() => setPop(null)}
-                                   onSave={(amount, d) => change({...base, mark: "refunded", on: true, date: d, amount})}/>
-                )}
-                {open === "clarify" && (
-                    <ClarifyPopover onCancel={() => setPop(null)}
-                                    onSave={note => change({...base, mark: "clarify", on: true, date: "", note})}/>
-                )}
-            </td>
-        </>
-    );
-}
-
-function RefundPopover({claim, onSave, onCancel}: {claim: ClaimViewDTO; onSave: (amount: string, date: string) => void; onCancel: () => void}) {
-    const open = num(claim.expected) - num(claim.actual);
-    const [amount, setAmount] = useState(toInput((open > 0 ? open : num(claim.expected)).toFixed(2)));
-    const [d, setD] = useState(today());
-    const ref = useDialog<HTMLDivElement>(onCancel);
-    return (
-        <div ref={ref} className="popover" role="dialog" aria-label={`Erstattung ${claim.payerName}`} tabIndex={-1}>
-            <div className="grid two">
-                <div className="field">
-                    <label htmlFor="refund-amount">Erstattet (€)</label>
-                    <input id="refund-amount" value={amount} onChange={e => setAmount(e.target.value)}
-                           onKeyDown={e => e.key === "Enter" && onSave(amount, d)}/>
-                </div>
-                <div className="field">
-                    <label htmlFor="refund-date">am</label>
-                    <input id="refund-date" type="date" value={d} onChange={e => setD(e.target.value)}/>
-                </div>
-            </div>
-            <div className="hint small muted mt-1">SOLL {eur(claim.expected)}</div>
-            <div className="actions mt-3">
-                <span className="spacer"/>
-                <button onClick={onCancel}>Abbrechen</button>
-                <button className="primary" onClick={() => onSave(amount, d)}>Übernehmen</button>
-            </div>
-        </div>
-    );
-}
-
-function ClarifyPopover({onSave, onCancel}: {onSave: (note: string) => void; onCancel: () => void}) {
-    const [note, setNote] = useState("");
-    const ref = useDialog<HTMLDivElement>(onCancel);
-    return (
-        <div ref={ref} className="popover" role="dialog" aria-label="Klärungsbedarf" tabIndex={-1}>
-            <div className="field">
-                <label htmlFor="clarify-note">Klärungsbedarf – Grund</label>
-                <input id="clarify-note" value={note} placeholder="z. B. Steigerungssatz gekürzt"
-                       onChange={e => setNote(e.target.value)} onKeyDown={e => e.key === "Enter" && onSave(note)}/>
-            </div>
-            <div className="actions mt-3">
-                <span className="spacer"/>
-                <button onClick={onCancel}>Abbrechen</button>
-                <button className="primary" onClick={() => onSave(note)}>Markieren</button>
-            </div>
+        <div className="segmented" role="group" aria-label="Ansicht">
+            {VIEWS.map(v => (
+                <button key={v} type="button" aria-pressed={view === v} onClick={() => setSessionView(v)}>{VIEW_LABELS[v]}</button>
+            ))}
         </div>
     );
 }
