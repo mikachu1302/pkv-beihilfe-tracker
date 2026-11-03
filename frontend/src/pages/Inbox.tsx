@@ -595,7 +595,8 @@ function PhoneDialog({onClose}: {onClose: () => void}) {
                 {error && <ErrorNotice error={error}/>}
                 {info && (
                     <>
-                        <p>QR-Code mit der Kamera des Handys scannen. Auf der Seite, die sich öffnet, Belege fotografieren oder PDFs wählen – sie erscheinen hier im Posteingang.</p>
+                        <p>QR-Code mit der Kamera des Handys scannen. Auf der Seite, die sich öffnet, Belege fotografieren oder PDFs wählen – sie erscheinen hier im Posteingang.
+                            Für einen Beleg mit mehreren Seiten dort „Mehrseitiger Beleg“ wählen.</p>
                         {!info.lan && <Notice kind="warn">Kein Netzwerk gefunden – Handy und Computer müssen im selben WLAN sein.</Notice>}
                         <div style={{textAlign: "center"}}><img src={info.qr} alt="QR-Code für das Handy" width={240} height={240}/></div>
                         <p className="mono small" style={{wordBreak: "break-all", textAlign: "center"}}>{info.url}</p>

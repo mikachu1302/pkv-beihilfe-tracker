@@ -29,6 +29,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -65,11 +66,25 @@ type Server struct {
 	srv   *http.Server
 	timer *time.Timer
 
-	mu    sync.Mutex
-	count int   // files received
-	bytes int64 // bytes received or being received
-	once  sync.Once
+	mu     sync.Mutex
+	count  int   // files received
+	bytes  int64 // bytes received or being received
+	groups map[string]*group
+	once   sync.Once
 }
+
+// group is a multi-page document being photographed: its pages go into one
+// folder of the inbox, which the app shows as one document.
+type group struct {
+	folder string
+	pages  int
+}
+
+// GroupHeader marks a page of a multi-page document: the same random ID for
+// all pages of one document, sent one after another.
+const GroupHeader = "X-Beleg"
+
+var groupIDRe = regexp.MustCompile(`^[a-z0-9]{8,32}$`)
 
 // Start listens on the LAN address (or only locally if there is none) on a
 // free port and writes uploads into dir.
@@ -87,7 +102,7 @@ func Start(dir string, ttl time.Duration, now func() time.Time) (*Server, error)
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{token: hex.EncodeToString(b[:]), dir: dir, now: now, ln: ln, Expires: now().Add(ttl)}
+	s := &Server{token: hex.EncodeToString(b[:]), dir: dir, now: now, ln: ln, Expires: now().Add(ttl), groups: map[string]*group{}}
 	s.URL = fmt.Sprintf("http://%s:%d/u/%s", host, ln.Addr().(*net.TCPAddr).Port, s.token)
 	s.srv = &http.Server{Handler: s, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 5 * time.Minute}
 	go func() { _ = s.srv.Serve(ln) }()
@@ -140,11 +155,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // receive stores one file sent as the raw request body with its MIME type.
+// With GroupHeader it is the next page of a multi-page document.
 func (s *Server) receive(r *http.Request) (string, error) {
 	ctype, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	ext, ok := allowed[ctype]
 	if !ok {
 		return "", errors.New("Nur Fotos und PDF-Dateien können gesendet werden")
+	}
+	groupID := r.Header.Get(GroupHeader)
+	if groupID != "" && !groupIDRe.MatchString(groupID) {
+		return "", errors.New("Ungültige Kennung des mehrseitigen Belegs")
 	}
 	// Reserve the largest possible size up front, so parallel uploads
 	// cannot exceed the limits together; the rest is given back below.
@@ -189,15 +209,44 @@ func (s *Server) receive(r *http.Request) (string, error) {
 		return "", err
 	}
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.count++
-	count := s.count
-	s.mu.Unlock()
-	name := fmt.Sprintf("Handy-%s-%d%s", s.now().Format("20060102-150405"), count, ext)
-	if err := os.Rename(tmp.Name(), filepath.Join(s.dir, name)); err != nil {
+	name := fmt.Sprintf("Handy-%s-%d%s", s.now().Format("20060102-150405"), s.count, ext)
+	if groupID != "" {
+		if name, err = s.pagePath(groupID, ext); err != nil {
+			os.Remove(tmp.Name())
+			return "", err
+		}
+	}
+	if err := os.Rename(tmp.Name(), filepath.Join(s.dir, filepath.FromSlash(name))); err != nil {
 		os.Remove(tmp.Name())
 		return "", err
 	}
 	return name, nil
+}
+
+// pagePath returns the inbox name ("Handy-…/02 Seite.jpg") of the next page
+// of a multi-page document, creating its folder for the first page (caller
+// holds the lock). The page names follow the app's "NN name" convention.
+func (s *Server) pagePath(id, ext string) (string, error) {
+	g := s.groups[id]
+	if g == nil {
+		base := "Handy-" + s.now().Format("20060102-150405")
+		folder := base
+		for i := 2; ; i++ {
+			if _, err := os.Lstat(filepath.Join(s.dir, folder)); errors.Is(err, os.ErrNotExist) {
+				break
+			}
+			folder = fmt.Sprintf("%s-%d", base, i)
+		}
+		if err := os.Mkdir(filepath.Join(s.dir, folder), 0o755); err != nil {
+			return "", err
+		}
+		g = &group{folder: folder}
+		s.groups[id] = g
+	}
+	g.pages++
+	return fmt.Sprintf("%s/%02d Seite%s", g.folder, g.pages, ext), nil
 }
 
 // matchesType checks the first bytes of a file against its MIME type, so

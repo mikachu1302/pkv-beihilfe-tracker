@@ -133,3 +133,56 @@ func TestMatchesType(t *testing.T) {
 		}
 	}
 }
+
+func sendPage(t *testing.T, s *Server, group, ctype, body string) (int, string) {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodPost, local(s), strings.NewReader(body))
+	req.Header.Set("Content-Type", ctype)
+	if group != "" {
+		req.Header.Set(GroupHeader, group)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	b, _ := io.ReadAll(res.Body)
+	return res.StatusCode, strings.TrimSpace(string(b))
+}
+
+func TestMultiPageDocument(t *testing.T) {
+	s, dir := start(t)
+	pdf := "%PDF-1.4 seite"
+	var names []string
+	for _, p := range []struct{ group, ctype, body string }{
+		{"beleg0001", "image/jpeg", jpeg},
+		{"beleg0001", "application/pdf", pdf},
+		{"", "image/jpeg", jpeg}, // a single document in between
+		{"beleg0002", "image/jpeg", jpeg},
+		{"beleg0001", "image/jpeg", jpeg},
+	} {
+		code, name := sendPage(t, s, p.group, p.ctype, p.body)
+		if code != 200 {
+			t.Fatalf("upload: %d %s", code, name)
+		}
+		names = append(names, name)
+	}
+	want := []string{"Handy-20261102-101530/01 Seite.jpg", "Handy-20261102-101530/02 Seite.pdf", "Handy-20261102-101530-3.jpg",
+		"Handy-20261102-101530-2/01 Seite.jpg", "Handy-20261102-101530/03 Seite.jpg"}
+	for i := range want {
+		if names[i] != want[i] {
+			t.Errorf("page %d: %q, want %q", i, names[i], want[i])
+		}
+	}
+	if b, _ := os.ReadFile(dir + "/Handy-20261102-101530/02 Seite.pdf"); string(b) != pdf {
+		t.Errorf("stored %q", b)
+	}
+	if s.Received() != 5 {
+		t.Errorf("received %d", s.Received())
+	}
+	for _, bad := range []string{"../x", "KURZ", strings.Repeat("a", 40), "a b c d e f"} {
+		if code, _ := sendPage(t, s, bad, "image/jpeg", jpeg); code != http.StatusBadRequest {
+			t.Errorf("group %q: %d", bad, code)
+		}
+	}
+}

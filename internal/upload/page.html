@@ -11,9 +11,17 @@
   main { max-width: 480px; margin: 0 auto; padding: 24px 16px 48px; }
   h1 { font-size: 22px; margin: 0 0 8px; }
   p { color: var(--muted); margin: 0 0 20px; }
-  label.btn { display: block; text-align: center; padding: 16px; border-radius: 12px; margin-bottom: 12px; font-weight: 600; cursor: pointer; }
-  label.primary { background: var(--accent); color: #fff; }
-  label.secondary { background: var(--panel); border: 1px solid var(--muted); }
+  .btn { display: block; width: 100%; box-sizing: border-box; text-align: center; padding: 16px; border-radius: 12px; margin-bottom: 12px;
+         font: inherit; font-weight: 600; cursor: pointer; color: inherit; }
+  .primary { background: var(--accent); color: #fff; border: none; }
+  .secondary { background: var(--panel); border: 1px solid var(--muted); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .mode { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-bottom: 12px; border: 1px solid var(--muted); border-radius: 12px; overflow: hidden; }
+  .mode label { text-align: center; padding: 12px 8px; cursor: pointer; font-weight: 600; font-size: 15px; }
+  .mode input { position: absolute; opacity: 0; pointer-events: none; }
+  .mode label.on { background: var(--accent); color: #fff; }
+  .mode label:focus-within { outline: 3px solid var(--accent); outline-offset: -3px; }
+  #status { font-size: 15px; margin: -4px 0 12px; }
   input[type=file] { display: none; }
   ul { list-style: none; padding: 0; margin: 20px 0 0; }
   li { background: var(--panel); border-radius: 12px; padding: 10px; margin-bottom: 8px;
@@ -30,8 +38,17 @@
 <main>
   <h1>Beleg an den Computer senden</h1>
   <p>Rechnungen oder Erstattungsbescheide fotografieren oder als PDF wählen. Sie landen sofort im Posteingang der App.</p>
-  <label class="btn primary">Foto aufnehmen<input id="camera" type="file" accept="image/*" capture="environment"></label>
-  <label class="btn secondary">Fotos oder PDF wählen<input id="files" type="file" accept="image/*,application/pdf" multiple></label>
+  <div class="mode" role="radiogroup" aria-label="Art der Belege">
+    <label><input type="radio" name="mode" value="single" checked> Einzelne Belege</label>
+    <label><input type="radio" name="mode" value="multi"> Mehrseitiger Beleg</label>
+  </div>
+  <p id="hint">Jedes Foto und jede Datei wird ein eigener Beleg.</p>
+  <label class="btn primary"><span id="camera-label">Foto aufnehmen</span><input id="camera" type="file" accept="image/*" capture="environment"></label>
+  <label class="btn secondary"><span id="files-label">Fotos oder PDF wählen</span><input id="files" type="file" accept="image/*,application/pdf" multiple></label>
+  <div id="multi" hidden>
+    <p id="status" role="status"></p>
+    <button id="done" class="btn secondary" type="button" disabled>Fertig – nächster Beleg</button>
+  </div>
   <ul id="list"></ul>
 </main>
 <script>
@@ -45,8 +62,38 @@
   function size(bytes) {
     return bytes >= 1048576 ? (bytes / 1048576).toFixed(1).replace(".", ",") + " MB" : Math.max(1, Math.round(bytes / 1024)) + " KB";
   }
+  // Multi-page mode: all pages of a document carry the same random ID and
+  // are sent one after another, so they arrive in order.
+  let multi = false, group = "", doc = 0, pages = 0, queue = Promise.resolve();
+  const $ = id => document.getElementById(id);
+  function newDocument() {
+    group = Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, "0")).join("");
+    doc++;
+    pages = 0;
+    show();
+  }
+  function show() {
+    for (const r of document.querySelectorAll("input[name=mode]")) r.parentElement.classList.toggle("on", r.checked);
+    $("multi").hidden = !multi;
+    $("hint").textContent = multi
+      ? "Alle Seiten eines Belegs nacheinander aufnehmen und dann „Fertig“ tippen – am Computer erscheinen sie als ein Beleg."
+      : "Jedes Foto und jede Datei wird ein eigener Beleg.";
+    $("camera-label").textContent = multi ? (pages ? `Seite ${pages + 1} aufnehmen` : "Erste Seite aufnehmen") : "Foto aufnehmen";
+    $("files-label").textContent = multi ? "Seiten aus Fotos oder PDF wählen" : "Fotos oder PDF wählen";
+    $("status").textContent = multi ? `Beleg ${doc}: ${pages === 1 ? "1 Seite" : pages + " Seiten"}` : "";
+    $("done").disabled = pages === 0;
+  }
+  for (const r of document.querySelectorAll("input[name=mode]")) {
+    r.addEventListener("change", () => {
+      multi = r.value === "multi" && r.checked;
+      if (multi) newDocument(); else { group = ""; show(); }
+    });
+  }
+  $("done").addEventListener("click", newDocument);
+  show();
+
   // One card per file: preview, name (shortened with … if long), size or error, status.
-  async function send(file) {
+  async function send(file, groupID, label) {
     const li = el("li");
     let thumb;
     if (file.type.startsWith("image/")) {
@@ -62,15 +109,17 @@
       thumb = el("div", "thumb", file.type === "application/pdf" ? "PDF" : "Datei");
     }
     const info = el("div");
-    const name = el("div", "name", file.name || "Foto");
+    const name = el("div", "name", label || file.name || "Foto");
     name.title = file.name || "";
-    const meta = el("div", "meta", size(file.size));
+    const meta = el("div", "meta", label ? `${file.name || "Foto"} · ${size(file.size)}` : size(file.size));
     info.append(name, meta);
     const state = el("span", "state", "wird gesendet …");
     li.append(thumb, info, state);
     list.prepend(li);
     try {
-      const res = await fetch(location.pathname, {method: "POST", headers: {"Content-Type": file.type || "application/octet-stream"}, body: file});
+      const headers = {"Content-Type": file.type || "application/octet-stream"};
+      if (groupID) headers["X-Beleg"] = groupID;
+      const res = await fetch(location.pathname, {method: "POST", headers, body: file});
       const text = await res.text();
       if (!res.ok) throw new Error(text.trim());
       state.textContent = "✓ gesendet";
@@ -84,7 +133,15 @@
   }
   for (const id of ["camera", "files"]) {
     document.getElementById(id).addEventListener("change", e => {
-      for (const f of e.target.files) send(f);
+      for (const f of e.target.files) {
+        if (!multi) {
+          send(f);
+          continue;
+        }
+        const gid = group, label = `Beleg ${doc} · Seite ${++pages}`;
+        queue = queue.then(() => send(f, gid, label));
+      }
+      show();
       e.target.value = "";
     });
   }
