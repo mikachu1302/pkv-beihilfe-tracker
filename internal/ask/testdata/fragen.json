@@ -1,0 +1,370 @@
+{
+ "heute": "2026-11-03",
+ "kostentraeger": [
+  "Beihilfe Bund",
+  "Muster PKV"
+ ],
+ "fragen": [
+  {
+   "frage": "Wie viele Rechnungen aus 2026 sind noch offen?",
+   "erwartet": {
+    "typ": "anzahl",
+    "jahre": [
+     2026
+    ],
+    "status": "nicht_erstattet"
+   }
+  },
+  {
+   "frage": "Wo hat mir die Beihilfe zu wenig erstattet?",
+   "erwartet": {
+    "typ": "liste",
+    "kostentraeger": "Beihilfe Bund",
+    "abweichung": "zu_wenig"
+   }
+  },
+  {
+   "frage": "Was hat die PKV 2025 insgesamt erstattet?",
+   "erwartet": {
+    "typ": "summe",
+    "messgroesse": "ist",
+    "kostentraeger": "Muster PKV",
+    "jahre": [
+     2025
+    ]
+   }
+  },
+  {
+   "frage": "Welche Rechnungen sind noch nicht bezahlt?",
+   "erwartet": {
+    "typ": "liste",
+    "bezahlt": "nein"
+   }
+  },
+  {
+   "frage": "Wie viel habe ich 2026 beim Zahnarzt ausgegeben?",
+   "erwartet": {
+    "typ": "summe",
+    "messgroesse": "betrag",
+    "jahre": [
+     2026
+    ],
+    "kategorie": "zahnarzt"
+   }
+  },
+  {
+   "frage": "Lohnt sich die Beitragsrückerstattung dieses Jahr?",
+   "erwartet": {
+    "typ": "beitragsrueckerstattung",
+    "jahre": [
+     2026
+    ]
+   }
+  },
+  {
+   "frage": "Was schuldet mir die Beihilfe noch?",
+   "erwartet": {
+    "typ": "ausstand",
+    "kostentraeger": "Beihilfe Bund"
+   }
+  },
+  {
+   "frage": "Welche Rechnungen habe ich noch nicht eingereicht?",
+   "erwartet": {
+    "typ": "liste",
+    "status": "nicht_eingereicht"
+   }
+  },
+  {
+   "frage": "Bei welchen Rechnungen läuft die Antragsfrist bald ab?",
+   "erwartet": {
+    "typ": "liste",
+    "frist_bald": "ja"
+   }
+  },
+  {
+   "frage": "Wo ist noch Klärungsbedarf?",
+   "erwartet": {
+    "typ": "liste",
+    "klaerungsbedarf": "ja"
+   }
+  },
+  {
+   "frage": "Wie viele Rechnungen hatte ich 2024?",
+   "erwartet": {
+    "typ": "anzahl",
+    "jahre": [
+     2024
+    ]
+   }
+  },
+  {
+   "frage": "Wie hoch war mein Eigenanteil 2025?",
+   "erwartet": {
+    "typ": "summe",
+    "messgroesse": "eigenanteil",
+    "jahre": [
+     2025
+    ]
+   }
+  },
+  {
+   "frage": "Zeig mir alle Rechnungen von Dr. Muster.",
+   "erwartet": {
+    "typ": "liste",
+    "behandler": "Dr. Muster"
+   }
+  },
+  {
+   "frage": "Wie viel hat die Beihilfe 2026 bisher erstattet, nach Monaten?",
+   "erwartet": {
+    "typ": "summe",
+    "messgroesse": "ist",
+    "kostentraeger": "Beihilfe Bund",
+    "jahre": [
+     2026
+    ],
+    "gruppierung": "monat"
+   }
+  },
+  {
+   "frage": "Welche Erstattungen der PKV stehen noch aus?",
+   "erwartet": {
+    "typ": "liste",
+    "kostentraeger": "Muster PKV",
+    "status": "eingereicht"
+   }
+  },
+  {
+   "frage": "Gesamtbetrag aller Rechnungen nach Jahren",
+   "erwartet": {
+    "typ": "summe",
+    "messgroesse": "betrag",
+    "gruppierung": "jahr"
+   }
+  },
+  {
+   "frage": "Wie viel Geld ist bei der Beihilfe eingereicht, aber noch nicht erstattet?",
+   "erwartet": {
+    "typ": "summe",
+    "messgroesse": "offen",
+    "kostentraeger": "Beihilfe Bund",
+    "status": "eingereicht"
+   }
+  },
+  {
+   "frage": "Wo hat die PKV mehr erstattet als erwartet?",
+   "erwartet": {
+    "typ": "liste",
+    "kostentraeger": "Muster PKV",
+    "abweichung": "zu_viel"
+   }
+  },
+  {
+   "frage": "Welche Physiotherapie-Rechnungen gab es 2025?",
+   "erwartet": {
+    "typ": "liste",
+    "jahre": [
+     2025
+    ],
+    "kategorie": "heilmittel"
+   }
+  },
+  {
+   "frage": "Wie viel habe ich für Medikamente aus der Apotheke bezahlt?",
+   "erwartet": {
+    "typ": "summe",
+    "messgroesse": "betrag",
+    "kategorie": "apotheke"
+   }
+  },
+  {
+   "frage": "Was ist die Kostendämpfungspauschale?",
+   "erwartet": {
+    "typ": "nicht_unterstuetzt"
+   }
+  },
+  {
+   "frage": "Wie wird das Wetter morgen?",
+   "erwartet": {
+    "typ": "nicht_unterstuetzt"
+   }
+  },
+  {
+   "frage": "Welche Rechnungen halte ich bei der PKV zurück?",
+   "erwartet": {
+    "typ": "liste",
+    "kostentraeger": "Muster PKV",
+    "status": "zurueckgehalten"
+   }
+  },
+  {
+   "frage": "Wie viele Rechnungen aus 2025 und 2026 hat die Beihilfe vollständig erstattet?",
+   "erwartet": {
+    "typ": "anzahl",
+    "jahre": [
+     2025,
+     2026
+    ],
+    "kostentraeger": "Beihilfe Bund",
+    "status": "erstattet"
+   }
+  },
+  {
+   "frage": "Summe der Differenzen bei der Beihilfe 2025",
+   "erwartet": {
+    "typ": "summe",
+    "messgroesse": "differenz",
+    "kostentraeger": "Beihilfe Bund",
+    "jahre": [
+     2025
+    ]
+   }
+  },
+  {
+   "frage": "Welche Rechnungen aus dem letzten Monat?",
+   "erwartet": {
+    "typ": "liste",
+    "von": "2026-10-01",
+    "bis": "2026-10-31"
+   }
+  },
+  {
+   "frage": "Ausgaben pro Kategorie 2026",
+   "erwartet": {
+    "typ": "summe",
+    "messgroesse": "betrag",
+    "jahre": [
+     2026
+    ],
+    "gruppierung": "kategorie"
+   }
+  },
+  {
+   "frage": "Bei welchem Arzt war ich 2026 am teuersten?",
+   "erwartet": {
+    "typ": "summe",
+    "messgroesse": "betrag",
+    "jahre": [
+     2026
+    ],
+    "gruppierung": "behandler"
+   }
+  },
+  {
+   "frage": "Wie viele Rechnungen sind bezahlt, aber noch nicht eingereicht?",
+   "erwartet": {
+    "typ": "anzahl",
+    "bezahlt": "ja",
+    "status": "nicht_eingereicht"
+   }
+  },
+  {
+   "frage": "Welche Rechnungen der Radiologie Mitte sind noch offen?",
+   "erwartet": {
+    "typ": "liste",
+    "behandler": "Radiologie Mitte",
+    "status": "nicht_erstattet"
+   }
+  },
+  {
+   "frage": "Wie viel steht insgesamt noch aus?",
+   "erwartet": {
+    "typ": "ausstand"
+   }
+  },
+  {
+   "frage": "Wie viel hat die Beihilfe 2026 erstattet?",
+   "erwartet": {
+    "typ": "summe",
+    "messgroesse": "ist",
+    "kostentraeger": "Beihilfe Bund",
+    "jahre": [
+     2026
+    ]
+   }
+  },
+  {
+   "frage": "Und 2025?",
+   "erwartet": {
+    "typ": "summe",
+    "messgroesse": "ist",
+    "kostentraeger": "Beihilfe Bund",
+    "jahre": [
+     2025
+    ]
+   },
+   "folge": 32
+  },
+  {
+   "frage": "Und die PKV?",
+   "erwartet": {
+    "typ": "summe",
+    "messgroesse": "ist",
+    "kostentraeger": "Muster PKV",
+    "jahre": [
+     2025
+    ]
+   },
+   "folge": 33
+  },
+  {
+   "frage": "Welche Rechnungen aus 2026 sind noch nicht eingereicht?",
+   "erwartet": {
+    "typ": "liste",
+    "jahre": [
+     2026
+    ],
+    "status": "nicht_eingereicht"
+   }
+  },
+  {
+   "frage": "Nur die vom Zahnarzt.",
+   "erwartet": {
+    "typ": "liste",
+    "jahre": [
+     2026
+    ],
+    "status": "nicht_eingereicht",
+    "kategorie": "zahnarzt"
+   },
+   "folge": 35
+  },
+  {
+   "frage": "Wie viele davon gibt es?",
+   "erwartet": {
+    "typ": "anzahl",
+    "jahre": [
+     2026
+    ],
+    "status": "nicht_eingereicht",
+    "kategorie": "zahnarzt"
+   },
+   "folge": 36
+  },
+  {
+   "frage": "Schreib mir eine E-Mail an die Beihilfe.",
+   "erwartet": {
+    "typ": "nicht_unterstuetzt"
+   }
+  },
+  {
+   "frage": "Wie viele Rechnungen mit Klärungsbedarf hat die PKV?",
+   "erwartet": {
+    "typ": "anzahl",
+    "kostentraeger": "Muster PKV",
+    "klaerungsbedarf": "ja"
+   }
+  },
+  {
+   "frage": "SOLL und IST der Beihilfe 2026",
+   "erwartet": {
+    "typ": "summe",
+    "kostentraeger": "Beihilfe Bund",
+    "jahre": [
+     2026
+    ]
+   }
+  }
+ ]
+}

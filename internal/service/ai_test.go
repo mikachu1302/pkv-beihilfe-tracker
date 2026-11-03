@@ -189,3 +189,60 @@ func TestReadWithAI(t *testing.T) {
 		t.Errorf("result %+v", r)
 	}
 }
+
+func TestAsk(t *testing.T) {
+	s := newTestService(t)
+	inv := sampleInvoice()
+	if _, err := s.SaveInvoice(inv, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Ask(t.Context(), AskInputDTO{Question: "Wie viele Rechnungen?"}); !errors.Is(err, ai.ErrNotSet) {
+		t.Errorf("AI off: %v", err)
+	}
+	// The model answers with too much: a payer and a year the question does not name.
+	fake := &aitest.Server{Answer: func(aitest.Request) string {
+		return `{"typ":"anzahl","messgroesse":"","jahre":[2025],"filter":[{"feld":"kostentraeger","wert":"Muster PKV"},
+			{"feld":"status","wert":"nicht_eingereicht"}],"gruppierung":"","grund":""}`
+	}}
+	withAI(t, s, fake)
+	a, err := s.Ask(t.Context(), AskInputDTO{Question: "Wie viele Rechnungen sind noch nicht eingereicht?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Answer != "1 Rechnung" || len(a.Invoices) != 1 || a.Invoices[0].Provider != "Dr. Muster" || a.Query.String() != "Anzahl · nicht eingereicht" {
+		t.Errorf("answer %+v", a)
+	}
+	if len(a.Chips) != 2 || a.Chips[1] != (ChipDTO{Key: "status", Text: "nicht eingereicht"}) {
+		t.Errorf("chips %+v", a.Chips)
+	}
+	// What went to the server: the question, today, the payers – and no invoice.
+	req := fake.Requests()[0]
+	sys := req.Text("system")
+	if !strings.Contains(sys, "Heute ist der 02.11.2026") || !strings.Contains(sys, "Beihilfe Bund, Muster PKV") || strings.Contains(sys, "Dr. Muster") {
+		t.Errorf("instructions:\n%s", sys)
+	}
+	if req.Text("user") != "Wie viele Rechnungen sind noch nicht eingereicht?" {
+		t.Errorf("question %q", req.Text("user"))
+	}
+
+	// A follow-up: the earlier question and query go along.
+	_, err = s.Ask(t.Context(), AskInputDTO{Question: "Und 2026?", History: []TurnDTO{{Question: "Wie viele …?", Query: a.Query}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req := fake.Requests()[1]; len(req.Messages) != 4 || req.Messages[2].Role != "assistant" || !strings.Contains(req.Messages[2].Text, `"nicht_eingereicht"`) {
+		t.Errorf("follow-up request %+v", req.Messages)
+	}
+
+	// The chips changed by hand: run without the AI.
+	q := a.Query
+	q.Filters = nil
+	r, err := s.RunQuery(q)
+	if err != nil || r.Answer != "1 Rechnung" || len(fake.Requests()) != 2 {
+		t.Errorf("run %+v %v", r, err)
+	}
+	v, err := s.AskVocabulary()
+	if err != nil || len(v.Payers) != 2 || v.Statuses[0].Label != "nicht eingereicht" || len(v.Groups) != 5 || v.Years[0] != 2026 {
+		t.Errorf("vocabulary %+v %v", v, err)
+	}
+}

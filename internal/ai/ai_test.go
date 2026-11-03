@@ -183,14 +183,17 @@ func TestOneRequestAtATime(t *testing.T) {
 	if _, err := c.Chat(ctx, Request{}); !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("waiting request: %v", err)
 	}
-	if n := started.Load(); n != 1 {
-		t.Errorf("%d requests reached the server", n)
+	if n := started.Load(); n != 1 || !lock.Busy() {
+		t.Errorf("%d requests reached the server, busy %v", n, lock.Busy())
 	}
 	close(release)
 	if err := <-first; err != nil {
 		t.Fatal(err)
 	}
 	// Free again.
+	if lock.Busy() {
+		t.Error("still busy")
+	}
 	if _, err := c.Chat(t.Context(), Request{}); err != nil {
 		t.Fatal(err)
 	}

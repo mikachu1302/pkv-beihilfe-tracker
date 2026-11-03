@@ -109,8 +109,9 @@ var fields = []struct{ key, text string }{
 	{"zahlungsempfaenger", "Empfänger der Zahlung, falls nicht der Behandler (z. B. Abrechnungsstelle)"},
 	{"iban", "IBAN für die Überweisung"},
 	{"rechnungsnummer", "Rechnungsnummer"},
-	{"kategorie", "Art der Leistung: arzt, zahnarzt, apotheke, heilmittel (Physiotherapie, Ergotherapie, Logopädie), " +
-		"hilfsmittel (Brille, Hörgerät, Sanitätshaus), krankenhaus, heilpraktiker, sonstiges"},
+	{"kategorie", "Art der Leistung: arzt (Arztpraxis, Facharzt, Labor, Radiologie, MVZ – Abrechnung nach GOÄ), " +
+		"zahnarzt (GOZ), apotheke (Medikamente, Kassenbon einer Apotheke), heilmittel (Physiotherapie, Ergotherapie, " +
+		"Logopädie), hilfsmittel (Brille, Hörgerät, Sanitätshaus), krankenhaus, heilpraktiker (GebüH), sonstiges"},
 	{"rechnungsdatum", "Datum der Rechnung (auf Quittungen und Kassenbons: das Kaufdatum)"},
 	{"behandlung_von", "erster Behandlungstag – aus „Behandlungszeitraum“/„Leistungszeitraum“, sonst das früheste Datum der Positionen"},
 	{"behandlung_bis", "letzter Behandlungstag – aus „Behandlungszeitraum“/„Leistungszeitraum“, sonst das späteste Datum der Positionen"},

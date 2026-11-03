@@ -4,6 +4,7 @@ import (
 	"embed"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
@@ -41,6 +42,10 @@ func main() {
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
+		// Only for the headless server mode (-tags server, used for testing): its
+		// default of 30 s per call would cut off reading a document with the AI,
+		// which takes about a minute per page. The desktop app has no such limit.
+		Server: application.ServerOptions{WriteTimeout: 30 * time.Minute},
 	})
 	desktop.app = app
 	svc.SetEmitter(app.Event) // "data-changed" when another device changed the data folder

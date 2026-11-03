@@ -98,15 +98,22 @@ Rückmeldung; die Belege selbst müssen dafür nicht weitergegeben werden.
 
 ## Fragen-Test (Chatbot)
 
-`scripts/ki-fragentest.py` schickt 40 erfundene Fragen („Wie viele Rechnungen aus 2026 sind noch
-offen?“, „Und 2025?“ …) mit dem geplanten Abfrage-Schema an den Server und vergleicht die
-Antwort mit der erwarteten Abfrage. Es gehen keine Rechnungsdaten an den Server. Ergebnisse vom
-2026-11-03: siehe [PLAN-v0.5.md](PLAN-v0.5.md) (Test results).
+Die 40 erfundenen Fragen („Wie viele Rechnungen aus 2026 sind noch offen?“, „Und 2025?“ …) mit
+der jeweils erwarteten Abfrage stehen in `internal/ask/testdata/fragen.json`. Ein Go-Test schickt
+sie mit dem Schema, den Anweisungen und den Korrekturen **der App** an den Server und zählt, wie
+viele richtig verstanden werden (mit und ohne die Korrekturen der App). Es gehen keine
+Rechnungsdaten an den Server – nur Frage, Datum und Vokabular (Kostenträger, Kategorien).
 
 ```sh
-python3 scripts/ki-fragentest.py               # alle Fragen
-python3 scripts/ki-fragentest.py --nur 1,33    # einzelne Fragen
+KI_TEST=1 go test ./internal/ask -run Live -v
+KI_TEST=1 KI_TEST_OUT=/tmp/fragen.json go test ./internal/ask -run Live -v   # Antworten speichern
 ```
+
+Server, Modell und Schlüssel: `KI_SERVER`, `KI_MODEL` (Standard: der Server im Heimnetz),
+Schlüssel aus `LLM_API_KEY` oder `API_KEY` in `.env`. Ohne Server prüft
+`go test ./internal/ask` die Korrekturen an aufgezeichneten Antworten des Modells
+(`testdata/antworten-2026-11-03.json`). Neue Fragen, die die App nicht versteht, gehören mit der
+erwarteten Abfrage in `fragen.json`.
 
 ## Später vergleichen: die NPU
 

@@ -1,0 +1,1278 @@
+{
+ "hinweis": "Antworten des Modells qwen3-vl-8b auf die erfundenen Fragen (Prompt aus scripts/ki-fragentest.py, 2026-11-03): Lauf 1 mit allen Filterfeldern als Pflicht, Lauf 2 mit Filterliste und Beispielen.",
+ "lauf1": [
+  {
+   "typ": "anzahl",
+   "messgroesse": "",
+   "jahre": [
+    2026
+   ],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "",
+   "status": "",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "",
+   "behandler": "",
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "betrag",
+   "jahre": [],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "Beihilfe Bund",
+   "status": "nicht_erstattet",
+   "abweichung": "zu_wenig",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "",
+   "behandler": "",
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "betrag",
+   "jahre": [
+    2025
+   ],
+   "von": "2025-01-01",
+   "bis": "2025-12-31",
+   "kostentraeger": "Muster PKV",
+   "status": "erstattet",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "arzt",
+   "behandler": "",
+   "gruppierung": "kostentraeger",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "betrag",
+   "jahre": [],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "",
+   "status": "",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "nein",
+   "frist_bald": "",
+   "kategorie": "",
+   "behandler": "",
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "betrag",
+   "jahre": [
+    2026
+   ],
+   "von": "2026-01-01",
+   "bis": "2026-12-31",
+   "kostentraeger": "Beihilfe Bund",
+   "status": "nicht_eingereicht",
+   "abweichung": "zu_wenig",
+   "klaerungsbedarf": "ja",
+   "bezahlt": "ja",
+   "frist_bald": "ja",
+   "kategorie": "zahnarzt",
+   "behandler": "",
+   "gruppierung": "jahr",
+   "grund": ""
+  },
+  {
+   "typ": "beitragsrueckerstattung",
+   "messgroesse": "",
+   "jahre": [
+    2025
+   ],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "Beihilfe Bund",
+   "status": "nicht_eingereicht",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "",
+   "behandler": "",
+   "gruppierung": "kostentraeger",
+   "grund": ""
+  },
+  {
+   "typ": "ausstand",
+   "messgroesse": "betrag",
+   "jahre": [],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "Beihilfe Bund",
+   "status": "nicht_erstattet",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "",
+   "behandler": "",
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "",
+   "jahre": [],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "",
+   "status": "nicht_eingereicht",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "",
+   "behandler": "",
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "",
+   "jahre": [],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "",
+   "status": "",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "ja",
+   "kategorie": "",
+   "behandler": "",
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "",
+   "jahre": [],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "",
+   "status": "",
+   "abweichung": "",
+   "klaerungsbedarf": "ja",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "",
+   "behandler": "",
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "anzahl",
+   "messgroesse": "",
+   "jahre": [
+    2024
+   ],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "",
+   "status": "",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "",
+   "behandler": "",
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "eigenanteil",
+   "jahre": [
+    2025
+   ],
+   "von": "2025-01-01",
+   "bis": "2025-12-31",
+   "kostentraeger": "Beihilfe Bund",
+   "status": "nicht_erstattet",
+   "abweichung": "zu_wenig",
+   "klaerungsbedarf": "ja",
+   "bezahlt": "ja",
+   "frist_bald": "ja",
+   "kategorie": "arzt",
+   "behandler": "",
+   "gruppierung": "kostentraeger",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "",
+   "jahre": [],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "",
+   "status": "",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "arzt",
+   "behandler": "Dr. Muster",
+   "gruppierung": "behandler",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "betrag",
+   "jahre": [
+    2026
+   ],
+   "von": "2026-01-01",
+   "bis": "2026-10-31",
+   "kostentraeger": "Beihilfe Bund",
+   "status": "erstattet",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "arzt",
+   "behandler": "",
+   "gruppierung": "monat",
+   "grund": ""
+  },
+  {
+   "typ": "ausstand",
+   "messgroesse": "betrag",
+   "jahre": [],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "Muster PKV",
+   "status": "eingereicht",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "",
+   "behandler": "",
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "betrag",
+   "jahre": [],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "",
+   "status": "",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "",
+   "behandler": "",
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "ausstand",
+   "messgroesse": "betrag",
+   "jahre": [],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "Beihilfe Bund",
+   "status": "eingereicht",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "",
+   "behandler": "",
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "betrag",
+   "jahre": [],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "Muster PKV",
+   "status": "zurueckgehalten",
+   "abweichung": "zu_viel",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "",
+   "behandler": "",
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "betrag",
+   "jahre": [
+    2025
+   ],
+   "von": "2025-01-01",
+   "bis": "2025-12-31",
+   "kostentraeger": "Beihilfe Bund",
+   "status": "nicht_eingereicht",
+   "abweichung": "zu_wenig",
+   "klaerungsbedarf": "ja",
+   "bezahlt": "nein",
+   "frist_bald": "ja",
+   "kategorie": "heilmittel",
+   "behandler": "Physiotherapie",
+   "gruppierung": "jahr",
+   "grund": "keine Frage zu den eigenen Rechnungen"
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "betrag",
+   "jahre": [],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "",
+   "status": "",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "apotheke",
+   "behandler": "",
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "nicht_unterstuetzt",
+   "messgroesse": "",
+   "jahre": [],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "",
+   "status": "",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "",
+   "behandler": "",
+   "gruppierung": "",
+   "grund": "Kostendämpfungspauschale ist kein direkt abfragbares Feld in der App; es handelt sich um eine pauschale Erstattungshöhe, die von der PKV oder Beihilfe je nach Leistung und Kostenträger gewährt wird. Bitte geben Sie eine konkrete Frage zu Rechnungen oder Erstattungen an."
+  },
+  {
+   "typ": "nicht_unterstuetzt",
+   "messgroesse": "",
+   "jahre": [],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "",
+   "status": "",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "",
+   "behandler": "",
+   "gruppierung": "",
+   "grund": "Die Frage bezieht sich auf das Wetter und nicht auf Arztrechnungen oder Erstattungen."
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "betrag",
+   "jahre": [],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "Muster PKV",
+   "status": "nicht_eingereicht",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "",
+   "behandler": "",
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "anzahl",
+   "messgroesse": "",
+   "jahre": [
+    2025,
+    2026
+   ],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "Beihilfe Bund",
+   "status": "erstattet",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "",
+   "behandler": "",
+   "gruppierung": "jahr",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "differenz",
+   "jahre": [
+    2025
+   ],
+   "von": "2025-01-01",
+   "bis": "2025-12-31",
+   "kostentraeger": "Beihilfe Bund",
+   "status": "eingereicht",
+   "abweichung": "zu_wenig",
+   "klaerungsbedarf": "nein",
+   "bezahlt": "nein",
+   "frist_bald": "ja",
+   "kategorie": "arzt",
+   "behandler": "",
+   "gruppierung": "kostentraeger",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "",
+   "jahre": [],
+   "von": "2026-10-01",
+   "bis": "2026-10-31",
+   "kostentraeger": "",
+   "status": "",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "",
+   "behandler": "",
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "betrag",
+   "jahre": [
+    2026
+   ],
+   "von": "2026-01-01",
+   "bis": "2026-12-31",
+   "kostentraeger": "Beihilfe Bund",
+   "status": "erstattet",
+   "abweichung": "zu_viel",
+   "klaerungsbedarf": "ja",
+   "bezahlt": "ja",
+   "frist_bald": "ja",
+   "kategorie": "arzt",
+   "behandler": "Dr. Müller",
+   "gruppierung": "jahr",
+   "grund": "keine Frage zu den eigenen Rechnungen"
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "betrag",
+   "jahre": [
+    2026
+   ],
+   "von": "2026-01-01",
+   "bis": "2026-12-31",
+   "kostentraeger": "Beihilfe Bund",
+   "status": "erstattet",
+   "abweichung": "zu_viel",
+   "klaerungsbedarf": "ja",
+   "bezahlt": "ja",
+   "frist_bald": "ja",
+   "kategorie": "arzt",
+   "behandler": "alle",
+   "gruppierung": "jahr",
+   "grund": "keine Frage zu den eigenen Rechnungen"
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "betrag",
+   "jahre": [],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "",
+   "status": "nicht_eingereicht",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "ja",
+   "frist_bald": "",
+   "kategorie": "",
+   "behandler": "",
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "",
+   "jahre": [],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "",
+   "status": "",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "krankenhaus",
+   "behandler": "Radiologie Mitte",
+   "gruppierung": "behandler",
+   "grund": ""
+  },
+  {
+   "typ": "ausstand",
+   "messgroesse": "betrag",
+   "jahre": [],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "",
+   "status": "",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "",
+   "behandler": "",
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "betrag",
+   "jahre": [
+    2026
+   ],
+   "von": "2026-01-01",
+   "bis": "2026-12-31",
+   "kostentraeger": "Beihilfe Bund",
+   "status": "erstattet",
+   "abweichung": "zu_viel",
+   "klaerungsbedarf": "ja",
+   "bezahlt": "ja",
+   "frist_bald": "ja",
+   "kategorie": "arzt",
+   "behandler": "",
+   "gruppierung": "kostentraeger",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "betrag",
+   "jahre": [
+    2025
+   ],
+   "von": "2025-01-01",
+   "bis": "2025-12-31",
+   "kostentraeger": "Beihilfe Bund",
+   "status": "erstattet",
+   "abweichung": "zu_viel",
+   "klaerungsbedarf": "ja",
+   "bezahlt": "ja",
+   "frist_bald": "ja",
+   "kategorie": "arzt",
+   "behandler": "",
+   "gruppierung": "kostentraeger",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "betrag",
+   "jahre": [
+    2026
+   ],
+   "von": "2026-01-01",
+   "bis": "2026-12-31",
+   "kostentraeger": "Muster PKV",
+   "status": "erstattet",
+   "abweichung": "zu_viel",
+   "klaerungsbedarf": "ja",
+   "bezahlt": "ja",
+   "frist_bald": "ja",
+   "kategorie": "arzt",
+   "behandler": "",
+   "gruppierung": "kostentraeger",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "",
+   "jahre": [
+    2026
+   ],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "",
+   "status": "nicht_eingereicht",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "",
+   "behandler": "",
+   "gruppierung": "jahr",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "",
+   "jahre": [
+    2026
+   ],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "",
+   "status": "nicht_eingereicht",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "zahnarzt",
+   "behandler": "",
+   "gruppierung": "jahr",
+   "grund": ""
+  },
+  {
+   "typ": "anzahl",
+   "messgroesse": "",
+   "jahre": [
+    2026
+   ],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "",
+   "status": "nicht_eingereicht",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "zahnarzt",
+   "behandler": "",
+   "gruppierung": "jahr",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "",
+   "jahre": [],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "Beihilfe Bund",
+   "status": "nicht_eingereicht",
+   "abweichung": "",
+   "klaerungsbedarf": "",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "",
+   "behandler": "",
+   "gruppierung": "",
+   "grund": "keine Frage zu den eigenen Rechnungen"
+  },
+  {
+   "typ": "anzahl",
+   "messgroesse": "",
+   "jahre": [],
+   "von": "",
+   "bis": "",
+   "kostentraeger": "Muster PKV",
+   "status": "nicht_eingereicht",
+   "abweichung": "",
+   "klaerungsbedarf": "ja",
+   "bezahlt": "",
+   "frist_bald": "",
+   "kategorie": "",
+   "behandler": "",
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "betrag",
+   "jahre": [
+    2026
+   ],
+   "von": "2026-01-01",
+   "bis": "2026-12-31",
+   "kostentraeger": "Beihilfe Bund",
+   "status": "nicht_eingereicht",
+   "abweichung": "zu_wenig",
+   "klaerungsbedarf": "ja",
+   "bezahlt": "nein",
+   "frist_bald": "ja",
+   "kategorie": "arzt",
+   "behandler": "",
+   "gruppierung": "kostentraeger",
+   "grund": ""
+  }
+ ],
+ "lauf2": [
+  {
+   "typ": "anzahl",
+   "messgroesse": "",
+   "jahre": [
+    2026
+   ],
+   "filter": [
+    {
+     "feld": "status",
+     "wert": "nicht_erstattet"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "differenz",
+   "jahre": [],
+   "filter": [
+    {
+     "feld": "kostentraeger",
+     "wert": "Beihilfe Bund"
+    },
+    {
+     "feld": "abweichung",
+     "wert": "zu_wenig"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "ist",
+   "jahre": [
+    2025
+   ],
+   "filter": [
+    {
+     "feld": "kostentraeger",
+     "wert": "Muster PKV"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "betrag",
+   "jahre": [],
+   "filter": [
+    {
+     "feld": "bezahlt",
+     "wert": "nein"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "betrag",
+   "jahre": [
+    2026
+   ],
+   "filter": [
+    {
+     "feld": "kategorie",
+     "wert": "zahnarzt"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "beitragsrueckerstattung",
+   "messgroesse": "",
+   "jahre": [
+    2026
+   ],
+   "filter": [],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "ausstand",
+   "messgroesse": "offen",
+   "jahre": [],
+   "filter": [
+    {
+     "feld": "kostentraeger",
+     "wert": "Beihilfe Bund"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "betrag",
+   "jahre": [],
+   "filter": [
+    {
+     "feld": "status",
+     "wert": "nicht_eingereicht"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "",
+   "jahre": [],
+   "filter": [
+    {
+     "feld": "frist_bald",
+     "wert": "ja"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "nicht_unterstuetzt",
+   "messgroesse": "",
+   "jahre": [],
+   "filter": [],
+   "gruppierung": "",
+   "grund": "keine Frage zu den eigenen Rechnungen"
+  },
+  {
+   "typ": "anzahl",
+   "messgroesse": "",
+   "jahre": [
+    2024
+   ],
+   "filter": [],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "eigenanteil",
+   "jahre": [
+    2025
+   ],
+   "filter": [],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "betrag",
+   "jahre": [],
+   "filter": [
+    {
+     "feld": "behandler",
+     "wert": "Dr. Muster"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "ist",
+   "jahre": [
+    2026
+   ],
+   "filter": [
+    {
+     "feld": "kostentraeger",
+     "wert": "Beihilfe Bund"
+    }
+   ],
+   "gruppierung": "monat",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "offen",
+   "jahre": [],
+   "filter": [
+    {
+     "feld": "kostentraeger",
+     "wert": "Muster PKV"
+    },
+    {
+     "feld": "status",
+     "wert": "nicht_erstattet"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "betrag",
+   "jahre": [],
+   "filter": [],
+   "gruppierung": "jahr",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "offen",
+   "jahre": [],
+   "filter": [
+    {
+     "feld": "kostentraeger",
+     "wert": "Beihilfe Bund"
+    },
+    {
+     "feld": "status",
+     "wert": "nicht_erstattet"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "differenz",
+   "jahre": [],
+   "filter": [
+    {
+     "feld": "kostentraeger",
+     "wert": "Muster PKV"
+    },
+    {
+     "feld": "abweichung",
+     "wert": "zu_wenig"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "betrag",
+   "jahre": [
+    2025
+   ],
+   "filter": [
+    {
+     "feld": "kategorie",
+     "wert": "krankenhaus"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "betrag",
+   "jahre": [],
+   "filter": [
+    {
+     "feld": "kategorie",
+     "wert": "apotheke"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "nicht_unterstuetzt",
+   "messgroesse": "",
+   "jahre": [],
+   "filter": [],
+   "gruppierung": "",
+   "grund": "keine Frage zu den eigenen Rechnungen"
+  },
+  {
+   "typ": "nicht_unterstuetzt",
+   "messgroesse": "",
+   "jahre": [],
+   "filter": [],
+   "gruppierung": "",
+   "grund": "keine Frage zu den eigenen Rechnungen"
+  },
+  {
+   "typ": "nicht_unterstuetzt",
+   "messgroesse": "",
+   "jahre": [],
+   "filter": [],
+   "gruppierung": "",
+   "grund": "keine Frage zu den eigenen Rechnungen"
+  },
+  {
+   "typ": "anzahl",
+   "messgroesse": "",
+   "jahre": [
+    2025,
+    2026
+   ],
+   "filter": [
+    {
+     "feld": "kostentraeger",
+     "wert": "Beihilfe Bund"
+    },
+    {
+     "feld": "status",
+     "wert": "eingereicht"
+    },
+    {
+     "feld": "abweichung",
+     "wert": "zu_wenig"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "differenz",
+   "jahre": [
+    2025
+   ],
+   "filter": [
+    {
+     "feld": "kostentraeger",
+     "wert": "Beihilfe Bund"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "betrag",
+   "jahre": [],
+   "filter": [
+    {
+     "feld": "von",
+     "wert": "2026-10-01"
+    },
+    {
+     "feld": "bis",
+     "wert": "2026-10-31"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "betrag",
+   "jahre": [
+    2026
+   ],
+   "filter": [],
+   "gruppierung": "kategorie",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "betrag",
+   "jahre": [
+    2026
+   ],
+   "filter": [
+    {
+     "feld": "kategorie",
+     "wert": "arzt"
+    }
+   ],
+   "gruppierung": "behandler",
+   "grund": ""
+  },
+  {
+   "typ": "anzahl",
+   "messgroesse": "",
+   "jahre": [],
+   "filter": [
+    {
+     "feld": "bezahlt",
+     "wert": "ja"
+    },
+    {
+     "feld": "status",
+     "wert": "nicht_eingereicht"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "liste",
+   "messgroesse": "betrag",
+   "jahre": [],
+   "filter": [
+    {
+     "feld": "behandler",
+     "wert": "Radiologie Mitte"
+    },
+    {
+     "feld": "status",
+     "wert": "nicht_erstattet"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "offen",
+   "jahre": [],
+   "filter": [],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "ist",
+   "jahre": [
+    2026
+   ],
+   "filter": [
+    {
+     "feld": "kostentraeger",
+     "wert": "Beihilfe Bund"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "ist",
+   "jahre": [
+    2025
+   ],
+   "filter": [
+    {
+     "feld": "kostentraeger",
+     "wert": "Beihilfe Bund"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "ist",
+   "jahre": [
+    2026
+   ],
+   "filter": [
+    {
+     "feld": "kostentraeger",
+     "wert": "Muster PKV"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "anzahl",
+   "messgroesse": "",
+   "jahre": [
+    2026
+   ],
+   "filter": [
+    {
+     "feld": "status",
+     "wert": "nicht_eingereicht"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "anzahl",
+   "messgroesse": "",
+   "jahre": [
+    2026
+   ],
+   "filter": [
+    {
+     "feld": "status",
+     "wert": "nicht_eingereicht"
+    },
+    {
+     "feld": "behandler",
+     "wert": "Zahnarzt"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "anzahl",
+   "messgroesse": "",
+   "jahre": [
+    2026
+   ],
+   "filter": [
+    {
+     "feld": "status",
+     "wert": "nicht_eingereicht"
+    },
+    {
+     "feld": "behandler",
+     "wert": "Zahnarzt"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "nicht_unterstuetzt",
+   "messgroesse": "",
+   "jahre": [],
+   "filter": [],
+   "gruppierung": "",
+   "grund": "keine Frage zu den eigenen Rechnungen"
+  },
+  {
+   "typ": "anzahl",
+   "messgroesse": "",
+   "jahre": [],
+   "filter": [
+    {
+     "feld": "kostentraeger",
+     "wert": "Muster PKV"
+    },
+    {
+     "feld": "klaerungsbedarf",
+     "wert": "ja"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  },
+  {
+   "typ": "summe",
+   "messgroesse": "soll",
+   "jahre": [
+    2026
+   ],
+   "filter": [
+    {
+     "feld": "kostentraeger",
+     "wert": "Beihilfe Bund"
+    }
+   ],
+   "gruppierung": "",
+   "grund": ""
+  }
+ ]
+}

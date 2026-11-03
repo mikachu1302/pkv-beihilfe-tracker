@@ -6,7 +6,7 @@ import {Svc} from "./api";
 import type {StatusDTO} from "./api";
 import {FeedbackProvider, useConfirm, useToast} from "./components/feedback";
 import {ErrorNotice, Loading, Notice} from "./components/ui";
-import {setAI} from "./lib/ai";
+import {setAI, useAIOn} from "./lib/ai";
 import {setAppearance, useAppearance} from "./lib/appearance";
 import {useCloseDesignHint, useSetDesign, useSetTheme} from "./lib/appearanceActions";
 import {applyDesign, useDesign} from "./lib/design";
@@ -15,6 +15,7 @@ import {applyTheme, useDarkActive} from "./lib/theme";
 import {useBackend} from "./lib/useBackend";
 import {clearUnsavedChanges, dialogOpen, hasUnsavedChanges, isMac, isTyping, key, mod, useKeydown} from "./lib/shortcuts";
 import {useDialog} from "./lib/useDialog";
+import Ask from "./pages/Ask";
 import Dashboard from "./pages/Dashboard";
 import Import from "./pages/Import";
 import Inbox from "./pages/Inbox";
@@ -55,9 +56,16 @@ const NAV = [
     ["/rechnungen", "Rechnungen", "list"],
     ["/rechnung/neu", "Neue Rechnung", "plus"],
     ["/jahre", "Alle Jahre", "chart"],
+    ["/fragen", "Fragen", "ask"],
     ["/import", "Import", "import"],
     ["/einstellungen", "Einstellungen", "settings"],
 ] as const;
+
+/** The menu entries: "Fragen" only while the AI is on. */
+function useNav() {
+    const aiOn = useAIOn();
+    return NAV.filter(([to]) => to !== "/fragen" || aiOn);
+}
 
 const NAV_KEY = "pkv.navCollapsed";
 
@@ -81,6 +89,7 @@ function useNavCollapsed(): [boolean, (v: boolean) => void] {
 
 function Layout({status, children}: {status: StatusDTO; children: ReactNode}) {
     const {dataVersion} = useApp();
+    const nav = useNav();
     const inbox = useBackend(() => Svc.ListInbox(), [dataVersion]);
     const waiting = inbox.data?.length ?? 0;
     const [collapsed, setCollapsed] = useNavCollapsed();
@@ -100,7 +109,7 @@ function Layout({status, children}: {status: StatusDTO; children: ReactNode}) {
                         <Icon name={collapsed ? "expand" : "collapse"}/>
                     </button>
                 </div>
-                {NAV.map(([to, label, icon]) => (
+                {nav.map(([to, label, icon]) => (
                     <NavLink key={to} to={to} title={collapsed ? label : undefined}
                              aria-label={collapsed ? (to === "/posteingang" && waiting > 0 ? `${label}, ${waiting} Belege` : label) : undefined}
                              onClick={async e => {
@@ -173,6 +182,7 @@ function AppRoutes({status}: {status: StatusDTO}) {
                 <Route path="/rechnung/neu" element={<NewInvoiceForm/>}/>
                 <Route path="/rechnung/:id" element={<InvoiceForm/>}/>
                 <Route path="/jahre" element={<Overview/>}/>
+                <Route path="/fragen" element={<Ask/>}/>
                 <Route path="/import" element={<Import/>}/>
                 <Route path="/einstellungen" element={<Settings/>}/>
                 <Route path="*" element={<Navigate to="/dashboard" replace/>}/>
@@ -304,6 +314,7 @@ const ICONS: Record<string, ReactNode> = {
     expand: <path d="M9 6l6 6-6 6"/>,
     "theme-light": <><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></>,
     "theme-dark": <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>,
+    ask: <><path d="M21 12a8.5 8.5 0 0 1-12.3 7.6L3.5 21l1.4-4.6A8.5 8.5 0 1 1 21 12z"/><path d="M9.8 9.5a2.3 2.3 0 1 1 3 2.2c-.5.2-.8.6-.8 1.1v.4M12 16h.01"/></>,
 };
 
 /** Small line icons for the menu (inline SVG, colour from the text). */
@@ -320,6 +331,7 @@ function Icon({name}: {name: string}) {
  */
 function GlobalShortcuts({onHelp}: {onHelp: () => void}) {
     const navigate = useNavigate();
+    const nav = useNav();
     const confirm = useConfirm();
     const leave = async (go: () => void) => {
         if (hasUnsavedChanges()) {
@@ -348,8 +360,8 @@ function GlobalShortcuts({onHelp}: {onHelp: () => void}) {
             void leave(() => navigate("/rechnung/neu"));
             return true;
         }
-        if (mod(e) && !e.shiftKey && /^[1-7]$/.test(e.key)) {
-            const to = NAV[Number(e.key) - 1][0];
+        if (mod(e) && !e.shiftKey && /^[1-9]$/.test(e.key) && Number(e.key) <= nav.length) {
+            const to = nav[Number(e.key) - 1][0];
             void leave(() => navigate(to));
             return true;
         }
@@ -364,12 +376,13 @@ function GlobalShortcuts({onHelp}: {onHelp: () => void}) {
 
 function ShortcutHelp({onClose}: {onClose: () => void}) {
     const ref = useDialog<HTMLDivElement>(onClose);
+    const entries = useNav().length;
     const rows: [string[], string][] = [
         [[key("S")], "Speichern (Rechnung, Posteingang, Einstellungen)"],
         [[key("Enter")], "Rechnung speichern und nächste erfassen"],
         [[key("N")], "Neue Rechnung"],
         [[key("F"), "/"], "Suchen in der Rechnungsliste"],
-        [[key("1"), key("7")], "Menüpunkte der Reihe nach (1 bis 7)"],
+        [[key("1"), key(String(entries))], `Menüpunkte der Reihe nach (1 bis ${entries})`],
         [isMac ? ["⌫", "⌘["] : ["Rücktaste", "Alt+Pfeil links"], "Zurück (nicht beim Tippen in einem Feld)"],
         [isMac ? ["⌘]"] : ["Alt+Pfeil rechts"], "Vor"],
         [["Esc"], "Dialog schließen"],

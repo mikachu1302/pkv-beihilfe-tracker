@@ -1,5 +1,5 @@
 import {useEffect, useMemo, useRef, useState} from "react";
-import {Link, useNavigate} from "react-router";
+import {Link, useLocation, useNavigate} from "react-router";
 import {Desktop, Svc} from "../api";
 import type {ClaimViewDTO, InvoiceRowDTO, MarkChangeDTO, PayerDTO, YearDTO} from "../api";
 import {useApp} from "../App";
@@ -22,7 +22,13 @@ import {TableView, ColumnChooser} from "./invoices/TableView";
 import {invoicePath} from "../lib/paths";
 import {exportExcel} from "./Overview";
 
-type Filter = "all" | "open" | "submitted" | "clarify" | "deadline" | "unpaid" | "warnings";
+export type Filter = "all" | "open" | "submitted" | "clarify" | "deadline" | "unpaid" | "warnings";
+
+/** How another page opens the list (navigation state): with a filter and a search. */
+export interface ListState {
+    filter?: Filter;
+    search?: string;
+}
 
 const FILTERS: [Filter, string][] = [
     ["all", "Alle"],
@@ -66,8 +72,9 @@ export default function Invoices() {
     const settings = useBackend(() => Svc.GetSettings(), [dataVersion]);
     const list = useBackend(() => Svc.ListInvoices(year), [year, dataVersion]);
     const [rows, setRows] = useState<InvoiceRowDTO[]>([]);
-    const [filter, setFilter] = useState<Filter>("all");
-    const [query, setQuery] = useState("");
+    const start = useLocation().state as ListState | null;
+    const [filter, setFilter] = useState<Filter>(start?.filter ?? "all");
+    const [query, setQuery] = useState(start?.search ?? "");
     const [figures, setFigures] = useState(0); // bumped after own changes: the Ausstand cards reload
     const search = useRef<HTMLInputElement>(null);
     useKeydown(e => {

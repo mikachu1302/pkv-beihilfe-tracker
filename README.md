@@ -35,6 +35,11 @@ compared with the premium refund (Beitragsrückerstattung). The user interface i
   There is no server and no account, and nothing runs in the cloud. Changes from other devices
   show up while the app runs; conflict copies are merged field by field.
 - **Backups**: daily zip snapshots to a second folder (USB stick, NAS, another cloud).
+- **Optional local AI** (off by default, only on a click): a model on a computer in the home
+  network (llama.cpp, OpenAI-compatible) reads difficult documents – dark or skewed photos, long
+  tables – next to the text recognition ("Mit KI auslesen"), and answers questions about the own
+  data ("Fragen": *Wie viele Rechnungen aus 2026 sind noch offen?*). The AI only translates the
+  question; the app computes the answer with the same figures as the list and the dashboard.
 - **Two designs**, chosen per device: the new one (default – calm surfaces, one accent colour,
   amounts in a monospace face, an icon rail) and the classic look of v0.3 with the classic list;
   each **light or dark**, or following the system.
@@ -82,6 +87,8 @@ frontend/ (React, in the system webview)          Go (one binary)
         │ recognised text + QR payloads ────────▶  internal/extract → invoice / refund draft
         ◀── /datafile/inbox/…, /datafile/doc/… ──  service.ServeFile (inbox files, documents)
         ◀── event "data-changed" ────────────────  internal/watch → reload when others change the folder
+  lib/aiRead.ts: pages as JPEG ─────────────────▶  internal/airead ─▶ internal/ai ─▶ AI server in the LAN
+  pages/Ask.tsx: question ──────────────────────▶  internal/ask: question → query (AI), query → answer
                                                    internal/calc, match (pure logic)
                                                    internal/store ─▶ data folder (JSON per record)
 ```
@@ -108,6 +115,15 @@ bindings of the Go service, `make bindings`), `frontend/public/ocr/` and `fronte
 `frontend/scripts/copy-assets.mjs` before `npm run dev`/`npm run build`, or with
 `npm run assets`) and `frontend/dist/`.
 Go tests that need no UI run without them: `go test ./internal/...`.
+
+The AI features are tested against a stand-in server (`internal/ai/aitest`). Against the real
+server, the question set (`internal/ask/testdata/fragen.json`, made up) shows how many questions
+the model and the app's corrections understand right; documents are measured with
+`scripts/ki-belegtest.py` (see [docs/KI-TEST.md](docs/KI-TEST.md)):
+
+```sh
+KI_TEST=1 go test ./internal/ask -run Live -v    # key from LLM_API_KEY or API_KEY in .env
+```
 
 Try the spreadsheet import on a real file without saving anything:
 
@@ -142,8 +158,11 @@ creates a data folder with made-up invoices to point it at.
 | `internal/leaf` | JSON leaves: flatten, rebuild, three-way rebase |
 | `internal/watch` | Notices changes in the data folder made by others |
 | `internal/backup` | Zip snapshots of the data folder |
-| `internal/config` | Device-local settings (data folder, device ID, backup folder) |
+| `internal/config` | Device-local settings (data folder, device ID, backup folder, appearance, AI server) |
 | `internal/extract` | Recognises invoices and refund documents from text and GiroCodes |
+| `internal/ai` | Client for the local AI server (OpenAI-compatible, one request at a time); `aitest`: a stand-in server for tests |
+| `internal/airead` | Reading a document with the AI: checks the answer, merges it with the text recognition |
+| `internal/ask` | Questions: the query model, running a query on the data, prompt and corrections for the AI |
 | `internal/upload` | Upload page for the phone (LAN only, secret link valid 15 minutes) |
 | `internal/export` | Excel export and PDF bundle for submissions |
 | `internal/xlsximport` | Import of the old spreadsheet |
@@ -153,8 +172,19 @@ creates a data folder with made-up invoices to point it at.
 
 ## Privacy and security
 
-- Health data never leaves the device through the app: no telemetry, no cloud services, text
-  recognition offline. Sync, if any, is done by the tool you choose for the data folder.
+- Health data never leaves the device through the app unless you ask for it: no telemetry, no
+  cloud services, text recognition offline. Sync, if any, is done by the tool you choose for the
+  data folder.
+- **The optional AI** is a second network path, off by default and only to a server you name
+  (a computer in the home network – no cloud). It sends something only on a click:
+  - "Mit KI auslesen" sends the pages of that one document (as JPEG images – health data). Its
+    recognised text stays on the device; the app uses it to check the AI's answer before a
+    field is filled.
+  - "Fragen" sends the question, today's date and the app's vocabulary (payer names, categories,
+    statuses) – never an invoice. The app computes the answer from its own data.
+  - The connection is plain HTTP inside the home network, protected by an API key. The key is
+    kept in the device configuration (`config.json` in the OS config folder, readable by the user
+    only), never in the data folder, and never shown again after it was entered.
 - The phone upload is the only network listener. It runs only while its dialog is open (at most
   15 minutes), listens on the LAN address shown in the QR code, requires the random token in
   the link, accepts only images and PDFs (checked by content) and at most 100 files / 500 MB.

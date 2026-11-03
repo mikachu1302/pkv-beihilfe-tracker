@@ -384,3 +384,24 @@ fieldset.choice-cards legend { padding: 0; margin-bottom: 6px; font-weight: 600;
 .choice-title { display: block; font-weight: 600; }
 .choice-hint { display: block; color: var(--muted); font-size: 12px; }
 fieldset.choice.stacked { flex-direction: column; align-items: flex-start; gap: 6px; }
+
+/* Fragen: questions on the right, answers as panels, the input at the bottom */
+.ask-examples { display: flex; flex-wrap: wrap; gap: 8px; }
+.ask-examples .chip { text-align: left; }
+.ask-log { display: flex; flex-direction: column; gap: 4px; }
+.ask-entry { display: flex; flex-direction: column; }
+.ask-question { align-self: flex-end; max-width: 75%; margin: 8px 0; padding: 8px 12px; border-radius: var(--radius);
+  background: var(--panel-2); border: 1px solid var(--border); }
+.ask-answer { margin-bottom: 8px; }
+.ask-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.ask-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border); background: var(--panel); }
+.ask-chip.fixed { background: var(--panel-2); }
+.ask-chip select { border: none; background: transparent; color: inherit; font: inherit; padding: 0; width: auto; min-height: 0; }
+.chip-remove { border: none; background: none; padding: 0 2px; color: var(--muted); line-height: 1; }
+.chip-remove:hover { color: var(--bad); }
+.ask-sentence { margin: 0 0 8px; font-size: 15px; }
+.ask-figures { max-width: 460px; margin-bottom: 10px; }
+.ask-figures > div { display: contents; }
+.ask-groups, .ask-invoices { width: auto; min-width: 50%; margin-bottom: 8px; }
+.ask-input { position: sticky; bottom: 0; display: flex; gap: 8px; padding: 12px 0; background: var(--bg); }
+.ask-input input { flex: 1; }

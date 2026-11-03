@@ -61,6 +61,9 @@ type Lock struct{ ch chan struct{} }
 // NewLock returns an open lock.
 func NewLock() *Lock { return &Lock{ch: make(chan struct{}, 1)} }
 
+// Busy reports whether a request is running.
+func (l *Lock) Busy() bool { return l != nil && len(l.ch) > 0 }
+
 func (l *Lock) acquire(ctx context.Context) (release func(), err error) {
 	if l == nil {
 		return func() {}, nil
