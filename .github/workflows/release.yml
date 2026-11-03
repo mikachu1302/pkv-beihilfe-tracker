@@ -80,7 +80,9 @@ jobs:
           mkdir -p dmg
           cp -R bin/pkv-beihilfe-tracker.app "dmg/PKV Beihilfe Tracker.app"
           ln -s /Applications dmg/Programme
-          hdiutil create -volname "PKV Beihilfe Tracker" -srcfolder dmg -ov -format UDZO bin/pkv-beihilfe-tracker-macos-universal.dmg
+          # An explicit size: hdiutil's own estimate is sometimes too small ("No space left on device").
+          size=$(( $(du -sm dmg | cut -f1) + 40 ))
+          hdiutil create -volname "PKV Beihilfe Tracker" -srcfolder dmg -size "${size}m" -ov -format UDZO bin/pkv-beihilfe-tracker-macos-universal.dmg
           ditto -c -k --keepParent "dmg/PKV Beihilfe Tracker.app" bin/pkv-beihilfe-tracker-macos-universal.zip
           ls -la bin
 

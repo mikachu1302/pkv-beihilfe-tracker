@@ -1,6 +1,7 @@
 # v0.4.0 – Redesign, views and themes (plan)
 
-Status: implemented (steps 1–7, see "Implementation") · 2026-11-03 · mockups: the design canvas "PKV Beihilfe –
+Status: released as **v0.4.0** on 2026-11-03 (tag on 39fab6f; implementation and two review
+rounds below) · mockups: the design canvas "PKV Beihilfe –
 Designrichtungen" (private claude.ai artifact of the owner; board "A · Nachtschicht" and section
 "v0.3.0 · Drei Ansichten, hell und dunkel" – the mockups were made when the redesign was still
 planned for v0.3.0).
