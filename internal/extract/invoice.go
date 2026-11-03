@@ -37,6 +37,10 @@ const (
 	SrcQR    = "qr"    // GiroCode – reliable
 	SrcLabel = "label" // next to a label such as "Rechnungsbetrag" – likely
 	SrcGuess = "guess" // heuristic – check it
+	// Read by the AI (internal/airead): confirmed by the text recognition
+	// (the value is in the recognised text, or both read the same) or not.
+	SrcAIConfirmed = "ai-confirmed"
+	SrcAI          = "ai"
 )
 
 // Draft is what was recognised.

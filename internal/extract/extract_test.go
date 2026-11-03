@@ -318,3 +318,16 @@ func TestProviderAndNumberEdgeCasesFromReview(t *testing.T) {
 		t.Errorf("reference taken from a sentence: %q", d.Reference)
 	}
 }
+
+func TestEvidence(t *testing.T) {
+	ev := NewEvidence([]Line{{Text: "Rechnungs-Nr.: 2026/0815"}, {Text: "IBAN DE89 3704 0044 0532 0130 00"}, {Text: "Summe 1.234,56 €"}})
+	if !ev.HasAmount(123456) || ev.HasAmount(1234) {
+		t.Error("amounts")
+	}
+	if !ev.HasText("2026-0815") || !ev.HasText("de89370400440532013000") || ev.HasText("Nr") || ev.HasText("0815 IBAN") {
+		t.Error("text")
+	}
+	if !ValidIBAN("DE89 3704 0044 0532 0130 00") || ValidIBAN("DE89 3704 0044 0532 0130 01") {
+		t.Error("IBAN")
+	}
+}

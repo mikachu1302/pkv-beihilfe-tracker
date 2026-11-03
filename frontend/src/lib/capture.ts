@@ -22,6 +22,7 @@ prepareZXingModule({
 });
 
 const MAX_SIDE = 2600;
+const UNREADABLE = "Dieser Dateityp kann nicht gelesen werden – bitte PDF oder Foto verwenden.";
 
 /**
  * Opens a PDF with the bundled decoders (JBIG2/JPEG 2000 scans), standard
@@ -223,15 +224,19 @@ function recognizePdf(url: string, progress?: Progress, signal?: AbortSignal): P
     });
 }
 
-async function recognizeImage(url: string, progress?: Progress, signal?: AbortSignal): Promise<Recognized> {
-    progress?.("Bild wird geladen …");
+/** Loads a photo (turned upright by its orientation data). */
+async function loadBitmap(url: string, signal?: AbortSignal): Promise<ImageBitmap> {
     const blob = await (await fetch(url, {signal})).blob();
-    let bitmap: ImageBitmap;
     try {
-        bitmap = await createImageBitmap(blob);
+        return await createImageBitmap(blob);
     } catch {
         throw new Error("Das Bild kann nicht gelesen werden (HEIC-Fotos bitte als JPEG senden).");
     }
+}
+
+async function recognizeImage(url: string, progress?: Progress, signal?: AbortSignal): Promise<Recognized> {
+    progress?.("Bild wird geladen …");
+    const bitmap = await loadBitmap(url, signal);
     signal?.throwIfAborted();
     const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
     const canvas = canvasFor(bitmap.width * scale, bitmap.height * scale);
@@ -250,7 +255,7 @@ async function recognizeImage(url: string, progress?: Progress, signal?: AbortSi
 export async function recognize(url: string, type: string, progress?: Progress, signal?: AbortSignal): Promise<Recognized> {
     if (type === "pdf") return recognizePdf(url, progress, signal);
     if (type === "image") return recognizeImage(url, progress, signal);
-    throw new Error("Dieser Dateityp kann nicht gelesen werden – bitte PDF oder Foto verwenden.");
+    throw new Error(UNREADABLE);
 }
 
 const shared = createRecognizer((f, progress, signal) => recognize(f.url, f.type, progress, signal));
@@ -264,6 +269,58 @@ export const recognizePages = shared.recognizePages;
 
 /** The recognition result of a file if it is known already. */
 export const recognizedFile = shared.peek;
+
+// --- pages as images for the AI ---
+
+/** Pages sent to the AI at most (internal/airead.MaxPages). */
+export const AI_MAX_PAGES = 4;
+/** Long side of a page sent to the AI: smaller pages lose amounts in small print (tested). */
+const AI_SIDE = 1400;
+
+/** A JPEG of the picture, at most AI_SIDE on the long side, on white (PDF pages may be transparent). */
+function jpeg(src: CanvasImageSource & {width: number; height: number}): string {
+    const f = Math.min(1, AI_SIDE / Math.max(src.width, src.height));
+    const c = canvasFor(src.width * f, src.height * f);
+    const ctx = c.getContext("2d")!;
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(src, 0, 0, c.width, c.height);
+    const url = c.toDataURL("image/jpeg", 0.88);
+    c.width = 0; // free the pixels now
+    return url;
+}
+
+/**
+ * The pages of a document as JPEG data URLs for the AI (in order, at most
+ * AI_MAX_PAGES). PDFs are rendered page by page, photos scaled down.
+ */
+export async function pageImages(files: PageFile[], signal?: AbortSignal): Promise<string[]> {
+    const out: string[] = [];
+    for (const f of files) {
+        if (out.length >= AI_MAX_PAGES) break;
+        signal?.throwIfAborted();
+        if (f.type === "pdf") {
+            await withPdf(f.url, signal, async task => {
+                const doc = await task.promise;
+                for (let n = 1; n <= doc.numPages && out.length < AI_MAX_PAGES; n++) {
+                    signal?.throwIfAborted();
+                    const page = await doc.getPage(n);
+                    const vp = page.getViewport({scale: 1});
+                    const canvas = await renderPdfPage(page, AI_SIDE / Math.max(vp.width, vp.height));
+                    out.push(jpeg(canvas));
+                    canvas.width = 0;
+                }
+            });
+        } else if (f.type === "image") {
+            const bitmap = await loadBitmap(f.url, signal);
+            out.push(jpeg(bitmap));
+            bitmap.close();
+        } else {
+            throw new Error(UNREADABLE);
+        }
+    }
+    return out;
+}
 
 // pdf.js refuses two renders into one canvas at the same time: a new preview
 // cancels the one still drawing into the same canvas.

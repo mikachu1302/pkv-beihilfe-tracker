@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import type {AISettingsDTO} from "../api";
 import {setAI, useAI} from "../lib/ai";
+import {cancellable} from "../test/fixtures";
 import {renderAt} from "../test/render";
 import {AISettingsSection} from "./SettingsAI";
 
@@ -10,11 +11,6 @@ const svc = vi.hoisted(() => ({SetAISettings: vi.fn(), SetAIKey: vi.fn(), TestAI
 vi.mock("../api", () => ({Svc: svc}));
 
 const off: AISettingsDTO = {on: false, url: "http://192.168.178.38:8080/v1", model: "qwen3-vl-8b", keySet: false, keyEnd: ""};
-
-/** A promise the way Wails returns it (cancellable). */
-function cancellable<T>(p: Promise<T>) {
-    return Object.assign(p, {cancel: vi.fn()});
-}
 
 beforeEach(() => {
     vi.clearAllMocks();

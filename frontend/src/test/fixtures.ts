@@ -1,5 +1,7 @@
 // Made-up test data (no real invoices).
-import type {ClaimViewDTO, InvoiceRowDTO, MarkDTO, PayerDTO, SettingsDTO} from "../api";
+import {vi} from "vitest";
+import type {Mock} from "vitest";
+import type {AIReadDTO, ClaimViewDTO, InvoiceDTO, InvoiceRowDTO, MarkDTO, PayerDTO, SettingsDTO} from "../api";
 
 export const noMark: MarkDTO = {done: false, date: "", note: ""};
 
@@ -37,4 +39,15 @@ export const settings: SettingsDTO = {
 /** A long list of invoices ("Praxis 1" …). */
 export function manyRows(n: number): InvoiceRowDTO[] {
     return Array.from({length: n}, (_, i) => invoiceRow(`r${i}`, `Praxis ${i + 1}`));
+}
+
+/** A promise the way the Wails bindings return it (cancellable). */
+export function cancellable<T>(p: Promise<T>): Promise<T> & {cancel: Mock} {
+    return Object.assign(p, {cancel: vi.fn()});
+}
+
+/** An AI reading as Svc.ReadWithAI returns it. */
+export function aiReading(invoice: InvoiceDTO, patch: Partial<AIReadDTO> = {}): AIReadDTO {
+    return {kind: "invoice", aiKind: "invoice", draft: {invoice, view: invoiceRow("", invoice.provider), movedToInbox: 0, warning: ""},
+        sources: {}, others: {}, fromAI: [], confirmed: 0, notes: [], pages: 1, seconds: 64, ...patch};
 }

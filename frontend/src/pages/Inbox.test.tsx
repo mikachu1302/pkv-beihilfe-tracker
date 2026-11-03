@@ -2,7 +2,8 @@ import {fireEvent, screen, waitFor} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import type {AnalysisDTO, InvoiceDTO} from "../api";
-import {invoiceRow, noMark, settings} from "../test/fixtures";
+import {setAI} from "../lib/ai";
+import {aiReading, cancellable, invoiceRow, noMark, settings} from "../test/fixtures";
 import {renderAt} from "../test/render";
 import Inbox from "./Inbox";
 
@@ -10,10 +11,10 @@ const svc = vi.hoisted(() => ({
     ListInbox: vi.fn(), AnalyzeDocument: vi.fn(), CreateInvoiceFromInbox: vi.fn(), DiscardInbox: vi.fn(),
     AddFilesToInbox: vi.fn(), AddToInbox: vi.fn(), StartPhoneUpload: vi.fn(), StopPhoneUpload: vi.fn(),
     GetSettings: vi.fn(), AnalyzeRefund: vi.fn(), ReviewRefund: vi.fn(), ConfirmRefund: vi.fn(),
-    MergeInbox: vi.fn(), ReorderInbox: vi.fn(), SplitInbox: vi.fn(), SuggestInboxGroups: vi.fn(),
+    MergeInbox: vi.fn(), ReorderInbox: vi.fn(), SplitInbox: vi.fn(), SuggestInboxGroups: vi.fn(), ReadWithAI: vi.fn(),
 }));
 const desktop = vi.hoisted(() => ({ChooseFiles: vi.fn()}));
-const capture = vi.hoisted(() => ({recognizePages: vi.fn(), renderPdfPreview: vi.fn()}));
+const capture = vi.hoisted(() => ({recognizePages: vi.fn(), renderPdfPreview: vi.fn(), pageImages: vi.fn(), AI_MAX_PAGES: 4}));
 vi.mock("../api", () => ({Svc: svc, Desktop: desktop}));
 vi.mock("../lib/capture", () => capture);
 
@@ -37,7 +38,10 @@ beforeEach(() => {
     svc.AnalyzeDocument.mockResolvedValue(analysis());
     svc.StopPhoneUpload.mockResolvedValue(undefined);
     svc.GetSettings.mockResolvedValue(settings);
+    capture.pageImages.mockResolvedValue(["data:image/jpeg;base64,AA"]);
 });
+
+const aiOn = () => setAI({on: true, url: "http://192.168.178.38:8080/v1", model: "qwen3-vl-8b", keySet: true, keyEnd: ""});
 
 describe("Inbox", () => {
     it("recognises a document and saves it as an invoice", async () => {
@@ -266,5 +270,60 @@ describe("Inbox", () => {
         await user.click(screen.getByRole("button", {name: "Zu einem Beleg zusammenfassen (2)"}));
         expect(await screen.findByRole("region", {name: "Scan 1"})).toBeInTheDocument();
     });
-});
 
+    it("offers no AI reading while the AI is off", async () => {
+        renderAt("/", "/", <Inbox/>);
+        await screen.findByDisplayValue("Dr. med. Anna Muster");
+        expect(screen.queryByRole("button", {name: "Mit KI auslesen"})).not.toBeInTheDocument();
+    });
+
+    it("reads with the AI on request and keeps typed values", async () => {
+        const user = userEvent.setup();
+        aiOn();
+        const read = {...draft, provider: "Dr. med. Anna Muster", amount: "296.40", serviceTo: "2026-03-07", iban: "DE02120300000000202051"};
+        svc.ReadWithAI.mockReturnValue(cancellable(Promise.resolve(aiReading(read, {
+            sources: {amount: "ai-confirmed", serviceTo: "ai", iban: "ai", provider: "label"}, confirmed: 1,
+            others: {amount: {source: "label", value: "286.40"}},
+        }))));
+        renderAt("/", "/", <Inbox/>);
+        const iban = await screen.findByLabelText("IBAN");
+        await user.clear(iban);
+        await user.type(iban, "DE89370400440532013000");
+        await user.click(screen.getByRole("button", {name: "Mit KI auslesen"}));
+
+        expect(capture.pageImages).toHaveBeenCalledWith([expect.objectContaining({url: "/datafile/inbox/scan.pdf"})], expect.any(AbortSignal));
+        expect(svc.ReadWithAI).toHaveBeenCalledWith({pages: ["data:image/jpeg;base64,AA"],
+            lines: [{text: "Rechnung", page: 1, x: 0, y: 0, w: 0, h: 0}], qr: ["BCD"]});
+        expect(await screen.findByText("KI: 2 Felder gefüllt, 1 bestätigt, 2 Abweichungen (64 s).")).toBeInTheDocument();
+        expect(screen.getByLabelText("Betrag (€) *")).toHaveValue("296,40");
+        expect(screen.getByText("KI, bestätigt")).toBeInTheDocument();
+        expect(screen.getByLabelText("Behandlung bis")).toHaveValue("2026-03-07");
+        expect(screen.getByText("KI – bitte prüfen")).toBeInTheDocument();
+        // The IBAN the user typed stays; the AI's reading is offered.
+        expect(iban).toHaveValue("DE89370400440532013000");
+        await user.click(screen.getByRole("button", {name: "KI: DE02120300000000202051 übernehmen"}));
+        expect(iban).toHaveValue("DE02120300000000202051");
+        // The value that lost can be taken as well.
+        await user.click(screen.getByRole("button", {name: "Texterkennung: 286,40 € übernehmen"}));
+        expect(screen.getByLabelText("Betrag (€) *")).toHaveValue("286,40");
+        expect(screen.queryByText(/übernehmen/)).not.toBeInTheDocument();
+    });
+
+    it("cancels an AI reading and says when the server is away", async () => {
+        const user = userEvent.setup();
+        aiOn();
+        const running = cancellable(new Promise(() => {}));
+        svc.ReadWithAI.mockReturnValue(running);
+        renderAt("/", "/", <Inbox/>);
+        await user.click(await screen.findByRole("button", {name: "Mit KI auslesen"}));
+        expect(await screen.findByText(/KI liest den Beleg … 0:0\d \(etwa 1 Minute\)/)).toBeInTheDocument();
+        await user.click(screen.getByRole("button", {name: "Abbrechen"}));
+        expect(running.cancel).toHaveBeenCalled();
+        expect(screen.getByRole("button", {name: "Mit KI auslesen"})).toBeEnabled();
+
+        svc.ReadWithAI.mockImplementation(() => cancellable(Promise.reject(new Error("KI-Server nicht erreichbar: 192.168.178.38:8080 antwortet nicht"))));
+        await user.click(screen.getByRole("button", {name: "Mit KI auslesen"}));
+        expect(await screen.findByText(/nicht erreichbar.*Die Werte der Texterkennung bleiben\./)).toBeInTheDocument();
+        expect(screen.getByLabelText("Betrag (€) *")).toHaveValue("286,40");
+    });
+});

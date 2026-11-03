@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -113,6 +114,7 @@ func TestModelLoadingAndMissing(t *testing.T) {
 func slowServer(t *testing.T, release chan struct{}, started *atomic.Int32) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body) // only then does the server notice a closed connection
 		started.Add(1)
 		select {
 		case <-release:

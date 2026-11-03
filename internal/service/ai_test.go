@@ -148,3 +148,44 @@ func TestTestAIUnreachable(t *testing.T) {
 		t.Errorf("unreachable %+v %v", res, err)
 	}
 }
+
+func TestReadWithAI(t *testing.T) {
+	s := newTestService(t)
+	if _, err := s.SaveInvoice(sampleInvoice(), nil, nil); err != nil { // "Dr. Muster" is known now
+		t.Fatal(err)
+	}
+	page := []string{"data:image/jpeg;base64,/9j/AA=="}
+	if _, err := s.ReadWithAI(t.Context(), AIReadInputDTO{Pages: page}); !errors.Is(err, ai.ErrNotSet) {
+		t.Errorf("AI off: %v", err)
+	}
+	fake := &aitest.Server{Answer: func(aitest.Request) string {
+		return `{"art":"rechnung","behandler":"Dr. Muster","zahlungsempfaenger":"","iban":"","rechnungsnummer":"R-4711",
+			"kategorie":"arzt","rechnungsdatum":"2026-10-20","behandlung_von":"2026-10-06","behandlung_bis":"",
+			"betrag":"98.50","faellig_am":""}`
+	}}
+	withAI(t, s, fake)
+	if _, err := s.ReadWithAI(t.Context(), AIReadInputDTO{Pages: []string{"/etc/passwd"}}); err == nil {
+		t.Error("a page that is no image accepted")
+	}
+
+	// The text recognition read the number and a different total next to its label.
+	lines := []LineDTO{{Text: "Praxis Dr. Muster", Page: 1}, {Text: "Rechnung Nr. R-4711", Page: 1}, {Text: "Rechnungsbetrag 89,50 €", Page: 1}}
+	r, err := s.ReadWithAI(t.Context(), AIReadInputDTO{Pages: page, Lines: lines})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv := r.Draft.Invoice
+	if inv.Provider != "Dr. Muster" || inv.InvoiceDate != "2026-10-20" || inv.Category != "arzt" || inv.Reference != "R-4711" {
+		t.Errorf("draft %+v", inv)
+	}
+	// The AI's total is not in the text: the label wins, the AI's value is the hint.
+	if inv.Amount != "89.50" || r.Others["amount"] != (AIOtherDTO{Source: "ai", Value: "98.50"}) {
+		t.Errorf("amount %s, others %+v", inv.Amount, r.Others)
+	}
+	if r.Sources["provider"] != "ai-confirmed" || r.Sources["reference"] != "ai-confirmed" || r.Sources["invoiceDate"] != "ai" {
+		t.Errorf("sources %v", r.Sources)
+	}
+	if r.Kind != "invoice" || r.AIKind != "invoice" || r.Pages != 1 || r.Draft.View.Year != 2026 || len(fake.Requests()) != 1 {
+		t.Errorf("result %+v", r)
+	}
+}

@@ -2,17 +2,18 @@ import {screen, waitFor, within} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import type {AnalysisDTO, InvoiceDTO, StagedDocDTO} from "../api";
-import {claimView, invoiceRow, noMark} from "../test/fixtures";
+import {setAI} from "../lib/ai";
+import {aiReading, cancellable, claimView, invoiceRow, noMark} from "../test/fixtures";
 import {renderAt} from "../test/render";
 import InvoiceForm from "./InvoiceForm";
 
 const svc = vi.hoisted(() => ({
     NewInvoice: vi.fn(), GetInvoice: vi.fn(), PreviewInvoice: vi.fn(), SaveInvoice: vi.fn(), DeleteInvoice: vi.fn(),
     StageFiles: vi.fn(), StageFile: vi.fn(), DiscardStaged: vi.fn(), StagedToInbox: vi.fn(), AnalyzeDocument: vi.fn(),
-    DocumentPath: vi.fn(), DocumentsPDF: vi.fn(),
+    DocumentPath: vi.fn(), DocumentsPDF: vi.fn(), ReadWithAI: vi.fn(),
 }));
 const desktop = vi.hoisted(() => ({ChooseFiles: vi.fn(), OpenPath: vi.fn()}));
-const capture = vi.hoisted(() => ({recognizePages: vi.fn(), renderPdfPreview: vi.fn()}));
+const capture = vi.hoisted(() => ({recognizePages: vi.fn(), renderPdfPreview: vi.fn(), pageImages: vi.fn(), AI_MAX_PAGES: 4}));
 vi.mock("../api", () => ({Svc: svc, Desktop: desktop}));
 vi.mock("../lib/capture", () => capture);
 
@@ -167,6 +168,31 @@ describe("InvoiceForm", () => {
         await user.click(screen.getByRole("button", {name: "Speichern"}));
         await waitFor(() => expect(svc.SaveInvoice).toHaveBeenCalled());
         expect(svc.SaveInvoice.mock.calls[0][2]).toEqual([page.id]);
+    });
+
+    it("reads added documents with the AI and upgrades the badges", async () => {
+        const user = userEvent.setup();
+        setAI({on: true, url: "http://192.168.178.38:8080/v1", model: "qwen3-vl-8b", keySet: true, keyEnd: ""});
+        svc.AnalyzeDocument.mockResolvedValue(analysis("invoice", {amount: "286.40", reference: "R-1"}));
+        capture.recognizePages.mockResolvedValue({lines: [{text: "R-1", page: 1, x: 0, y: 0, w: 0, h: 0}], qr: [], ocr: true, pages: 1, truncated: false});
+        capture.pageImages.mockResolvedValue(["data:image/jpeg;base64,AA"]);
+        const read = {...blank, provider: "Dr. Muster", amount: "286.40", reference: "R-1", invoiceDate: "2026-10-20"};
+        svc.ReadWithAI.mockReturnValue(cancellable(Promise.resolve(aiReading(read, {
+            sources: {provider: "ai", amount: "qr", reference: "ai-confirmed", invoiceDate: "ai"}, confirmed: 1}))));
+        renderAt("/rechnung/neu", "/rechnung/neu", <InvoiceForm/>);
+        expect(await screen.findByLabelText("Behandler *")).toBeInTheDocument();
+        expect(screen.queryByRole("button", {name: "Mit KI auslesen"})).not.toBeInTheDocument(); // nothing to read yet
+        await user.click(screen.getByRole("button", {name: "+ Beleg hinzufügen …"}));
+        await screen.findByText(/2 Felder aus dem Beleg übernommen/);
+
+        await user.click(screen.getByRole("button", {name: "Mit KI auslesen"}));
+        expect(await screen.findByText("KI: 2 Felder gefüllt, 1 bestätigt (64 s).")).toBeInTheDocument();
+        expect(svc.ReadWithAI).toHaveBeenCalledWith({pages: ["data:image/jpeg;base64,AA"], lines: [{text: "R-1", page: 1, x: 0, y: 0, w: 0, h: 0}], qr: []});
+        expect(screen.getByLabelText("Behandler *")).toHaveValue("Dr. Muster");
+        expect(screen.getByLabelText("Rechnungsdatum *")).toHaveValue("2026-10-20"); // the new form's "today" counts as empty
+        expect(screen.getByText("KI, bestätigt")).toBeInTheDocument(); // the number, found before and read the same
+        expect(screen.getByText("aus GiroCode")).toBeInTheDocument();
+        expect(screen.getAllByText("KI – bitte prüfen")).toHaveLength(2);
     });
 
     it("moves a recognised Bescheid into the inbox", async () => {

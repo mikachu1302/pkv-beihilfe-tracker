@@ -1,15 +1,20 @@
 import {useEffect, useId, useRef, useState} from "react";
 import {useLocation} from "react-router";
 import {Desktop, Svc} from "../api";
-import type {AnalysisDTO, AnalyzeInputDTO, InboxItemDTO, InboxPageDTO, InboxSuggestionDTO, InvoiceDTO, LineDTO, PayerDTO, PhoneUploadDTO,
+import type {AIReadDTO, AnalysisDTO, AnalyzeInputDTO, InboxItemDTO, InboxPageDTO, InboxSuggestionDTO, InvoiceDTO, LineDTO, PayerDTO, PhoneUploadDTO,
     RefundReviewDTO} from "../api";
 import {useApp, useInboxChanged} from "../App";
+import {AIReadBar, AlternativeHint} from "../components/AIRead";
 import {DocThumb} from "../components/DocThumb";
 import {useConfirm, useToast} from "../components/feedback";
 import {Badge, Empty, ErrorNotice, Field, Notice, SourceBadge} from "../components/ui";
+import {useAIOn} from "../lib/ai";
+import {readingSummary, useAIRead} from "../lib/aiRead";
 import {recognizePages, renderPdfPreview} from "../lib/capture";
 import {bySize, readAsDataURL, tooBigText, useFileDrop} from "../lib/files";
 import {CATEGORY_LABELS, errMsg, eur, plural, toInput, today} from "../lib/format";
+import {alternativeInput, applyReading} from "../lib/prefill";
+import type {Alternative} from "../lib/prefill";
 import {hasUnsavedChanges, key, useSaveShortcut, useUnsavedChanges} from "../lib/shortcuts";
 import {useBackend} from "../lib/useBackend";
 import {useDialog} from "../lib/useDialog";
@@ -346,6 +351,16 @@ function InboxItem({item, payers, onDone, onChanged, onDiscard}: {
     const [error, setError] = useState("");
     const [analysis, setAnalysis] = useState<AnalysisDTO | null>(null);
     const [draft, setDraft] = useState<InvoiceDTO | null>(null);
+    const draftRef = useRef(draft);
+    draftRef.current = draft;
+    // Fields the user changed: an AI reading leaves them alone.
+    const typed = useRef(new Set<string>());
+    const aiOn = useAIOn();
+    const reading = useAIRead();
+    const [aiResult, setAIResult] = useState<AIReadDTO | null>(null);
+    const [others, setOthers] = useState<Record<string, Alternative>>({});
+    const [aiDone, setAIDone] = useState("");
+    const [aiError, setAIError] = useState("");
     const [saving, setSaving] = useState(false);
     const [input, setInput] = useState<AnalyzeInputDTO | null>(null);
     const [review, setReviewState] = useState<RefundReviewDTO | null>(null);
@@ -434,10 +449,38 @@ function InboxItem({item, payers, onDone, onChanged, onDiscard}: {
 
     function readAgain() {
         touched.current = false;
+        typed.current.clear();
+        reading.cancel();
+        setAIResult(null);
+        setOthers({});
+        setAIDone("");
+        setAIError("");
         setEdited(false);
         setStale(false);
         setReview(null);
         setReread(n => n + 1);
+    }
+
+    /** Reads the document with the AI and takes what it found into the fields the user did not type. */
+    async function readWithAI() {
+        setAIError("");
+        setAIDone("");
+        try {
+            const r = await reading.read(pagesRef.current, {lines: input?.lines ?? [], qr: input?.qr ?? []});
+            const cur = draftRef.current;
+            if (!r || !cur) return;
+            const free = Object.keys(cur).filter(f => !typed.current.has(f));
+            const {next, filled, others: alt} = applyReading(cur, r, undefined, free);
+            setDraft(next);
+            setAIResult(r);
+            setOthers(alt);
+            setAIDone(readingSummary(r, filled.length, Object.keys(alt).length));
+            // A minute of work: a new recognition run must not undo it, leaving asks first.
+            touched.current = true;
+            if (filled.length) setEdited(true);
+        } catch (e) {
+            setAIError(`${errMsg(e)} Die Werte der Texterkennung bleiben.`);
+        }
     }
 
     async function save() {
@@ -455,14 +498,24 @@ function InboxItem({item, payers, onDone, onChanged, onDiscard}: {
         }
     }
 
-    const src = (field: string) => {
-        const s = analysis?.sources?.[field];
-        return s ? <SourceBadge source={s}/> : undefined;
-    };
     const set = (patch: Partial<InvoiceDTO>) => {
         touched.current = true;
         setEdited(true);
+        Object.keys(patch).forEach(f => typed.current.add(f));
+        if (Object.keys(patch).some(f => f in others)) setOthers(o => Object.fromEntries(Object.entries(o).filter(([f]) => !(f in patch))));
         setDraft(d => d && {...d, ...patch});
+    };
+    /** Where the value of a field came from (not once the user changed it), and another reading of it. */
+    const src = (field: keyof InvoiceDTO) => {
+        const s = typed.current.has(field) ? undefined : (aiResult?.sources ?? analysis?.sources)?.[field];
+        const alt = others[field];
+        if (!s && !alt) return undefined;
+        return (
+            <>
+                {s && <SourceBadge source={s}/>}
+                {alt && <AlternativeHint field={field} alt={alt} onTake={() => set({[field]: alternativeInput(field, alt)})}/>}
+            </>
+        );
     };
 
     return (
@@ -493,9 +546,11 @@ function InboxItem({item, payers, onDone, onChanged, onDiscard}: {
                                              touched.current = true;
                                              setEdited(true);
                                          }}/>}
-                {!review && (analysis?.notes ?? []).map(n => <Notice key={n} kind={n.startsWith("Rezept erkannt –") ? undefined : "warn"}>{n}</Notice>)}
+                {!review && (aiResult?.notes ?? analysis?.notes ?? []).map(n => <Notice key={n} kind={n.startsWith("Rezept erkannt –") ? undefined : "warn"}>{n}</Notice>)}
                 {!review && draft && (
                     <>
+                        {aiOn && <AIReadBar reading={reading} onRead={() => void readWithAI()} done={aiDone}/>}
+                        {aiError && <Notice kind="warn">{aiError}</Notice>}
                         <div className="grid mt-2">
                             <Field label="Behandler *" htmlFor="ib-provider" hint={src("provider")}>
                                 <input id="ib-provider" value={draft.provider} onChange={e => set({provider: e.target.value})}/>
@@ -509,7 +564,7 @@ function InboxItem({item, payers, onDone, onChanged, onDiscard}: {
                             <Field label="Behandlung von" htmlFor="ib-from" hint={src("serviceFrom")}>
                                 <input id="ib-from" type="date" value={draft.serviceFrom} onChange={e => set({serviceFrom: e.target.value})}/>
                             </Field>
-                            <Field label="Behandlung bis" htmlFor="ib-to">
+                            <Field label="Behandlung bis" htmlFor="ib-to" hint={src("serviceTo")}>
                                 <input id="ib-to" type="date" value={draft.serviceTo} onChange={e => set({serviceTo: e.target.value})}/>
                             </Field>
                             <Field label="Kategorie" htmlFor="ib-cat" hint={src("category")}>

@@ -2,15 +2,19 @@ import {useEffect, useId, useRef, useState} from "react";
 import type {ReactNode} from "react";
 import {useNavigate, useParams} from "react-router";
 import {Desktop, Svc} from "../api";
-import type {ClaimDTO, ClaimViewDTO, InvoiceDTO, InvoiceRowDTO, MarkDTO, RefundDTO, StagedDocDTO} from "../api";
+import type {ClaimDTO, ClaimViewDTO, InvoiceDTO, InvoiceRowDTO, LineDTO, MarkDTO, RefundDTO, StagedDocDTO} from "../api";
 import {useApp} from "../App";
+import {AIReadBar, AlternativeHint} from "../components/AIRead";
 import {DocThumb} from "../components/DocThumb";
 import {useConfirm, useToast} from "../components/feedback";
 import {Badge, ErrorNotice, Field, Loading, Notice, SourceBadge} from "../components/ui";
+import {useAIOn} from "../lib/ai";
+import {readingSummary, useAIRead} from "../lib/aiRead";
 import {recognizePages} from "../lib/capture";
 import {bySize, docType, docUrl, readAsDataURL, tooBigText, useFileDrop} from "../lib/files";
 import {CATEGORY_LABELS, STATUS_LABELS, date, errMsg, eur, num, pct, plural, toInput, today} from "../lib/format";
-import {fillEmpty} from "../lib/prefill";
+import {alternativeInput, applyReading, fillEmpty} from "../lib/prefill";
+import type {Alternative} from "../lib/prefill";
 import {dialogOpen, key, mod, useKeydown, useSaveShortcut, useUnsavedChanges} from "../lib/shortcuts";
 
 /** Amounts arrive as "286.40"; the form shows and sends "286,40". */
@@ -59,13 +63,28 @@ const baseName = (path: string) => path.slice(Math.max(path.lastIndexOf("/"), pa
 
 /** State of reading the documents added to a new invoice. */
 interface Recognition {
+    running: boolean;
     status: string;
     error: string;
     notes: string[];
     refund: boolean; // a Bescheid: booked in the inbox, not here
 }
 
-const NO_RECOGNITION: Recognition = {status: "", error: "", notes: [], refund: false};
+const NO_RECOGNITION: Recognition = {running: false, status: "", error: "", notes: [], refund: false};
+
+/** The added documents as the recognition takes them (pages in order). */
+const stagedPages = (docs: StagedDocDTO[]) => docs.map(d => ({url: d.url, type: d.type, modified: d.id, size: d.size}));
+
+const fromAI = (source: string) => source === "ai" || source === "ai-confirmed";
+
+/** Reading with the AI in the form: other readings of fields, what it did, what went wrong. */
+interface AIState {
+    others: Record<string, Alternative>;
+    done: string;
+    error: string;
+}
+
+const NO_AI: AIState = {others: {}, done: "", error: ""};
 
 export default function InvoiceForm() {
     const {id} = useParams();
@@ -104,6 +123,13 @@ export default function InvoiceForm() {
     const savingRef = useRef(false);
     const [recog, setRecog] = useState<Recognition>(NO_RECOGNITION);
     const recogRun = useRef<AbortController | null>(null);
+    // The text the recognition found in the added documents (the AI reading checks against it).
+    const recognized = useRef<{lines: LineDTO[]; qr: string[]} | null>(null);
+    const aiOn = useAIOn();
+    const reading = useAIRead();
+    const readingRef = useRef(reading); // for the clean-up when the form is left
+    readingRef.current = reading;
+    const [aiState, setAIState] = useState<AIState>(NO_AI);
     const invRef = useRef(inv);
     invRef.current = inv;
     // A new invoice as it started (today as invoice date …): such values count as empty for prefilling.
@@ -129,11 +155,14 @@ export default function InvoiceForm() {
     const dropStaged = () => {
         formGen.current++;
         recogRun.current?.abort();
+        readingRef.current.cancel();
+        recognized.current = null;
         const ids = stagedRef.current.map(d => d.id);
         if (ids.length) Svc.DiscardStaged(ids).catch(() => {});
         setStaged([]);
         setFilled({});
         setRecog(NO_RECOGNITION);
+        setAIState(NO_AI);
     };
     useEffect(() => () => dropStaged(), []);
 
@@ -199,6 +228,7 @@ export default function InvoiceForm() {
         const all = [...stagedRef.current, ...docs];
         stagedRef.current = all;
         setStaged(all);
+        reading.cancel(); // it reads the pages as they were
         if (!id) await recognizeStaged(all);
     }
 
@@ -251,18 +281,21 @@ export default function InvoiceForm() {
         recogRun.current = run;
         previous?.abort(); // after the new run joined: shared pages are not read again
         const {signal} = run;
-        setRecog({...NO_RECOGNITION, status: "Beleg wird gelesen …"});
+        recognized.current = null;
+        setRecog({...NO_RECOGNITION, running: true, status: "Beleg wird gelesen …"});
         try {
-            const pages = docs.map(d => ({url: d.url, type: d.type, modified: d.id, size: d.size}));
-            const rec = await recognizePages(pages, m => !signal.aborted && setRecog(r => ({...r, status: m})), signal);
+            const rec = await recognizePages(stagedPages(docs), m => !signal.aborted && setRecog(r => ({...r, status: m})), signal);
             if (signal.aborted) return;
+            recognized.current = {lines: rec.lines, qr: rec.qr};
             const a = await Svc.AnalyzeDocument({lines: rec.lines, qr: rec.qr});
             if (signal.aborted || !invRef.current) return;
             if (a.kind === "refund") {
                 setRecog({...NO_RECOGNITION, refund: true});
                 return;
             }
-            const {next, filled: got} = fillEmpty(invRef.current, a.draft.invoice, blankRef.current ?? undefined, Object.keys(filledRef.current));
+            // Values from the AI stay: the text recognition of more pages does not know better.
+            const replaceable = Object.entries(filledRef.current).filter(([, src]) => !fromAI(src)).map(([f]) => f);
+            const {next, filled: got} = fillEmpty(invRef.current, a.draft.invoice, blankRef.current ?? undefined, replaceable);
             if (got.length) {
                 setFilled(f => Object.fromEntries([...Object.entries(f), ...got.map(k => [k, a.sources?.[k] ?? "label"])]));
                 update(next);
@@ -296,9 +329,37 @@ export default function InvoiceForm() {
         }
     }
 
+    /** Reads the added documents with the AI and takes what it found into the fields the user did not type. */
+    async function readWithAI() {
+        const gen = formGen.current;
+        setAIState(NO_AI);
+        try {
+            const r = await reading.read(stagedPages(stagedRef.current), recognized.current ?? {lines: [], qr: []});
+            if (!r || gen !== formGen.current || !invRef.current) return;
+            if (r.kind === "refund") {
+                setRecog({...NO_RECOGNITION, refund: true});
+                return;
+            }
+            const before = filledRef.current;
+            const {next, filled: got, others} = applyReading(invRef.current, r, blankRef.current ?? undefined, Object.keys(before));
+            // Badges: fields filled now, and fields filled before whose value the AI read the same (e.g. "KI, bestätigt").
+            const sources = {...before};
+            for (const [f, src] of Object.entries(r.sources ?? {})) {
+                if (src && (got.includes(f) || (f in before && r.draft.invoice[f as keyof InvoiceDTO]))) sources[f] = src;
+            }
+            setFilled(sources);
+            if (got.length) update(next);
+            setAIState({...NO_AI, others, done: readingSummary(r, got.length, Object.keys(others).length)});
+        } catch (e) {
+            if (gen === formGen.current) setAIState({...NO_AI, error: `${errMsg(e)} Die Werte der Texterkennung bleiben.`});
+        }
+    }
+
     function removeStaged(doc: StagedDocDTO) {
         Svc.DiscardStaged([doc.id]).catch(() => {});
         recogRun.current?.abort();
+        reading.cancel();
+        setAIState(NO_AI);
         const rest = stagedRef.current.filter(d => d.id !== doc.id);
         stagedRef.current = rest;
         setStaged(rest);
@@ -316,10 +377,18 @@ export default function InvoiceForm() {
         if (Object.keys(patch).some(k => k in filled)) {
             setFilled(f => Object.fromEntries(Object.entries(f).filter(([k]) => !(k in patch))));
         }
+        if (Object.keys(patch).some(k => k in aiState.others)) {
+            setAIState(a => ({...a, others: Object.fromEntries(Object.entries(a.others).filter(([k]) => !(k in patch)))}));
+        }
         update({...inv, ...patch});
     };
-    /** The source badge of a prefilled field, else the usual hint. */
-    const hint = (field: string, normal?: ReactNode) => (filled[field] ? <SourceBadge source={filled[field]}/> : normal);
+    /** The source badge of a prefilled field (else the usual hint) and another reading of it. */
+    const hint = (field: keyof InvoiceDTO, normal?: ReactNode) => {
+        const alt = aiState.others[field];
+        const badge = filled[field] ? <SourceBadge source={filled[field]}/> : normal;
+        if (!alt) return badge;
+        return <>{badge}<AlternativeHint field={field} alt={alt} onTake={() => set({[field]: alternativeInput(field, alt)})}/></>;
+    };
     const attachments = inv.attachments ?? [];
     const removed = (original?.attachments ?? []).filter(a => !attachments.includes(a));
     const setClaim = (payerId: string, patch: Partial<ClaimDTO>) =>
@@ -345,6 +414,7 @@ export default function InvoiceForm() {
             setStaged(stagedRef.current);
             setFilled({});
             setRecog(NO_RECOGNITION);
+            setAIState(NO_AI);
             if (d.warning) toast.show(d.warning, true);
             toast.show(d.movedToInbox > 0
                 ? `Rechnung gespeichert – ${d.movedToInbox === 1 ? "der entfernte Beleg liegt" : `${d.movedToInbox} entfernte Belege liegen`} wieder im Posteingang`
@@ -471,6 +541,10 @@ export default function InvoiceForm() {
                         </p>
                         {recog.status && <p className="muted small" role="status">{recog.status}</p>}
                         {recog.error && <Notice kind="warn">{recog.error} Die Felder lassen sich von Hand ausfüllen.</Notice>}
+                        {aiOn && !id && staged.length > 0 && !recog.refund && (
+                            <AIReadBar reading={reading} onRead={() => void readWithAI()} disabled={recog.running} done={aiState.done}/>
+                        )}
+                        {aiState.error && <Notice kind="warn">{aiState.error}</Notice>}
                         {recog.notes.map(n => <Notice key={n} kind={n.startsWith("Rezept erkannt –") ? undefined : "warn"}>{n}</Notice>)}
                         {recog.refund && (
                             <Notice kind="warn">

@@ -166,10 +166,10 @@ func ImagePart(dataURL string) Part {
 // Request is a chat request whose answer must be JSON of Schema.
 type Request struct {
 	Messages  []Message
-	Schema    map[string]any // JSON schema of the answer (enforced by a grammar in llama.cpp)
-	Name      string         // name of the schema, e.g. "beleg"
-	MaxTokens int            // 0 = 800
-	Timeout   time.Duration  // for this request, after the lock was taken; 0 = 60 s
+	Schema    any           // JSON schema of the answer (enforced by a grammar in llama.cpp); a map or json.RawMessage
+	Name      string        // name of the schema, e.g. "beleg"
+	MaxTokens int           // 0 = 800
+	Timeout   time.Duration // for this request, after the lock was taken; 0 = 60 s
 }
 
 // Timings are llama.cpp's speed figures of a request.
