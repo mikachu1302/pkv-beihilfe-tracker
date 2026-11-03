@@ -11,6 +11,11 @@ vergleicht die Felder mit den erwarteten Werten aus erwartet.json.
     python3 scripts/ki-belegtest.py vorlage ~/Belegtest
     python3 scripts/ki-belegtest.py test ~/Belegtest
 
+Belegarten (Feld „art“ je Beleg in erwartet.json): „beleg“ (Standard: die Kopfdaten einer
+Rechnung wie beim Auslesen in v0.5), „rechnung“ (dazu die Positionen), „bescheid“ (Bescheid
+oder Leistungsabrechnung mit Zeilen, Hinweisen und Abzügen), „kostenplan“ und „verordnung“
+(Plan v0.6, Abgleich). Erfundene Testbelege dafür erzeugt scripts/ki-testbelege.py.
+
 Voreingestellt ist der Server im Heimnetz (llama.cpp auf dem Galaxy Book,
 http://192.168.178.38:8080/v1, Modell qwen3-vl-8b); --server, --modell und
 --schluessel ändern das. Der Schlüssel kommt sonst aus LLM_API_KEY oder aus
@@ -26,6 +31,7 @@ ImageMagick (magick) zum Verkleinern großer Bilder, beides optional.
 
 import argparse
 import base64
+import itertools
 import json
 import os
 import re
@@ -51,25 +57,266 @@ FIELDS = {
     "iban": "IBAN für die Überweisung",
     "zahlungsempfaenger": "Empfänger der Zahlung, falls nicht der Behandler (z. B. Abrechnungsstelle)",
 }
-DATE_FIELDS = {"rechnungsdatum", "behandlung_von", "behandlung_bis"}
+# The v0.6 types are transcribed: the model copies what is printed (dates, amounts, table rows with
+# their cells) and the script interprets it the way the app will – the model is bad at converting
+# dates (it wrote 2022 for 2026) and at mapping similar amount columns to field names (it left
+# them empty), but copies them reliably (test of 2026-11-03, docs/PLAN-v0.6.md).
+SUMS = "die Summen- und Betragszeilen unter der Tabelle, je Zeile „Bezeichnung | Betrag“"
+TYPES = {
+    "beleg": {"was": "den Beleg", "fields": FIELDS, "lists": {}, "max_tokens": 800},
+    "rechnung": {
+        "was": "die Rechnung",
+        "kopf": {
+            "behandler": "Name der Praxis, des Arztes oder Therapeuten, der behandelt hat",
+            "zahlungsempfaenger": "Empfänger der Zahlung, falls nicht der Behandler (z. B. Abrechnungsstelle)",
+            "rechnungsnummer": "Rechnungsnummer",
+            "rechnungsdatum": "Rechnungsdatum",
+            "behandlungszeitraum": "Behandlungs- bzw. Leistungszeitraum, wie gedruckt (z. B. „08.09.2026 – 29.09.2026“)",
+            "iban": "IBAN für die Überweisung",
+        },
+        "tabelle": "die Tabelle der Leistungen (Positionen) über alle Seiten – ohne Überträge und Zwischensummen und "
+                   "ohne die Zeilen einer beigefügten Laborrechnung",
+        "summen": SUMS + " (z. B. „Rechnungsbetrag“, „Honorar“, „Material- und Laborkosten“) – ohne Überträge",
+        "fields": ["behandler", "zahlungsempfaenger", "rechnungsnummer", "rechnungsdatum", "behandlung_von",
+                   "behandlung_bis", "iban", "betrag", "auslagen"],
+        "lists": ["positionen"],
+    },
+    "kostenplan": {
+        "was": "den Heil- und Kostenplan bzw. Kostenvoranschlag",
+        "kopf": {"behandler": "Name der Praxis bzw. der Zahnärztin oder des Zahnarztes", "datum": "Datum des Kostenplans"},
+        "tabelle": "die Tabelle der geplanten Leistungen",
+        "summen": SUMS + " (z. B. „Honorar“, „Material- und Laborkosten“, „Gesamtkosten“, „Eigenanteil“)",
+        "fields": ["behandler", "datum", "honorar", "material_labor", "gesamt", "eigenanteil"],
+        "lists": ["positionen"],
+    },
+    "bescheid": {
+        "was": "den Bescheid bzw. die Leistungsabrechnung",
+        "kopf": {
+            "kostentraeger": "Absender: Beihilfestelle oder Krankenversicherung",
+            "bescheiddatum": "Datum des Bescheids bzw. der Abrechnung",
+            "antrag_vom": "Datum des Antrags bzw. der Einreichung („Ihr Antrag vom“)",
+        },
+        "tabelle": "die Tabelle der abgerechneten Rechnungen",
+        "summen": SUMS + " (Summe, Abzüge wie Kostendämpfungspauschale oder Selbstbehalt, Auszahlungsbetrag)",
+        "hinweise": "die Hinweise bzw. Bemerkungen, auf die die Zeilen verweisen",
+        "fields": ["kostentraeger", "bescheiddatum", "antrag_vom", "auszahlung"],
+        "lists": ["zeilen", "hinweise", "abzuege"],
+    },
+    "verordnung": {
+        "was": "die Verordnung (Rezept für Heilmittel)",
+        "kopf": {
+            "verordner": "verordnende Ärztin bzw. verordnender Arzt",
+            "datum": "Ausstellungsdatum",
+            "frequenz": "Häufigkeit (z. B. „2 × wöchentlich“)",
+            "diagnose": "Diagnose als Text",
+            "icd": "ICD-10-Code",
+            "gueltig_bis": "spätester Behandlungsbeginn bzw. gültig bis",
+        },
+        "zeilen": "jede verordnete Zeile, wie gedruckt (z. B. „6 × Krankengymnastik“) – alle",
+        "fields": ["verordner", "datum", "frequenz", "diagnose", "icd", "gueltig_bis"],
+        "lists": ["heilmittel"],
+    },
+}
+AMOUNT_FIELDS = {"betrag", "auslagen", "auszahlung", "rechnungsbetrag", "erstattungsfaehig", "erstattung", "honorar",
+                 "material_labor", "gesamt", "eigenanteil"}
+DATE_FIELDS = {"rechnungsdatum", "behandlung_von", "behandlung_bis", "datum", "bescheiddatum", "antrag_vom", "gueltig_bis"}
+CODE_FIELDS = {"iban", "rechnungsnummer", "ziffer", "zahn", "icd", "nr"}
+NUMBER_FIELDS = {"anzahl", "satz"}
 IMAGE_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
 EXPECTED = "erwartet.json"
 SERVER = "http://192.168.178.38:8080/v1"
 MODEL = "qwen3-vl-8b"
 
 SYSTEM = ("Du liest Belege der deutschen privaten Krankenversicherung und Beihilfe aus: Arztrechnungen, "
-          "Zahnarztrechnungen, Rezepte, Rechnungen von Apotheken und Therapeuten. Antworte nur mit JSON.")
-PROMPT = ("Lies den Beleg (alle Seiten zusammen) und gib diese Felder als JSON-Objekt zurück:\n"
-          + "\n".join(f"- {k}: {v}" for k, v in FIELDS.items())
-          + "\n\nRegeln: Datumsangaben als JJJJ-MM-TT. Betrag mit Punkt als Dezimaltrennzeichen, ohne Währung "
-            "(z. B. 1234.56). IBAN ohne Leerzeichen. Steht ein Feld nicht auf dem Beleg, gib eine leere "
-            "Zeichenkette zurück – nichts schätzen oder erfinden.")
-SCHEMA = {
-    "type": "object",
-    "properties": {k: {"type": "string"} for k in FIELDS},
-    "required": list(FIELDS),
-    "additionalProperties": False,
+          "Zahnarztrechnungen, Rezepte, Rechnungen von Apotheken und Therapeuten, Bescheide, Kostenpläne und "
+          "Verordnungen. Antworte nur mit JSON.")
+RULES = ("Regeln: Datumsangaben als JJJJ-MM-TT. Beträge mit Punkt als Dezimaltrennzeichen, ohne Währung "
+         "(z. B. 1234.56). IBAN ohne Leerzeichen. Steht ein Feld nicht auf dem Beleg, gib eine leere "
+         "Zeichenkette zurück – nichts schätzen oder erfinden.")
+COPY_RULES = ("Regeln: Schreibe alles so ab, wie es gedruckt ist – Datumsangaben, Beträge und Nummern unverändert "
+              "(z. B. „12.10.2026“, „1.234,56 €“), nichts umrechnen. Tabellenzeilen: die Zellen von links nach rechts "
+              "mit „ | “ getrennt, eine leere Zelle als leeres Feld („a |  | c“); Text, der in einer Zelle über zwei "
+              "Druckzeilen läuft, gehört in dieselbe Zelle. Steht etwas nicht auf dem Beleg, gib eine leere "
+              "Zeichenkette bzw. eine leere Liste zurück – nichts schätzen oder erfinden.")
+
+
+def copied(art: str) -> bool:
+    """Is the type transcribed (v0.6) rather than read into fields (v0.5)?"""
+    return "kopf" in TYPES[art]
+
+
+def prompt(art: str) -> str:
+    t = TYPES[art]
+    lines = [f"Lies {t['was']} (alle Seiten zusammen) und gib diese Felder als JSON-Objekt zurück:"]
+    if not copied(art):
+        lines += [f"- {k}: {v}" for k, v in t["fields"].items()]
+        return "\n".join(lines) + "\n\n" + RULES
+    lines += [f"- {k}: {v}" for k, v in t["kopf"].items()]
+    if "tabelle" in t:
+        lines += [f"- spalten: die Spaltenüberschriften der Tabelle – gemeint ist {t['tabelle']} –, mit „ | “ getrennt",
+                  "- zeilen: Liste – jede Zeile dieser Tabelle, die Zellen mit „ | “ getrennt"]
+    else:
+        lines.append(f"- zeilen: Liste – {t['zeilen']}")
+    if "summen" in t:
+        lines.append(f"- summen: Liste – {t['summen']}")
+    if "hinweise" in t:
+        lines.append(f"- hinweise: Liste – {t['hinweise']}; je Eintrag nr (Nummer oder Kürzel wie in der Zeile) "
+                     "und text (der Text, vollständig)")
+    return "\n".join(lines) + "\n\n" + COPY_RULES
+
+
+def schema(art: str) -> dict:
+    def obj(fields):
+        return {"type": "object", "properties": fields, "required": list(fields), "additionalProperties": False}
+    t = TYPES[art]
+    if not copied(art):
+        return obj({k: {"type": "string"} for k in t["fields"]})
+    texts = {"type": "array", "items": {"type": "string"}}
+    props = {k: {"type": "string"} for k in t["kopf"]}
+    if "tabelle" in t:
+        props["spalten"] = {"type": "string"}
+    props["zeilen"] = texts
+    if "summen" in t:
+        props["summen"] = texts
+    if "hinweise" in t:
+        props["hinweise"] = {"type": "array", "items": obj({"nr": {"type": "string"}, "text": {"type": "string"}})}
+    return obj(props)
+
+
+# --- Abschriften deuten (so, wie es später die App tut) ----------------------------------------
+
+DATE = re.compile(r"(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4}|\d{2})(?!\d)|(\d{4})-(\d{2})-(\d{2})")
+AMOUNT = re.compile(r"\d{1,3}(?:\.\d{3})+,\d{2}|\d+,\d{2}|\d+\.\d{2}(?!\d)")
+COLUMNS = {  # column kind ← words in the header, checked in this order
+    "bescheid": [("erstattungsfaehig", ["fähig", "anerkannt"]), ("rechnungsbetrag", ["rechnungs"]), ("satz", ["satz", "%"]),
+                 ("erstattung", ["beihilfe", "erstattung"]), ("hinweis_nr", ["hinw", "bem"]),
+                 ("rechnungsdatum", ["vom", "datum"]), ("behandler", ["leistungserbringer", "behandler", "art"])],
+    "": [("datum", ["datum"]), ("zahn", ["zahn", "region"]), ("faktor", ["faktor"]), ("einzel", ["einzel"]),
+         ("anzahl", ["anz", "menge"]), ("text", ["leistung", "bezeichnung", "text"]),
+         ("betrag", ["betrag", "gesamt", "eur", "€"]), ("ziffer", ["nr", "ziffer", "goä", "goz", "pos", "geb"])],
 }
+
+
+def dates(s: str) -> list[str]:
+    out = []
+    for m in DATE.finditer(s or ""):
+        if m.group(4):
+            out.append(f"{m.group(4)}-{m.group(5)}-{m.group(6)}")
+        else:
+            y = m.group(3) if len(m.group(3)) == 4 else "20" + m.group(3)
+            out.append(f"{y}-{int(m.group(2)):02d}-{int(m.group(1)):02d}")
+    return out
+
+
+def first_date(s: str) -> str:
+    return (dates(s) or [""])[0]
+
+
+def amount_text(s: str) -> str:
+    """Der letzte Betrag im Text als „1234.56“ (auch aus „– 100,00“, „516,70 €“)."""
+    found = AMOUNT.findall(s or "")
+    if not found:
+        return ""
+    a = found[-1]
+    return a.replace(".", "").replace(",", ".") if "," in a else a
+
+
+def column(art: str, header: str) -> str:
+    h = header.strip().casefold()
+    for kind, words in COLUMNS["bescheid" if art == "bescheid" else ""]:
+        if any(w in h for w in words):
+            return kind
+    return ""
+
+
+def fits(kind: str, cell: str) -> bool:
+    c = cell.strip()
+    if kind in ("datum", "rechnungsdatum"):
+        return bool(dates(c))
+    if kind in ("betrag", "einzel", "rechnungsbetrag", "erstattungsfaehig", "erstattung"):
+        return bool(AMOUNT.fullmatch(c.replace("€", "").replace("EUR", "").strip()))
+    if kind == "anzahl":
+        return bool(re.fullmatch(r"\d+", c))
+    if kind in ("faktor", "satz"):
+        return bool(re.fullmatch(r"\d+([.,]\d+)?\s*%?", c))
+    if kind == "zahn":
+        return c == "" or bool(re.fullmatch(r"\d{2}([ ,/-]+\d{2})*|OK|UK|OK/UK", c))
+    if kind == "ziffer":
+        return bool(re.fullmatch(r"[A-ZÄÁa-z]{0,2}\d[\w.]*", c))
+    if kind == "hinweis_nr":
+        return c == "" or bool(re.fullmatch(r"[\w ,]+", c))
+    return bool(re.search(r"[A-Za-zÄÖÜäöü]", c))
+
+
+def align(kinds: list[str], cells: list[str]) -> list[tuple[str, str]]:
+    """Zellen den Spalten zuordnen; fehlen leere Zellen, kommen sie dorthin, wo die übrigen am besten passen."""
+    missing = len(kinds) - len(cells)
+    if missing <= 0 or missing > 2:
+        return list(zip(kinds, cells))
+    best, score = cells, -1
+    for gaps in itertools.combinations(range(len(kinds)), missing):
+        rest = iter(cells)
+        filled = ["" if i in gaps else next(rest) for i in range(len(kinds))]
+        s = sum(fits(k, c) for k, c in zip(kinds, filled) if k)
+        if s > score:
+            best, score = filled, s
+    return list(zip(kinds, best))
+
+
+def interpret(art: str, a: dict) -> dict:
+    """Aus der Abschrift die Felder, die verglichen werden – Datumsangaben, Beträge, Spalten."""
+    get = a.get
+    out = {k: get(k, "") for k in TYPES[art]["kopf"]}
+    for k in ("rechnungsdatum", "datum", "bescheiddatum", "antrag_vom", "gueltig_bis"):
+        if k in out:
+            out[k] = first_date(out[k])
+    if art == "verordnung":
+        items = []
+        for line in get("zeilen") or []:
+            m = re.match(r"\s*(\d+)\s*[x×]?\s*(.+)", line)
+            items.append({"anzahl": m.group(1), "heilmittel": m.group(2)} if m else {"anzahl": "", "heilmittel": line})
+        return {**out, "heilmittel": items}
+
+    kinds = [column(art, h) for h in (get("spalten") or "").split("|")]
+    dental = "zahn" in kinds
+    rows, last_date = [], ""
+    for line in get("zeilen") or []:
+        row = {}
+        for kind, cell in align(kinds, [c.strip() for c in line.split("|")]):
+            if not kind:
+                continue
+            if kind in ("datum", "rechnungsdatum"):
+                cell = first_date(cell)
+            elif kind in ("betrag", "rechnungsbetrag", "erstattungsfaehig", "erstattung"):
+                cell = amount_text(cell)
+            elif kind == "ziffer" and dental:
+                cell = re.sub(r"^[AÁÀÂ](?=\d)", "Ä", cell)  # GOÄ number in a dental invoice: Ä925a read as A925a
+            row[kind] = cell
+        if art != "bescheid":
+            row["datum"] = row.get("datum") or last_date  # date printed once per day
+            last_date = row["datum"]
+        rows.append(row)
+
+    sums = [(label.strip().casefold(), amount_text(value)) for label, _, value in (x.rpartition("|") for x in get("summen") or [])]
+    sums = [(label, value) for label, value in sums if value and "übertrag" not in label]
+
+    def pick(pattern: str, prefer: str = "") -> str:
+        hits = [v for label, v in sums if re.search(prefer, label)] if prefer else []
+        hits = hits or [v for label, v in sums if re.search(pattern, label)]
+        return hits[-1] if hits else ""
+
+    if art == "bescheid":
+        return {**out, "zeilen": rows, "hinweise": get("hinweise") or [],
+                "auszahlung": pick(r"auszahl|überweis|zahlbetrag"),
+                "abzuege": [{"text": label, "betrag": v} for label, v in sums
+                            if re.search(r"abzüglich|abzug|selbstbehalt|pauschale|eigenbehalt", label)]}
+    if art == "kostenplan":
+        return {**out, "positionen": rows, "honorar": pick(r"honorar"), "material_labor": pick(r"material|labor"),
+                "gesamt": pick(r"gesamt"), "eigenanteil": pick(r"eigenanteil") or "0"}
+    period = dates(out.pop("behandlungszeitraum", "")) or sorted(r["datum"] for r in rows if r.get("datum"))
+    return {**out, "positionen": rows, "behandlung_von": period[0] if period else "", "behandlung_bis": period[-1] if period else "",
+            "betrag": pick(r"rechnungsbetrag|gesamt|endbetrag|zu zahlen|summe", r"rechnungsbetrag|endbetrag|zu zahlen"),
+            "auslagen": pick(r"material|labor|auslagen") or "0"}
 
 
 # --- Belege finden und vorbereiten ---------------------------------------------------------
@@ -163,12 +410,12 @@ def check_health(server: str):
         sys.exit(f"Server nicht erreichbar ({url}): {e}. Läuft das Galaxy Book, am Netzteil, im WLAN?")
 
 
-def ask(args, images: list[Path], use_schema: bool) -> tuple[dict, dict]:
-    content = [{"type": "text", "text": PROMPT}] + [{"type": "image_url", "image_url": {"url": data_url(p)}} for p in images]
-    body = {"model": args.modell, "temperature": 0, "max_tokens": 800,
+def ask(args, art: str, images: list[Path], use_schema: bool) -> tuple[dict, dict]:
+    content = [{"type": "text", "text": prompt(art)}] + [{"type": "image_url", "image_url": {"url": data_url(p)}} for p in images]
+    body = {"model": args.modell, "temperature": 0, "max_tokens": TYPES[art].get("max_tokens", 4096),
             "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": content}]}
     if use_schema:
-        body["response_format"] = {"type": "json_schema", "json_schema": {"name": "beleg", "strict": True, "schema": SCHEMA}}
+        body["response_format"] = {"type": "json_schema", "json_schema": {"name": art, "strict": True, "schema": schema(art)}}
     resp = call(args.server, "/chat/completions", args.schluessel, body, args.timeout)
     text = resp["choices"][0]["message"].get("content") or ""
     # llama.cpp adds "timings" (tokens per second while reading and writing)
@@ -184,7 +431,16 @@ def parse_json(text: str) -> dict:
         data = json.loads(text[start:end + 1])
     except json.JSONDecodeError:
         return {"_antwort": text}
-    return {k: "" if v is None else str(v).strip() for k, v in data.items()} if isinstance(data, dict) else {"_antwort": text}
+    return clean(data) if isinstance(data, dict) else {"_antwort": text}
+
+
+def clean(v):
+    """Werte als Zeichenketten (Listen und Objekte bleiben)."""
+    if isinstance(v, dict):
+        return {k: clean(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [clean(x) for x in v]
+    return "" if v is None else str(v).strip()
 
 
 # --- Vergleich ---------------------------------------------------------------------------------
@@ -216,15 +472,87 @@ def norm_text(v: str) -> str:
     return re.sub(r"[^0-9a-zäöüß]+", " ", v.casefold()).strip()
 
 
-def same(field: str, got: str, want: str) -> bool:
-    if field == "betrag":
+def norm_number(v: str):
+    m = re.search(r"\d+(?:[.,]\d+)?", v)
+    return float(m.group().replace(",", ".")) if m else v
+
+
+def codes(v: str) -> list[str]:
+    return sorted(re.findall(r"[A-Za-z]*\d+", v))
+
+
+def same(field: str, got, want: str) -> bool:
+    if not isinstance(got, str):
+        return False
+    if field in AMOUNT_FIELDS:
+        if norm_amount(want) == 0:  # „0“ erwartet: leer ist auch richtig (nichts erfunden)
+            return got == "" or norm_amount(got) == 0
         return norm_amount(got) == norm_amount(want)
     if field in DATE_FIELDS:
         return norm_date(got) == norm_date(want)
-    if field in ("iban", "rechnungsnummer"):
-        return re.sub(r"[^0-9A-Z]", "", got.upper()) == re.sub(r"[^0-9A-Z]", "", want.upper())
+    if field in CODE_FIELDS:
+        return re.sub(r"[^0-9A-ZÄÖÜ]", "", got.upper()) == re.sub(r"[^0-9A-ZÄÖÜ]", "", want.upper())
+    if field in NUMBER_FIELDS:
+        return norm_number(got) == norm_number(want)
+    if field == "hinweis_nr":
+        return codes(got) == codes(want)
+    if field == "frequenz":
+        return re.findall(r"\d+", got) == re.findall(r"\d+", want) and all("wöch" in x.casefold() for x in (got, want))
     g, w = norm_text(got), norm_text(want)
+    if field == "text":  # langer Text: die meisten Wörter müssen da sein
+        words = w.split()
+        return bool(words) and sum(x in g.split() for x in words) >= 0.7 * len(words)
     return bool(g) and (g == w or w in g or g in w)  # "Dr. med. Petra Beispiel" passt zu "Petra Beispiel"
+
+
+def match_list(got: list, want: list) -> tuple[list, list, list]:
+    """Ordnet erwartete und gelesene Einträge einander zu (die meisten gleichen Felder, mindestens die Hälfte).
+    Gibt (Paare erwartet→gelesen oder None, Liste der überzähligen gelesenen Einträge, Feldnamen) zurück."""
+    got = [g for g in got if isinstance(g, dict)]
+    used, pairs = set(), []
+    for w in want:
+        keys = [k for k in w if w[k] != ""]
+        best, score = None, 0
+        for i, g in enumerate(got):
+            if i in used:
+                continue
+            s = sum(same(k, g.get(k, ""), w[k]) for k in keys)
+            if s > score:
+                best, score = i, s
+        if best is not None and score * 2 >= len(keys):
+            used.add(best)
+            pairs.append((w, got[best]))
+        else:
+            pairs.append((w, None))
+    return pairs, [g for i, g in enumerate(got) if i not in used]
+
+
+def amount(v) -> int:
+    n = norm_amount(v) if isinstance(v, str) and v else 0
+    return n if isinstance(n, int) else 0
+
+
+def checksum(art: str, got: dict) -> str:
+    """Die Summenprüfung, die später die App rechnet – mit den gelesenen Werten."""
+    def euro(c):
+        return f"{c / 100:.2f}".replace(".", ",")
+
+    def total(items, key):
+        return sum(amount(x.get(key, "")) for x in items if isinstance(x, dict))
+
+    if art == "rechnung":
+        pos, extra, want = total(got.get("positionen") or [], "betrag"), amount(got.get("auslagen", "")), amount(got.get("betrag", ""))
+        return f"Positionen {euro(pos)} + Auslagen {euro(extra)} {'=' if pos + extra == want else '≠'} Betrag {euro(want)}"
+    if art == "bescheid":
+        lines, cut = total(got.get("zeilen") or [], "erstattung"), total(got.get("abzuege") or [], "betrag")
+        want = amount(got.get("auszahlung", ""))
+        return f"Erstattungen {euro(lines)} − Abzüge {euro(cut)} {'=' if lines - cut == want else '≠'} Auszahlung {euro(want)}"
+    if art == "kostenplan":
+        pos, fee, lab, want = (total(got.get("positionen") or [], "betrag"), amount(got.get("honorar", "")),
+                               amount(got.get("material_labor", "")), amount(got.get("gesamt", "")))
+        return (f"Positionen {euro(pos)} {'=' if pos == fee else '≠'} Honorar {euro(fee)}; "
+                f"+ Material/Labor {euro(lab)} {'=' if fee + lab == want else '≠'} Gesamt {euro(want)}")
+    return ""
 
 
 # --- Befehle -----------------------------------------------------------------------------------
@@ -254,20 +582,105 @@ def cmd_template(args):
     check_folder(folder, args.trotzdem)
     path = folder / EXPECTED
     data = json.loads(path.read_text()) if path.exists() else {"dokumente": {}}
+    t = TYPES[args.art]
     added = 0
     for name in documents(folder):
         if name not in data["dokumente"]:
-            data["dokumente"][name] = {k: "" for k in FIELDS}
+            data["dokumente"][name] = {**({"art": args.art} if args.art != "beleg" else {}), **{k: "" for k in t["fields"]},
+                                       **{k: [] for k in t["lists"]}}
             added += 1
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
     print(f"{path}: {added} Beleg(e) ergänzt, {len(data['dokumente'])} insgesamt. Bitte die erwarteten Werte eintragen "
           "(leere Felder werden nicht verglichen).")
 
 
+def short(item: dict) -> str:
+    return " · ".join(str(v)[:30] for v in item.values() if v)
+
+
+def compare(art: str, got: dict, want: dict, stats: dict) -> tuple[int, int, list[str], list[str]]:
+    """Vergleicht eine Antwort mit den erwarteten Werten. Zählt je Feld in stats; gibt (richtig, verglichen,
+    Zusammenfassung der Listen, Abweichungen) zurück."""
+    def count(key, ok):
+        stats.setdefault(key, [0, 0])
+        stats[key][0] += ok
+        stats[key][1] += 1
+
+    right = compared = 0
+    lists, wrong = [], []
+    for k in TYPES[art]["fields"]:
+        if want.get(k, "") == "":
+            continue
+        ok = same(k, got.get(k, ""), want[k])
+        count(f"{art}.{k}", ok)
+        right, compared = right + ok, compared + 1
+        if not ok:
+            wrong.append(f"{k}: „{got.get(k, '')}“ statt „{want[k]}“")
+    for name in TYPES[art]["lists"]:
+        if name not in want:
+            continue
+        items = got.get(name) if isinstance(got.get(name), list) else []
+        pairs, extra = match_list(items, want[name])
+        found = sum(g is not None for _, g in pairs)
+        count(f"{art}.{name} (Einträge gefunden)", 0)
+        stats[f"{art}.{name} (Einträge gefunden)"] = [stats[f"{art}.{name} (Einträge gefunden)"][0] + found,
+                                                      stats[f"{art}.{name} (Einträge gefunden)"][1] - 1 + len(pairs)]
+        stats.setdefault(f"{art}.{name} (zusätzlich gelesen)", [0, 0])[0] += len(extra)
+        for i, (w, g) in enumerate(pairs):
+            for k, v in w.items():
+                if v == "":
+                    continue
+                ok = g is not None and same(k, g.get(k, ""), v)
+                count(f"{art}.{name}.{k}", ok)
+                right, compared = right + ok, compared + 1
+                if g is not None and not ok:
+                    wrong.append(f"{name}[{i + 1}] {k}: „{g.get(k, '')}“ statt „{v}“")
+            if g is None:
+                wrong.append(f"{name}[{i + 1}] fehlt: {short(w)}")
+        wrong += [f"{name}: zusätzlich gelesen: {short(g)}" for g in extra]
+        lists.append(f"{name} {found}/{len(pairs)}" + (f" +{len(extra)}" if extra else ""))
+    return right, compared, lists, wrong
+
+
+def report(name: str, art: str, raw: dict, want: dict, stats: dict, head: str, max_lines: int) -> dict:
+    """Deutet und vergleicht eine Antwort, gibt die Zeile des Belegs aus und liefert das Ergebnis."""
+    got = interpret(art, raw) if copied(art) and raw else raw
+    right, compared, lists, wrong = compare(art, got, want, stats)
+    score = f"{right}/{compared}" if compared else "–"
+    print(f"{name:<30} {art:<10} {head} {score:>7}  {'  '.join(lists)}")
+    for w in wrong[:max_lines]:
+        print(f"    {w}")
+    if len(wrong) > max_lines:
+        print(f"    … und {len(wrong) - max_lines} weitere")
+    check = checksum(art, got) if raw else ""
+    if check:
+        print(f"    Prüfsumme: {check}")
+    return {"richtig": right, "verglichen": compared, "pruefsumme": check, "abweichungen": wrong, "gedeutet": got}
+
+
+def summary(results: list[dict], stats: dict):
+    ok = [r for r in results if not r["fehler"]]
+    total = sum(r["verglichen"] for r in ok)
+    if total:
+        print(f"Felder richtig: {sum(r['richtig'] for r in ok)} von {total} ({100 * sum(r['richtig'] for r in ok) / total:.0f} %)")
+        for k, (r, c) in sorted(stats.items()):
+            if c:
+                print(f"  {k:<45} {r}/{c}")
+            elif r:
+                print(f"  {k:<45} {r}")
+    checks = [r["pruefsumme"] for r in ok if r["pruefsumme"]]
+    if checks:
+        print(f"Prüfsummen mit den gelesenen Werten stimmig: {sum('≠' not in c for c in checks)} von {len(checks)}")
+    if len(ok) < len(results):
+        print(f"{len(results) - len(ok)} Beleg(e) mit Fehler (Server nicht erreichbar, Zeitüberschreitung …)")
+
+
 def cmd_test(args):
     folder = Path(args.ordner).expanduser()
     check_folder(folder, args.trotzdem)
     docs = documents(folder)
+    if args.nur:
+        docs = {k: v for k, v in docs.items() if any(n in k for n in args.nur)}
     if not docs:
         sys.exit(f"{folder}: keine Belege gefunden")
     expected = json.loads((folder / EXPECTED).read_text())["dokumente"] if (folder / EXPECTED).exists() else {}
@@ -275,15 +688,16 @@ def cmd_test(args):
     if not args.schluessel:
         print("Hinweis: kein API-Schlüssel (--schluessel, LLM_API_KEY oder API_KEY in .env) – der Server im Heimnetz verlangt einen.")
     check_health(args.server)
-    results, per_field = [], {k: [0, 0] for k in FIELDS}
+    results, stats = [], {}
     print(f"{len(docs)} Belege → {args.server} ({args.modell})\n")
     for n, (name, pages) in enumerate(docs.items()):
+        art = expected.get(name, {}).get("art", "beleg")
         with tempfile.TemporaryDirectory() as tmp:
             images = page_images(pages, Path(tmp), args.max_seite)
             t0 = time.monotonic()
             try:
                 try:
-                    got, usage = ask(args, images, use_schema)
+                    raw, usage = ask(args, art, images, use_schema)
                 except urllib.error.HTTPError as e:
                     if e.code in (401, 403):
                         key_refused(e)
@@ -291,29 +705,16 @@ def cmd_test(args):
                         raise
                     use_schema = False  # der Server kennt kein JSON-Schema: ohne weiter
                     print("  (Server lehnt response_format ab – weiter ohne JSON-Schema)")
-                    got, usage = ask(args, images, use_schema)
+                    raw, usage = ask(args, art, images, use_schema)
                 error = ""
             except (urllib.error.URLError, TimeoutError, KeyError, json.JSONDecodeError) as e:
-                got, usage, error = {}, {}, str(e)
+                raw, usage, error = {}, {}, str(e)
             secs = time.monotonic() - t0
         want = {} if error else expected.get(name, {})  # a failed request is reported, not compared
-        wrong, right, compared = [], 0, 0
-        for k in FIELDS:
-            if not want.get(k):
-                continue
-            compared += 1
-            per_field[k][1] += 1
-            if same(k, got.get(k, ""), want[k]):
-                right += 1
-                per_field[k][0] += 1
-            else:
-                wrong.append(f"{k}: „{got.get(k, '')}“ statt „{want[k]}“")
-        score = f"{right}/{compared}" if compared else "–"
-        print(f"{name:<34} {len(images)} S. {secs:7.1f} s  {score:>5}" + (f"  FEHLER: {error}" if error else ""))
-        for w in wrong:
-            print(f"    {w}")
-        results.append({"beleg": name, "seiten": len(images), "sekunden": round(secs, 1), "richtig": right, "verglichen": compared,
-                        "erstes": n == 0, "antwort": got, "usage": usage, "fehler": error})
+        head = f"{len(images)} S. {secs:6.1f} s {usage.get('completion_tokens', 0):5d} Tok." + (f"  FEHLER: {error}" if error else "")
+        r = report(name, art, raw, want, stats, head, args.zeilen)
+        results.append({"beleg": name, "art": art, "seiten": len(images), "sekunden": round(secs, 1), "erstes": n == 0,
+                        **r, "antwort": raw, "usage": usage, "fehler": error})
 
     ok = [r for r in results if not r["fehler"]]
     warm = [r for r in ok if not r["erstes"]] or ok
@@ -327,14 +728,7 @@ def cmd_test(args):
         read = statistics.median(t.get("prompt_per_second", 0) for t in timings)
         write = statistics.median(t.get("predicted_per_second", 0) for t in timings)
         print(f"Lesen {read:.0f} Token/s, Schreiben {write:.0f} Token/s")
-    total = sum(r["verglichen"] for r in ok)
-    if total:
-        print(f"Felder richtig: {sum(r['richtig'] for r in ok)} von {total} ({100 * sum(r['richtig'] for r in ok) / total:.0f} %)")
-        for k, (r, c) in per_field.items():
-            if c:
-                print(f"  {k:<20} {r}/{c}")
-    if len(ok) < len(results):
-        print(f"{len(results) - len(ok)} Beleg(e) mit Fehler (Server nicht erreichbar, Zeitüberschreitung …)")
+    summary(results, stats)
 
     out = folder / "ki-ergebnisse"
     out.mkdir(exist_ok=True)
@@ -342,6 +736,26 @@ def cmd_test(args):
     file.write_text(json.dumps({"server": args.server, "modell": args.modell, "json_schema": use_schema, "max_seite": args.max_seite,
                                 "ergebnisse": results}, ensure_ascii=False, indent=2) + "\n")
     print(f"\nAntworten gespeichert: {file}")
+
+
+def cmd_evaluate(args):
+    """Gespeicherte Antworten neu deuten und vergleichen – ohne Server (z. B. nach einer Änderung an interpret)."""
+    folder = Path(args.ordner).expanduser()
+    files = sorted((folder / "ki-ergebnisse").glob("[0-9]*.json"))  # the files cmd_test writes
+    file = Path(args.datei).expanduser() if args.datei else (files[-1] if files else None)
+    if not file or not file.exists():
+        sys.exit(f"{folder}/ki-ergebnisse: keine gespeicherten Antworten")
+    expected = json.loads((folder / EXPECTED).read_text())["dokumente"]
+    data = json.loads(file.read_text())
+    results, stats = [], {}
+    print(f"{file.name}: {len(data['ergebnisse'])} Antworten\n")
+    for old in data["ergebnisse"]:
+        name, art = old["beleg"], old.get("art") or expected.get(old["beleg"], {}).get("art", "beleg")
+        want = {} if old.get("fehler") else expected.get(name, {})
+        r = report(name, art, old.get("antwort") or {}, want, stats, f"{old.get('sekunden', 0):6.1f} s", args.zeilen)
+        results.append({**r, "fehler": old.get("fehler", "")})
+    print()
+    summary(results, stats)
 
 
 def main():
@@ -357,6 +771,7 @@ def main():
     server_args(m)
     v = sub.add_parser("vorlage", help="erwartet.json im Testordner anlegen bzw. um neue Belege ergänzen")
     v.add_argument("ordner")
+    v.add_argument("--art", choices=list(TYPES), default="beleg", help="Belegart neuer Einträge (Standard beleg)")
     v.add_argument("--trotzdem", action="store_true", help=argparse.SUPPRESS)
     t = sub.add_parser("test", help="alle Belege auslesen lassen, Zeit messen, mit erwartet.json vergleichen")
     t.add_argument("ordner")
@@ -365,9 +780,15 @@ def main():
     t.add_argument("--max-seite", type=int, default=1400, help="Bilder auf höchstens so viele Pixel Kantenlänge verkleinern (0: nie; Standard 1400)")
     t.add_argument("--timeout", type=int, default=600, help="Sekunden je Beleg (Standard 600)")
     t.add_argument("--ohne-schema", action="store_true", help="kein JSON-Schema mitschicken (für Server, die es nicht kennen)")
+    t.add_argument("--nur", nargs="+", metavar="NAME", help="nur Belege, deren Name einen dieser Teile enthält")
+    t.add_argument("--zeilen", type=int, default=12, help="höchstens so viele Abweichungen je Beleg zeigen (Standard 12)")
     t.add_argument("--trotzdem", action="store_true", help=argparse.SUPPRESS)
+    e = sub.add_parser("auswerten", help="gespeicherte Antworten ohne Server neu deuten und vergleichen")
+    e.add_argument("ordner")
+    e.add_argument("datei", nargs="?", help="Ergebnisdatei (Standard: die neueste in ki-ergebnisse/)")
+    e.add_argument("--zeilen", type=int, default=12, help="höchstens so viele Abweichungen je Beleg zeigen (Standard 12)")
     args = ap.parse_args()
-    {"modelle": cmd_models, "vorlage": cmd_template, "test": cmd_test}[args.befehl](args)
+    {"modelle": cmd_models, "vorlage": cmd_template, "test": cmd_test, "auswerten": cmd_evaluate}[args.befehl](args)
 
 
 if __name__ == "__main__":

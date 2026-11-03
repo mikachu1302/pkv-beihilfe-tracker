@@ -96,6 +96,49 @@ Die vollständigen Antworten liegen danach in `~/Belegtest/ki-ergebnisse/` (eine
 Die Zusammenfassung des Skripts (Zeit pro Seite, Felder richtig, auffällige Fehler) reicht als
 Rückmeldung; die Belege selbst müssen dafür nicht weitergegeben werden.
 
+## Belegarten für den Abgleich (v0.6)
+
+Für den Abgleich ([PLAN-v0.6.md](PLAN-v0.6.md)) liest die KI mehr als die Kopfdaten: die
+Positionen einer Rechnung, die Zeilen eines Bescheids mit Hinweisen und Abzügen, einen Heil- und
+Kostenplan, eine Verordnung. Dafür **schreibt das Modell nur ab**, wie es gedruckt ist: Kopfdaten,
+die Tabelle als Spaltenüberschriften und Zeilen (Zellen mit „ | “ getrennt), die Summenzeilen,
+die Hinweise. Datumsangaben, Beträge und die Zuordnung der Spalten deutet das Skript so, wie es
+später die App tut – Felder direkt ausfüllen ließ das Modell bei Bescheiden die Beträge leer und
+rechnete Jahreszahlen falsch um (Messung im Plan). Je Beleg steht in `erwartet.json` die Belegart
+(`"art"`) und was nach dem Deuten herauskommen soll:
+
+| `art` | Felder | Listen |
+|---|---|---|
+| `beleg` (Standard) | Kopfdaten wie beim Auslesen in v0.5 (das Modell füllt die Felder selbst) | – |
+| `rechnung` | Kopfdaten, Betrag, `auslagen` (Material- und Laborkosten) | `positionen` (Datum, Zahn, Ziffer, Text, Anzahl, Betrag) |
+| `bescheid` | Kostenträger, Datum, Antrag vom, Auszahlung | `zeilen` (Rechnungsdatum, Behandler, Rechnungsbetrag, erstattungsfähig, Satz, Erstattung, Hinweisnummern), `hinweise` (Nummer, Text), `abzuege` |
+| `kostenplan` | Behandler, Datum, Honorar, Material/Labor, Gesamt, Eigenanteil | `positionen` |
+| `verordnung` | Verordner, Datum, Frequenz, Diagnose, ICD, gültig bis | `heilmittel` (Bezeichnung, Anzahl) |
+
+Erfundene, aber realistische Testbelege samt `erwartet.json` erzeugt ein zweites Skript (keine
+echten Daten; braucht ImageMagick):
+
+```sh
+python3 scripts/ki-testbelege.py ~/Belegtest-v06
+python3 scripts/ki-belegtest.py test ~/Belegtest-v06
+python3 scripts/ki-belegtest.py test ~/Belegtest-v06 --nur bescheid   # nur einige Belege
+python3 scripts/ki-belegtest.py auswerten ~/Belegtest-v06              # gespeicherte Antworten neu deuten, ohne Server
+```
+
+Eine erfundene Patientin (Beihilfe 50 %, PKV 50 %) mit Belegen, die zueinander passen: eine
+GOÄ-Rechnung über eine Abrechnungsstelle (2 Seiten mit Übertrag), eine GOZ-Rechnung mit
+Laborrechnung als Anlage (3 Seiten), der Heil- und Kostenplan dazu, eine Verordnung und die
+Rechnung der Physiotherapie (eine Behandlung mehr als verordnet), ein Beihilfebescheid (Zeilen
+mit Hinweisnummern, die Texte auf Seite 2) und eine PKV-Abrechnung mit Selbstbehalt – einige davon
+zusätzlich als schlechte Handyfotos. Eigene Belege lassen sich mit
+`vorlage <ordner> --art rechnung` (bzw. `bescheid` …) ergänzen.
+
+Je Beleg zeigt der Test die gefundenen Einträge jeder Liste („positionen 15/16 +1“: 15 von 16
+gefunden, einer zusätzlich gelesen), die abweichenden Felder und die **Prüfsumme mit den gelesenen
+Werten** – die Summenprüfung, die später die App rechnet (Positionen + Auslagen = Rechnungsbetrag,
+Erstattungen − Abzüge = Auszahlung). Stimmt sie nicht, hätte die App beim Abgleich einen
+Lesefehler fälschlich als Abweichung gemeldet – oder ihn eben dadurch erkannt.
+
 ## Fragen-Test (Chatbot)
 
 Die 40 erfundenen Fragen („Wie viele Rechnungen aus 2026 sind noch offen?“, „Und 2025?“ …) mit

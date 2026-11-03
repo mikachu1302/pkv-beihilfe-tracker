@@ -1,6 +1,6 @@
 # v0.6.0 – Checking invoices against other documents with AI (plan)
 
-Status: ready to build · 2026-11-03 – open points decided · builds on v0.5.0 ([PLAN-v0.5.md](PLAN-v0.5.md): AI client, settings,
+Status: step 1 done (test: transcribed documents are read at 99 %) · 2026-11-03 – open points decided · builds on v0.5.0 ([PLAN-v0.5.md](PLAN-v0.5.md): AI client, settings,
 manual trigger, order of trust).
 
 For an invoice already in the app, the user starts a **check** ("Abgleich"): the invoice and other
@@ -30,17 +30,62 @@ marked as such.
 
 ## What the AI reads (one JSON schema per document type)
 
-| Type | Fields |
-|---|---|
-| Rechnung | header (provider, date, number, total, period, IBAN) and **positions**: date, number (GOÄ/GOZ Ziffer), text, count, amount |
-| Bescheid | header (payer, date, payout, application date) and **lines**: invoice date, provider, billed, eligible, refund, rate, reason / note for a cut (text and code) |
-| Heil- und Kostenplan / Kostenvoranschlag | provider, date, positions (number, text, count, amount), totals (fee, material and lab costs, expected own share) |
-| Verordnung (therapy) | date, prescriber, remedy, count, frequency, diagnosis/ICD (only what the check needs), valid until |
+**The model transcribes, the app interprets** (decided after the test below, 2026-11-03): the
+model copies what is printed – dates, amounts and numbers unchanged, a table as its column
+headers plus one text per row with the cells separated by " | ", the sum lines as "label |
+amount", the notes of a Bescheid as number and text. Go parses dates and amounts, maps the
+columns by the words in their headers, puts missing empty cells where the other cells fit their
+columns, carries the date of a day forward to the rows below it and derives the treatment period
+from the positions when none is printed. Asked to fill named fields instead, the model left the
+amounts of every Bescheid line empty and converted "20.11.2026" to "2022-11-20".
 
-Long documents: page by page with the positions merged in Go (decided in v0.5's test whether
-pages can be combined). Bescheide reuse this in the inbox too: "Mit KI auslesen" for a Bescheid
-feeds its lines into the existing review and matcher (`internal/match`) – the matching and the
-checksum against the payout stay deterministic.
+| Type | Transcribed | The app derives |
+|---|---|---|
+| Rechnung | provider, payee, number, date, period, IBAN; the **positions table** (excluding carry-overs and an attached lab invoice); the sum lines | positions (date, tooth, number, text, count, factor, amount), total, material and lab costs |
+| Bescheid / Leistungsabrechnung | payer, date, application date; the **table of invoices**; the sum lines; the **notes** (number, text) | lines (invoice date, provider, billed, eligible, rate, refund, note numbers), deductions, payout |
+| Heil- und Kostenplan / Kostenvoranschlag | provider, date; the table; the sum lines | positions, fee, material and lab costs, total, own share |
+| Verordnung (therapy) | prescriber, date, frequency, diagnosis, ICD, valid until; the prescribed lines ("6 × Krankengymnastik") | remedies with counts |
+
+All pages of a document go into one request (as in v0.5); the model follows a table across pages
+and leaves out carry-overs. Bescheide reuse this in the inbox too: "Mit KI auslesen" for a
+Bescheid feeds its lines into the existing review and matcher (`internal/match`) – the matching
+and the checksum against the payout stay deterministic. The column words for Bescheide are those
+the text recognition already uses for its layout profiles.
+
+### Test of step 1 (2026-11-03)
+
+Made-up documents from `scripts/ki-testbelege.py` (no real data): a GOÄ invoice through a billing
+service (2 pages, carry-over, factor 3.5 with a reason), a GOZ invoice with tooth numbers and an
+attached lab invoice (3 pages), the cost plan for its crown, a prescription and the physiotherapy
+invoice (one session more than prescribed), a Beihilfebescheid (note numbers in the lines, the
+texts on page 2) and a PKV statement with a deductible – 7 documents, 11 pages; five of them also
+as poor phone photos (skewed with a shadow, dark, folded, on a table): 12 documents, 18 pages,
+563 compared fields. Measured with `scripts/ki-belegtest.py`, qwen3-vl-8b on the home server,
+pages at 1,400 px, all pages of a document in one request.
+
+| Approach | Fields right | What went wrong |
+|---|---|---|
+| A. Fields and lists in a JSON schema (as v0.5): dates as YYYY-MM-DD, amounts as 1234.56 | 391 (69 %) | Bescheide: every line found, but all amounts left empty, no payout; the PKV statement's dates all 2022 instead of 2026 (a conversion error – transcribed, the same dates are right). Invoices: 53 of 54 positions, 52 amounts right, but the total empty in 3 of 4 (asked before the positions). Prescription: counts empty, the second remedy missing. |
+| B. A with the totals after the lists, amount fields named by their column headers | – | invoice totals right after the positions; Bescheid amounts still empty |
+| **C. Transcribed, interpreted by the app** | **557 (99 %)** | all Bescheid lines, notes, deductions and payouts right, also on the photos; prescription right. Two errors left: two consecutive rows without a tooth number were merged (the Ä1 position missing) and 16,78 read as 18,78 on the dark photo – **both caught by the checksum** (positions 10,72 € below the fee; 2,00 € above the total). "Ä925a" read as "A925a" is corrected by a rule (dental invoices only: `A` before a digit is `Ä`). |
+
+Time (unloaded server): reading ~30–40 tokens/s, writing ~7 tokens/s – writing the rows takes
+longest. One page 1–2½ minutes, the 2-page GOÄ invoice ~5 minutes, the 3-page GOZ invoice ~7, the
+2-page Bescheid ~5. Two requests at once halve the speed. A check of an invoice with its Bescheid
+therefore takes about **ten minutes**: the background job with progress, "Abbrechen" and a toast
+(Flow, step 3) is required, and documents are read one after another.
+
+What follows for the plan:
+- A sum that does not add up is **"prüfen"** (⚠), not "Abweichung" (✗): it can be a reading error
+  as well as a wrong invoice. The finding names the difference ("Positionen 10,72 € unter dem
+  Honorar – eine Position fehlt oder ist falsch gelesen") and the page.
+- The recorded answers of approach C are test data for the Go interpretation
+  (`internal/airead/testdata/abgleich-antworten-2026-11-03.json`, expected values in
+  `abgleich-erwartet.json`, both from the made-up documents): every recorded answer must keep being
+  interpreted right, as `internal/ask` does with its questions.
+- **v0.5's reading** asks for dates as YYYY-MM-DD too, and its date check only drops dates older than
+  ten years – a wrong year would be offered as "KI – bitte prüfen" when the text recognition finds
+  no date. Step 3 switches it to dates as printed, parsed in Go.
 
 ## Checks (code, `internal/check` – new)
 
@@ -93,12 +138,13 @@ cut shows in the app as a deviation with its reason from the Bescheid (decided 2
 
 ## Steps
 
-1. Test with made-up but realistic documents (no real ones – the user's wish): multi-page GOÄ and
-   GOZ invoices with positions, Bescheide with cut lines and reason texts, a Heil- und Kostenplan, a
-   prescription – clean and as poor phone photos. Are positions and cut texts read reliably?
-   (Extend `scripts/ki-belegtest.py` with the document types.)
+1. ~~Test with made-up but realistic documents~~ – done 2026-11-03, see "Test of step 1":
+   positions, Bescheid lines and note texts are read reliably when transcribed (99 %).
+   `scripts/ki-testbelege.py` creates the documents, `scripts/ki-belegtest.py` reads and scores
+   them (`auswerten` re-scores saved answers without the server).
 2. `internal/check` with unit tests (made-up invoices, Bescheide, plans, prescriptions).
-3. Schemas per document type, the job with progress events, cancel.
+3. Transcription schemas per document type and their interpretation in Go (tested against the
+   recorded answers), dates as printed in v0.5's reading too, the job with progress events, cancel.
 4. UI: the panel in the invoice form, the result list, the actions.
 5. Type recognition and reminders in the inbox.
 6. Docs (README privacy section: what is sent for a check).

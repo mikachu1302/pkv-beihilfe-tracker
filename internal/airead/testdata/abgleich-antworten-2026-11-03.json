@@ -1,0 +1,356 @@
+{
+ "hinweis": "Antworten von qwen3-vl-8b (llama.cpp) auf die erfundenen Belege aus scripts/ki-testbelege.py, Abschrift-Verfahren (scripts/ki-belegtest.py), 2026-11-03. Keine echten Daten.",
+ "antworten": [
+  {
+   "beleg": "rechnung-goae",
+   "art": "rechnung",
+   "antwort": {
+    "behandler": "Dr. med. Hans Probe, Facharzt für Innere Medizin, Hauptstraße 12, 12345 Musterstadt",
+    "zahlungsempfaenger": "Muster-PVS GmbH",
+    "rechnungsnummer": "R-2026-1187",
+    "rechnungsdatum": "12.10.2026",
+    "behandlungszeitraum": "08.09.2026 – 29.09.2026",
+    "iban": "DE48 1203 0000 4455 6677 88",
+    "spalten": "Datum | GOÄ-Nr. | Leistung | Anz. | Faktor | Betrag EUR",
+    "zeilen": [
+     "08.09.2026 | 1 | Beratung – auch mittels Fernsprecher | 1 | 2,3 | 10,72",
+     "08.09.2026 | 7 | Vollständige körperliche Untersuchung mindestens eines Organsystems | 1 | 2,3 | 21,45",
+     "08.09.2026 | 250 | Blutentnahme mittels Spritze, Kanüle oder Katheter aus der Vene | 1 | 1,8 | 4,20",
+     "08.09.2026 | 3550 | Blutbild und Blutbildbestandteile | 1 | 1,15 | 4,02",
+     "08.09.2026 | 3560 | Glukose | 1 | 1,15 | 2,68",
+     "08.09.2026 | 3561 | Glykierte Hämoglobine (HbA1, HbA1c) | 1 | 1,15 | 13,41",
+     "08.09.2026 | 3585.H1 | Kreatinin | 1 | 1,15 | 2,68",
+     "15.09.2026 | 3 | Eingehende, das gewöhnliche Maß übersteigende Beratung – auch mittels Fernsprecher | 1 | 3,5 | 30,60",
+     "15.09.2026 | 651 | Elektrokardiographische Untersuchung in Ruhe | 1 | 1,8 | 26,54",
+     "15.09.2026 | 410 | Ultraschalluntersuchung eines Organs | 1 | 1,8 | 20,98",
+     "15.09.2026 | 420 | Ultraschalluntersuchung von bis zu drei weiteren Organen im Anschluss an Nr. 410, je Organ | 2 | 1,8 | 16,78",
+     "22.09.2026 | 1 | Beratung – auch mittels Fernsprecher | 1 | 2,3 | 10,72",
+     "22.09.2026 | 5 | Symptombezogene Untersuchung | 1 | 2,3 | 10,72",
+     "22.09.2026 | 34 | Erörterung (Dauer mindestens 20 Minuten) der Auswirkungen einer Krankheit auf die Lebensgestaltung | 1 | 2,3 | 40,22",
+     "29.09.2026 | 1 | Beratung – auch mittels Fernsprecher | 1 | 2,3 | 10,72",
+     "29.09.2026 | 75 | Ausführlicher schriftlicher Krankheits- und Befundbericht | 1 | 2,3 | 17,43"
+    ],
+    "summen": [
+     "Rechnungsbetrag | 243,87 EUR"
+    ]
+   }
+  },
+  {
+   "beleg": "rechnung-goz",
+   "art": "rechnung",
+   "antwort": {
+    "behandler": "Zahnarztpraxis Dr. Ruth Beispiel",
+    "zahlungsempfaenger": "",
+    "rechnungsnummer": "ZA-2026-0412",
+    "rechnungsdatum": "03.11.2026",
+    "behandlungszeitraum": "06.10.2026 bis 27.10.2026",
+    "iban": "DE75 2501 0030 9182 7364 50",
+    "spalten": "Datum | Zahn | Nr. | Leistung | Anz. | Faktor | Betrag EUR",
+    "zeilen": [
+     "06.10.2026 | 36 | 0090 | Intraorale Infiltrationsanästhesie | 1 | 2,3 | 7,76",
+     "06.10.2026 | 36 | 2210 | Versorgung eines Zahnes durch eine Vollkrone (Hohlkeh- oder Stufenpräparation) | 1 | 2,3 | 217,06",
+     "06.10.2026 | 36 | 2270 | Provisorium im direkten Verfahren mit Abformung, je Zahn | 1 | 2,3 | 34,93",
+     "06.10.2026 | OK/UK | 0050 | Abformung oder Teilabformung eines Kiefers für ein Situationsmodell | 2 | 2,3 | 31,04",
+     "20.10.2026 | 36 | 0090 | Intraorale Infiltrationsanästhesie | 1 | 2,3 | 7,76",
+     "20.10.2026 | 36 | 2197 | Adhäsive Befestigung (plastischer Aufbau, Stift, Inlay, Krone, Teilkrone, Veneer) | 1 | 2,3 | 16,82",
+     "20.10.2026 | 36 | 2030 | Besondere Maßnahmen beim Präparieren oder Füllen von Kavitäten | 1 | 2,3 | 8,41",
+     "27.10.2026 | Ä1 | 1040 | Professionelle Zahnreinigung, je Zahn | 28 | 2,3 | 101,36"
+    ],
+    "summen": [
+     "Zahnärztliches Honorar | 435,86",
+     "Material- und Laborkosten (§ 9 GOZ) | 495,73",
+     "Rechnungsbetrag | 931,59 €"
+    ]
+   }
+  },
+  {
+   "beleg": "kostenplan-zahn.png",
+   "art": "kostenplan",
+   "antwort": {
+    "behandler": "Zahnarztpraxis Dr. Ruth Beispiel",
+    "datum": "15.09.2026",
+    "spalten": "Zahn | Nr. | Leistung | Anz. | Faktor | Betrag EUR",
+    "zeilen": [
+     "36 | Á925a | Röntgendiagnostik der Zähne, bis zwei Einzelaufnahmen | 1 | 1,8 | 20,98",
+     "36 | 0090 | Intraorale Infiltrationsanästhesie | 2 | 2,3 | 15,52",
+     "36 | 2210 | Versorgung eines Zahnes durch eine Vollkrone (Hohlkeh- oder Stufenpräparation) | 1 | 2,3 | 217,06",
+     "36 | 2270 | Provisorium im direkten Verfahren mit Abformung, je Zahn | 1 | 2,3 | 34,93",
+     "OK/UK | 0050 | Abformung oder Teilabformung eines Kiefers für ein Situationsmodell | 2 | 2,3 | 31,04",
+     "36 | 2197 | Adhäsive Befestigung (plastischer Aufbau, Stift, Inlay, Krone, Teilkrone, Veneer) | 1 | 2,3 | 16,82"
+    ],
+    "summen": [
+     "Zahnärztliches Honorar (voraussichtlich) | 336,35 €",
+     "Material- und Laborkosten (geschätzt) | 450,00 €",
+     "Gesamtkosten (voraussichtlich) | 786,35 €"
+    ]
+   }
+  },
+  {
+   "beleg": "verordnung-physio.png",
+   "art": "verordnung",
+   "antwort": {
+    "verordner": "Dr. med. Klara Beispiel",
+    "datum": "10.09.2026",
+    "frequenz": "2 × wöchentlich",
+    "diagnose": "Lumbalgie, chronisch rezidivierend",
+    "icd": "M54.5",
+    "gueltig_bis": "08.10.2026",
+    "zeilen": [
+     "6 × Krankengymnastik (Einzelbehandlung)",
+     "6 × Wärmetherapie mittels Fango-Packung"
+    ]
+   }
+  },
+  {
+   "beleg": "rechnung-physio.png",
+   "art": "rechnung",
+   "antwort": {
+    "behandler": "Physiotherapie Lotte Probe",
+    "zahlungsempfaenger": "",
+    "rechnungsnummer": "PT-2026-091",
+    "rechnungsdatum": "23.10.2026",
+    "behandlungszeitraum": "",
+    "iban": "DE18 3705 0198 1234 5098 76",
+    "spalten": "Datum | Pos. | Leistung | Anz. | Einzelpreis | Betrag",
+    "zeilen": [
+     "22.09.2026 | KG | Krankengymnastik, Einzelbehandlung | 1 | 32,00 | 32,00",
+     "22.09.2026 | WP | Wärmepackung (Fango) | 1 | 14,50 | 14,50",
+     "25.09.2026 | KG | Krankengymnastik, Einzelbehandlung | 1 | 32,00 | 32,00",
+     "25.09.2026 | WP | Wärmepackung (Fango) | 1 | 14,50 | 14,50",
+     "29.09.2026 | KG | Krankengymnastik, Einzelbehandlung | 1 | 32,00 | 32,00",
+     "29.09.2026 | WP | Wärmepackung (Fango) | 1 | 14,50 | 14,50",
+     "02.10.2026 | KG | Krankengymnastik, Einzelbehandlung | 1 | 32,00 | 32,00",
+     "02.10.2026 | WP | Wärmepackung (Fango) | 1 | 14,50 | 14,50",
+     "06.10.2026 | KG | Krankengymnastik, Einzelbehandlung | 1 | 32,00 | 32,00",
+     "06.10.2026 | WP | Wärmepackung (Fango) | 1 | 14,50 | 14,50",
+     "09.10.2026 | KG | Krankengymnastik, Einzelbehandlung | 1 | 32,00 | 32,00",
+     "09.10.2026 | WP | Wärmepackung (Fango) | 1 | 14,50 | 14,50",
+     "13.10.2026 | KG | Krankengymnastik, Einzelbehandlung | 1 | 32,00 | 32,00"
+    ],
+    "summen": [
+     "Gesamtbetrag | 311,00 €"
+    ]
+   }
+  },
+  {
+   "beleg": "bescheid-beihilfe",
+   "art": "bescheid",
+   "antwort": {
+    "kostentraeger": "Beihilfestelle Musterland",
+    "bescheiddatum": "18.11.2026",
+    "antrag_vom": "04.11.2026",
+    "spalten": "Nr | Beleg vom | Leistungserbringer / Art | Rechnungsbetrag | beihilfefähig | Satz | Beihilfe | Hinw.",
+    "zeilen": [
+     "1 | 12.10.2026 | Dr. med. Hans Probe (über Muster-PVS GmbH) | 243,87 | 233,38 | 50 % | 116,69 | 1",
+     "2 | 21.10.2026 | Rosen-Apotheke, Arzneimittel | 23,92 | 18,92 | 50 % | 9,46 | 2",
+     "3 | 23.10.2026 | Physiotherapie Lotte Probe, Heilmittel | 311,00 | 247,80 | 50 % | 123,90 | 3, 4",
+     "4 | 03.11.2026 | Zahnarztpraxis Dr. Ruth Beispiel | 931,59 | 733,30 | 50 % | 366,65 | 5"
+    ],
+    "summen": [
+     "Summe Beihilfe | 616,70",
+     "abzüglich Kostendämpfungspauschale 2026 | - 100,00",
+     "Auszahlungsbetrag | 516,70 €"
+    ],
+    "hinweise": [
+     {
+      "nr": "1",
+      "text": "Der Gebührensatz über dem 2,3-fachen (Nr. 3 GOÄ am 15.09.2026) ist nicht ausreichend begründet. Beihilfefähig ist der 2,3-fache Satz; nicht beihilfefähig: 10,49 €."
+     },
+     {
+      "nr": "2",
+      "text": "Nicht verschreibungspflichtige Arzneimittel sind nicht beihilfefähig (§ 22 BVO); nicht beihilfefähig: 5,00 €."
+     },
+     {
+      "nr": "3",
+      "text": "Aufwendungen für Heilmittel sind nur bis zu den Höchstbeträgen der Anlage 9 zur BVO beihilfefähig (Krankengymnastik 28,20 €, Wärmepackung 13,10 € je Behandlung)."
+     },
+     {
+      "nr": "4",
+      "text": "Verordnet waren 6 Behandlungen Krankengymnastik; die 7. Behandlung vom 13.10.2026 ist nicht beihilfefähig."
+     },
+     {
+      "nr": "5",
+      "text": "Aufwendungen für zahntechnische Leistungen (Material- und Laborkosten) sind zu 60 % beihilfefähig (§ 16 BVO)."
+     }
+    ]
+   }
+  },
+  {
+   "beleg": "abrechnung-pkv.png",
+   "art": "bescheid",
+   "antwort": {
+    "kostentraeger": "Muster Krankenversicherung a. G.",
+    "bescheiddatum": "20.11.2026",
+    "antrag_vom": "04.11.2026",
+    "spalten": "Rechnung vom | Leistungserbringer | Tarif | Rechnungsbetrag | erstattungsfähig | % | Erstattung | Bem.",
+    "zeilen": [
+     "12.10.2026 | Dr. med. Hans Probe | BT50 | 243,87 | 243,87 | 50 | 121,94 |",
+     "21.10.2026 | Rosen-Apotheke | BT50 | 23,92 | 18,92 | 50 | 9,46 | A3",
+     "23.10.2026 | Physiotherapie L. Probe | BT50 | 311,00 | 297,00 | 50 | 148,50 | H1",
+     "03.11.2026 | Zahnarztpraxis Dr. Beispiel | ZT50 | 931,59 | 931,59 | 50 | 465,80 |"
+    ],
+    "summen": [
+     "Summe Erstattung | 745,70",
+     "abzüglich Selbstbehalt Tarif BT50 (Kalenderjahr 2026) | – 75,00",
+     "Auszahlungsbetrag | 670,70 €"
+    ],
+    "hinweise": [
+     {
+      "nr": "A3",
+      "text": "Nicht verschreibungspflichtige Arzneimittel sind im Tarif BT50 nicht versichert."
+     },
+     {
+      "nr": "H1",
+      "text": "Heilmittel erstatten wir bis zu den Höchstbeträgen des Tarifs (Krankengymnastik 30,00 € je Behandlung)."
+     }
+    ]
+   }
+  },
+  {
+   "beleg": "foto-rechnung-goae",
+   "art": "rechnung",
+   "antwort": {
+    "behandler": "Dr. med. Hans Probe, Facharzt für Innere Medizin, Hauptstraße 12, 12345 Musterstadt",
+    "zahlungsempfaenger": "Muster-PVS GmbH",
+    "rechnungsnummer": "R-2026-1187",
+    "rechnungsdatum": "12.10.2026",
+    "behandlungszeitraum": "08.09.2026 – 29.09.2026",
+    "iban": "DE48 1203 0000 4455 6677 88",
+    "spalten": "Datum | GOÄ-Nr. | Leistung | Anz. | Faktor | Betrag EUR",
+    "zeilen": [
+     "08.09.2026 | 1 | Beratung – auch mittels Fernsprecher | 1 | 2,3 | 10,72",
+     "08.09.2026 | 7 | Vollständige körperliche Untersuchung mindestens eines Organsystems | 1 | 2,3 | 21,45",
+     "08.09.2026 | 250 | Blutentnahme mittels Spritze, Kanüle oder Katheter aus der Vene | 1 | 1,8 | 4,20",
+     "08.09.2026 | 3550 | Blutbild und Blutbildbestandteile | 1 | 1,15 | 4,02",
+     "08.09.2026 | 3560 | Glukose | 1 | 1,15 | 2,68",
+     "08.09.2026 | 3561 | Glykierte Hämoglobin (HbA1, HbA1c) | 1 | 1,15 | 13,41",
+     "08.09.2026 | 3585.H1 | Kreatinin | 1 | 1,15 | 2,68",
+     "15.09.2026 | 3 | Eingehende, das gewöhnliche Maß übersteigende Beratung – auch mittels Fernsprecher | 1 | 3,5 | 30,60",
+     "15.09.2026 | 651 | Elektrokardiographische Untersuchung in Ruhe | 1 | 1,8 | 26,54",
+     "15.09.2026 | 410 | Ultraschalluntersuchung eines Organs | 1 | 1,8 | 20,98",
+     "15.09.2026 | 420 | Ultraschalluntersuchung von bis zu drei weiteren Organen im Anschluss an Nr. 410, je Organ | 2 | 1,8 | 18,78",
+     "22.09.2026 | 1 | Beratung – auch mittels Fernsprecher | 1 | 2,3 | 10,72",
+     "22.09.2026 | 5 | Symptombezogene Untersuchung | 1 | 2,3 | 10,72",
+     "22.09.2026 | 34 | Erörterung (Dauer mindestens 20 Minuten) der Auswirkungen einer Krankheit auf die Lebensgestaltung | 1 | 2,3 | 40,22",
+     "29.09.2026 | 1 | Beratung – auch mittels Fernsprecher | 1 | 2,3 | 10,72",
+     "29.09.2026 | 75 | Ausführlicher schriftlicher Krankheits- und Befundbericht | 1 | 2,3 | 17,43"
+    ],
+    "summen": [
+     "Rechnungsbetrag | 243,87 EUR"
+    ]
+   }
+  },
+  {
+   "beleg": "foto-bescheid-beihilfe",
+   "art": "bescheid",
+   "antwort": {
+    "kostentraeger": "Beihilfestelle Musterland",
+    "bescheiddatum": "18.11.2026",
+    "antrag_vom": "04.11.2026",
+    "spalten": "Nr. | Beleg vom | Leistungserbringer / Art | Rechnungsbetrag | beihilfefähig | Satz | Beihilfe | Hinw.",
+    "zeilen": [
+     "1 | 12.10.2026 | Dr. med. Hans Probe (über Muster-PVS GmbH) | 243,87 | 233,38 | 50 % | 116,69 | 1",
+     "2 | 21.10.2026 | Rosen-Apotheke, Arzneimittel | 23,92 | 18,92 | 50 % | 9,46 | 2",
+     "3 | 23.10.2026 | Physiotherapie Lotte Probe, Heilmittel | 311,00 | 247,80 | 50 % | 123,90 | 3, 4",
+     "4 | 03.11.2026 | Zahnarztpraxis Dr. Ruth Beispiel | 931,59 | 733,30 | 50 % | 366,65 | 5"
+    ],
+    "summen": [
+     "Summe Beihilfe | 616,70",
+     "abzüglich Kostendämpfungspauschale 2026 | - 100,00",
+     "Auszahlungsbetrag | 516,70 €"
+    ],
+    "hinweise": [
+     {
+      "nr": "1",
+      "text": "Der Gebührensatz über dem 2,3-fachen (Nr. 3 GOÄ am 15.09.2026) ist nicht ausreichend begründet. Beihilfefähig ist der 2,3-fache Satz; nicht beihilfefähig: 10,49 €."
+     },
+     {
+      "nr": "2",
+      "text": "Nicht verschreibungspflichtige Arzneimittel sind nicht beihilfefähig (§ 22 BVO); nicht beihilfefähig: 5,00 €."
+     },
+     {
+      "nr": "3",
+      "text": "Aufwendungen für Heilmittel sind nur bis zu den Höchstbeträgen der Anlage 9 zur BVO beihilfefähig (Krankengymnastik 28,20 €, Wärmepackung 13,10 € je Behandlung)."
+     },
+     {
+      "nr": "4",
+      "text": "Verordnet waren 6 Behandlungen Krankengymnastik; die 7. Behandlung vom 13.10.2026 ist nicht beihilfefähig."
+     },
+     {
+      "nr": "5",
+      "text": "Aufwendungen für zahntechnische Leistungen (Material- und Laborkosten) sind zu 60 % beihilfefähig (§ 16 BVO)."
+     }
+    ]
+   }
+  },
+  {
+   "beleg": "foto-kostenplan-zahn.jpg",
+   "art": "kostenplan",
+   "antwort": {
+    "behandler": "Zahnarztpraxis Dr. Ruth Beispiel",
+    "datum": "15.09.2026",
+    "spalten": "Zahn | Nr. | Leistung | Anz. | Faktor | Betrag EUR",
+    "zeilen": [
+     "36 | A925a | Röntgendiagnostik der Zähne, bis zwei Einzelaufnahmen | 1 | 1,8 | 20,98",
+     "36 | 0090 | Intraorale Infiltrationsanästhesie | 2 | 2,3 | 15,52",
+     "36 | 2210 | Versorgung eines Zahnes durch eine Vollkrone (Hohlkeh- oder Stufenpräparation) | 1 | 2,3 | 217,06",
+     "36 | 2270 | Provisorium im direkten Verfahren mit Abformung, je Zahn | 1 | 2,3 | 34,93",
+     "OK/UK | 0050 | Abformung oder Teilabformung eines Kiefers für ein Situationsmodell | 2 | 2,3 | 31,04",
+     "36 | 2197 | Adhäsive Befestigung (plastischer Aufbau, Sätt. Inlay, Krone, Teilkrone, Veneer) | 1 | 2,3 | 16,82"
+    ],
+    "summen": [
+     "Zahnärztliches Honorar (voraussichtlich) | 336,35 €",
+     "Material- und Laborkosten (geschätzt) | 450,00 €",
+     "Gesamtkosten (voraussichtlich) | 786,35 €"
+    ]
+   }
+  },
+  {
+   "beleg": "foto-verordnung-physio.jpg",
+   "art": "verordnung",
+   "antwort": {
+    "verordner": "Dr. med. Klara Beispiel",
+    "datum": "10.09.2026",
+    "frequenz": "2 × wöchentlich",
+    "diagnose": "Lumbalgie, chronisch rezidivierend",
+    "icd": "M54.5",
+    "gueltig_bis": "08.10.2026",
+    "zeilen": [
+     "6 × Krankengymnastik (Einzelbehandlung)",
+     "6 × Wärmetherapie mittels Fango-Packung"
+    ]
+   }
+  },
+  {
+   "beleg": "foto-abrechnung-pkv.jpg",
+   "art": "bescheid",
+   "antwort": {
+    "kostentraeger": "Muster Krankenversicherung a. G.",
+    "bescheiddatum": "20.11.2026",
+    "antrag_vom": "04.11.2026",
+    "spalten": "Rechnung vom | Leistungserbringer | Tarif | Rechnungsbetrag | erstattungsfähig | % | Erstattung | Bem.",
+    "zeilen": [
+     "12.10.2026 | Dr. med. Hans Probe | BT50 | 243,87 | 243,87 | 50 | 121,94 | A3",
+     "21.10.2026 | Rosen-Apotheke | BT50 | 23,92 | 18,92 | 50 | 9,46 | A3",
+     "23.10.2026 | Physiotherapie L. Probe | BT50 | 311,00 | 297,00 | 50 | 148,50 | H1",
+     "03.11.2026 | Zahnarztpraxis Dr. Beispiel | ZT50 | 931,59 | 931,59 | 50 | 465,80 |"
+    ],
+    "summen": [
+     "Summe Erstattung | 745,70",
+     "abzüglich Selbstbehalt Tarif BT50 (Kalenderjahr 2026) | – 75,00",
+     "Auszahlungsbetrag | 670,70 €"
+    ],
+    "hinweise": [
+     {
+      "nr": "A3",
+      "text": "Nicht verschreibungspflichtige Arzneimittel sind im Tarif BT50 nicht versichert."
+     },
+     {
+      "nr": "H1",
+      "text": "Heilmittel erstatten wir bis zu den Höchstbeträgen des Tarifs (Krankengymnastik 30,00 € je Behandlung)."
+     }
+    ]
+   }
+  }
+ ]
+}

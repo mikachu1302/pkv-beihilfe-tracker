@@ -119,7 +119,8 @@ Go tests that need no UI run without them: `go test ./internal/...`.
 The AI features are tested against a stand-in server (`internal/ai/aitest`). Against the real
 server, the question set (`internal/ask/testdata/fragen.json`, made up) shows how many questions
 the model and the app's corrections understand right; documents are measured with
-`scripts/ki-belegtest.py` (see [docs/KI-TEST.md](docs/KI-TEST.md)):
+`scripts/ki-belegtest.py`, made-up test documents (invoices with positions, Bescheide, a cost
+plan, a prescription) come from `scripts/ki-testbelege.py` (see [docs/KI-TEST.md](docs/KI-TEST.md)):
 
 ```sh
 KI_TEST=1 go test ./internal/ask -run Live -v    # key from LLM_API_KEY or API_KEY in .env
