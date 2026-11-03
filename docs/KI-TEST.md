@@ -96,6 +96,18 @@ Die vollständigen Antworten liegen danach in `~/Belegtest/ki-ergebnisse/` (eine
 Die Zusammenfassung des Skripts (Zeit pro Seite, Felder richtig, auffällige Fehler) reicht als
 Rückmeldung; die Belege selbst müssen dafür nicht weitergegeben werden.
 
+## Fragen-Test (Chatbot)
+
+`scripts/ki-fragentest.py` schickt 40 erfundene Fragen („Wie viele Rechnungen aus 2026 sind noch
+offen?“, „Und 2025?“ …) mit dem geplanten Abfrage-Schema an den Server und vergleicht die
+Antwort mit der erwarteten Abfrage. Es gehen keine Rechnungsdaten an den Server. Ergebnisse vom
+2026-11-03: siehe [PLAN-v0.5.md](PLAN-v0.5.md) (Test results).
+
+```sh
+python3 scripts/ki-fragentest.py               # alle Fragen
+python3 scripts/ki-fragentest.py --nur 1,33    # einzelne Fragen
+```
+
 ## Später vergleichen: die NPU
 
 Der Snapdragon hat eine NPU. Über das Nexa SDK gibt es Qwen3-VL in der **4B**-Fassung für die NPU

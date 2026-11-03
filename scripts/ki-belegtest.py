@@ -42,10 +42,11 @@ from pathlib import Path
 
 FIELDS = {
     "behandler": "Name der Praxis, des Arztes, der Apotheke oder des Rechnungsstellers",
-    "rechnungsdatum": "Datum der Rechnung",
-    "behandlung_von": "erster Behandlungstag",
-    "behandlung_bis": "letzter Behandlungstag",
-    "betrag": "zu zahlender Gesamtbetrag in Euro",
+    "rechnungsdatum": "Datum der Rechnung (auf Quittungen und Kassenbons: das Kaufdatum)",
+    "behandlung_von": "erster Behandlungstag – aus „Behandlungszeitraum“/„Leistungszeitraum“, sonst das früheste Datum der Positionen",
+    "behandlung_bis": "letzter Behandlungstag – aus „Behandlungszeitraum“/„Leistungszeitraum“, sonst das späteste Datum der Positionen",
+    "betrag": "Gesamtbetrag der Rechnung in Euro – der Endbetrag („Rechnungsbetrag“, „Gesamtbetrag“, auf Kassenbons „Summe“), "
+              "auch wenn schon bezahlt; nicht ein Übertrag oder eine Zwischensumme",
     "rechnungsnummer": "Rechnungsnummer",
     "iban": "IBAN für die Überweisung",
     "zahlungsempfaenger": "Empfänger der Zahlung, falls nicht der Behandler (z. B. Abrechnungsstelle)",

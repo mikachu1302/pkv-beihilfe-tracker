@@ -1,8 +1,8 @@
 # v0.5.0 – Local AI: reading documents and asking questions (plan)
 
-Status: draft · 2026-11-03 · server set up and reachable; decisions recorded below, two points
-wait for the real-world test. Next: [PLAN-v0.6.md](PLAN-v0.6.md) (checking invoices against
-other documents).
+Status: draft · 2026-11-03 · server set up and tested (results below); decisions recorded; a final
+check with real documents is still advised. Next: [PLAN-v0.6.md](PLAN-v0.6.md) (checking invoices
+against other documents).
 
 v0.5.0 brings two AI features, both **optional** (without the server everything works as today)
 and both **started by the user** – nothing runs on its own:
@@ -53,6 +53,51 @@ questions in ~5–9 s.
 - Reading ~22 tokens/s with images (the owner measured ~40), writing ~6 tokens/s – the image
   prefill dominates: **~1 minute per page, ~2.5 minutes for two pages**. Smaller pages (e.g.
   1,100 px) are worth a try. llama.cpp reuses the prompt cache: a page sent before is much faster.
+
+## Test results (2026-11-03)
+
+Made-up documents only (real ones were not at hand); they are built to be hard: a 3-page GOÄ
+invoice with carry-overs, a 4-page dentist invoice, a skewed phone photo with a shadow, a dark
+low-contrast photo, a faded till receipt, 30 positions in a small font. Scripts:
+`scripts/ki-belegtest.py`, `scripts/ki-fragentest.py`.
+
+**Reading: AI vs. the app's text recognition** (same documents, same comparison; the OCR values
+read in the headless app, as the inbox fills them):
+
+| | App OCR | AI, pages 1,400 px | AI, pages 1,000 px |
+|---|---|---|---|
+| Fields right (36) | 28 (78 %) | **33 (92 %)** | 30 (83 %) |
+| Time per page | seconds, on the own computer | ~70 s | ~32 s |
+| 3 pages / 4 pages in one request | – | 250 s / 372 s, all fields but one | 92 s / 128 s, amount lost on 4 pages |
+| Dark photo | 0 of 5 | 4 of 5 | 4 of 5 |
+| IBAN | 1 of 4 | 4 of 4 | 4 of 4 |
+| Amount on the till receipt, treatment end on the dentist invoice | right | wrong (empty / a position date) | wrong |
+
+- **The two ways complement each other**: the AI reads dark photos and IBANs, the OCR got the
+  receipt total and the period the AI missed. Combined with the order of trust, 35 of 36 fields
+  would have been right. A sharper prompt did not fix the AI's three misses – a limit of the model.
+- **Up to four pages fit one request** (the context is large enough); time grows with the pages.
+- **1,400 px is worth the time**: at 1,000 px the AI loses amounts in small print (the most
+  important field) and is only about twice as fast.
+- Speed: reading 24–33 tokens/s with images, writing 6–8 tokens/s.
+
+**Questions → queries** (40 made-up questions, `scripts/ki-fragentest.py`):
+
+| Schema | Understood right | Time per question |
+|---|---|---|
+| every filter field required (first draft) | 10 of 40 (25 %) | ~15 s |
+| **filters as a list (only the needed ones), five examples in the prompt** | **27 of 40 (68 %)** | ~8 s |
+
+- With every field required, the model filled in filters nobody asked for; listing only the
+  needed filters fixed most of it and halved the time (shorter answers).
+- Remaining misses are mostly borderline: "stehen noch aus" as "not refunded" instead of
+  "submitted", "nur die vom Zahnarzt" as provider instead of category, physiotherapy as hospital,
+  two questions about Klärungsbedarf / held-back claims declared unsupported, a follow-up that lost
+  its year.
+- Consequences for the design (Feature 2): the interpretation chips are essential (they make
+  every miss visible and fixable); the app adds a synonym table and deterministic corrections
+  ("Physio…" → Heilmittel, "Klärung" → Klärungsbedarf, "zurückgehalten" → held); more examples for
+  status words; target **≥ 85 % on the question set** before the feature ships.
 
 ## Decisions (2026-11-03)
 
@@ -116,8 +161,8 @@ there – the invoices stay in the app. Off by default, LAN only, API key, no cl
   - provider matching a known provider or alias of earlier invoices → confirmed.
 - New sources in `extract`: `SrcAI` ("KI – bitte prüfen", warn) and `SrcAIConfirmed` ("KI,
   bestätigt"); the frontend's `SOURCE` table gets both.
-- Multi-page: up to two pages in one request (measured); more pages – one request or one per
-  page merged in Go – is decided by the test (open point 2).
+- Multi-page: all pages in one request (tested up to four); pages scaled to 1,400 px on the long
+  side, JPEG. The progress shows the expected time (~1 minute per page).
 
 ### Frontend
 
@@ -164,8 +209,12 @@ Examples:
 
 ### Turning the question into a query
 
-- JSON schema built at runtime: payer names from the settings as an enum, categories, statuses;
-  prompt with today's date ("dieses Jahr", "letzten Monat") and a few examples.
+- JSON schema built at runtime: `typ`, `messgroesse`, `jahre`, a **list of filters** (each a field
+  with its allowed values – payer names from the settings, categories, statuses), `gruppierung`;
+  prompt with today's date ("dieses Jahr", "letzten Monat") and examples. Listing only the needed
+  filters is what made the model reliable (see Test results).
+- After the model: a synonym table and deterministic corrections in the app (words for
+  categories and statuses), then the query runs; the chips show the final query.
 - Follow-ups: the last two questions with their queries go along (no invoice data), so "und
   2025?" changes only the year.
 - Measured later with a fixed set of ~40 German questions and the expected queries
@@ -199,10 +248,12 @@ Examples:
 
 ## Open points
 
-1. Is the 8B model good enough for reading, or is the NPU path (Qwen3-VL-4B, faster, less exact)
-   worth comparing? Decided by the test.
-2. Documents with three or more pages: one request (if they fit) or one per page merged in Go –
-   decided by the test.
-3. Image size: 1,400 px or less (time vs. accuracy) – decided by the test.
-4. Questions the query model cannot express: collect them during use and extend the model (no
-   free-form answers from the model).
+1. ~~8B model or NPU path?~~ The 8B model reads well (92 % on hard made-up documents, better than
+   the OCR where it matters); ~1 minute per page is acceptable for a manual trigger. The NPU
+   (Qwen3-VL-4B) only if the time becomes a problem.
+2. ~~Three or more pages?~~ One request, tested up to four pages.
+3. ~~Image size?~~ 1,400 px – smaller pages lose amounts in small print.
+4. Real documents: one more run of `scripts/ki-belegtest.py` with 5–10 real difficult invoices
+   before building, to confirm the numbers above.
+5. Questions the query model cannot express: collect them during use and extend the model (no
+   free-form answers from the model); the question set grows with them.
