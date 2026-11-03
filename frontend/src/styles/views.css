@@ -22,7 +22,7 @@
 .payer-name .muted { font-weight: 400; }
 .payer-1 { color: var(--payer-1, var(--text)); }
 .payer-2 { color: var(--payer-2, var(--text)); }
-.due { color: var(--warn); font-weight: 600; font-size: 13px; white-space: nowrap; }
+.inv-paid .due, .compact-details .due { color: var(--warn); font-weight: 600; font-size: 13px; white-space: nowrap; }
 
 /* ---------- Detail: one card per invoice ---------- */
 .inv-cards [role="feed"] > article + article { margin-top: 12px; } /* not on the spacers: the virtualiser counts the gap in them */
@@ -68,8 +68,8 @@
 .data-grid td.strong { font-weight: 600; }
 .data-grid thead th { position: sticky; z-index: 2; background: var(--panel-2); color: var(--text); font-size: 12.5px; }
 .data-grid tr.groups th { top: 0; height: 30px; text-align: center; font-weight: 600; }
-.data-grid tr.groups th.payer-1 { color: var(--payer-1); }
-.data-grid tr.groups th.payer-2 { color: var(--payer-2); }
+.data-grid tr.groups th.payer-1 { color: var(--payer-1, var(--text)); }
+.data-grid tr.groups th.payer-2 { color: var(--payer-2, var(--text)); }
 .data-grid tr.cols th { top: 30px; height: 34px; }
 .data-grid th[aria-sort="ascending"], .data-grid th[aria-sort="descending"] { color: var(--accent-fg); }
 .data-grid button.sort { border: none; background: none; padding: 0; font: inherit; font-weight: 600; color: inherit; cursor: pointer;
@@ -82,6 +82,7 @@
 .data-grid tbody tr.sel td { background: var(--row-selected); }
 .data-grid tbody tr:focus-visible { outline: 2px solid var(--accent-fg); outline-offset: -2px; }
 .data-grid tbody tr:focus-visible td { background: var(--row-selected); }
+.data-grid tbody:focus, [role="feed"]:focus, .compact [role="list"]:focus { outline: none; } /* fallback focus while a row is re-rendered */
 .data-grid .sticky-a { position: sticky; left: 0; z-index: 1; text-align: center; padding: 0; }
 .data-grid .sticky-b { position: sticky; left: 36px; z-index: 1; box-shadow: inset -1px 0 0 var(--border); }
 .data-grid thead .sticky-a, .data-grid thead .sticky-b, .data-grid tfoot .sticky-a, .data-grid tfoot .sticky-b { z-index: 3; }
@@ -93,7 +94,9 @@
 .column-menu hr { border: none; border-top: 1px solid var(--border); margin: 6px 0; width: 100%; }
 
 /* ---------- Kompakt: one line per invoice, expandable ---------- */
-.compact { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); overflow-x: auto; }
+/* No overflow on the panel (popovers must not be clipped): in a narrow window it grows to its
+   content and the page scrolls sideways. */
+.compact { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); min-width: min-content; }
 .compact-line { display: grid; align-items: center; gap: 12px; padding: 0 12px 0 16px; min-height: 46px;
   grid-template-columns: 20px 76px minmax(160px, 1fr) 100px repeat(var(--payers, 1), minmax(150px, 210px)) 92px 84px 24px; }
 .compact-head { min-height: 38px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--border); }
@@ -111,8 +114,8 @@
 .compact-provider .small { white-space: nowrap; }
 .compact-claim { display: flex; gap: 8px; align-items: center; font-size: 12px; min-width: 0; white-space: nowrap; overflow: hidden; }
 .dots { display: flex; gap: 3px; flex: none; color: var(--text); }
-.dots.payer-1 { color: var(--payer-1); }
-.dots.payer-2 { color: var(--payer-2); }
+.dots.payer-1 { color: var(--payer-1, var(--text)); }
+.dots.payer-2 { color: var(--payer-2, var(--text)); }
 .dots .dot, .dots .ring { width: 9px; height: 9px; border-radius: 50%; box-sizing: border-box; }
 .dots .dot { background: currentColor; }
 .dots .dot.bad { background: var(--bad); }

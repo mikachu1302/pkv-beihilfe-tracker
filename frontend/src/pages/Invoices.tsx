@@ -134,6 +134,13 @@ export default function Invoices() {
         return n;
     });
 
+    // A popover belongs to a visible invoice in the current view.
+    const popGone = pop !== null && !visible.some(r => r.id === pop.rowId);
+    useEffect(() => {
+        if (popGone) setPop(null);
+    }, [popGone]);
+    useEffect(() => setPop(null), [view]);
+
     const viewProps: ViewProps = {
         rows: visible, payers, selected, toggleOne, allSelected, toggleAll, pop, setPop, change, toggleRefunded, toggleClarify,
         open: id => navigate(`/rechnung/${encodeURIComponent(id)}`),

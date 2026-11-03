@@ -38,7 +38,9 @@ const combos: [string, Record<string, string>][] = [
     ["Klassisch hell", block(classic, ":root")],
     ["Klassisch dunkel", {...block(classic, ":root"), ...block(classic, ':root[data-theme="dark"]')}],
     ["Neu hell", {...block(classic, ":root"), ...block(fresh, ':root[data-design="new"]')}],
-    ["Neu dunkel", {...block(classic, ":root"), ...block(fresh, ':root[data-design="new"]'), ...block(fresh, ':root[data-design="new"][data-theme="dark"]')}],
+    // as the cascade does it: classic dark loses to new light only by file order
+    ["Neu dunkel", {...block(classic, ":root"), ...block(classic, ':root[data-theme="dark"]'), ...block(fresh, ':root[data-design="new"]'),
+        ...block(fresh, ':root[data-design="new"][data-theme="dark"]')}],
 ];
 
 /** [text, background] pairs used by both designs. */
@@ -54,6 +56,16 @@ const onlyNew: [string, string][] = ["text", "muted", "accent-fg", "good", "warn
     .flatMap(fg => ["panel-2", "zebra", "row-hover", "row-selected"].map(bg => [fg, bg] as [string, string]))
     .concat([["nav-active", "nav-active-bg"], ["nav-text", "nav-hover"], ["info", "panel"], ["payer-1", "panel"], ["payer-2", "panel"]]);
 
+/** fg drawn with opacity alpha over bg. */
+function blend(fg: string, bg: string, alpha: number): string {
+    const rgb = (h: string) => [0, 2, 4].map(i => parseInt(h.replace("#", "").slice(i, i + 2), 16));
+    const [f, b] = [rgb(fg), rgb(bg)];
+    return "#" + f.map((c, i) => Math.round(c * alpha + b[i] * (1 - alpha)).toString(16).padStart(2, "0")).join("");
+}
+
+/** The menu footer (data folder, version, "Tastenkürzel") is dimmed in the classic design (base.css: .nav-foot .7, .nav-help .9). */
+const footOpacity = (name: string) => (name.startsWith("Neu") ? [1, 1] : [0.7, 0.63]);
+
 describe("contrast", () => {
     for (const [name, tokens] of combos) {
         it(`${name}: every text pair >= 4.5:1`, () => {
@@ -62,10 +74,15 @@ describe("contrast", () => {
             for (const [fg, bg] of pairs) {
                 const a = fg.startsWith("#") ? fg : resolve(tokens, fg);
                 const b = resolve(tokens, bg);
-                expect(a, `${fg} in ${name}`).toMatch(/^#[0-9a-f]{3,6}$/i);
-                expect(b, `${bg} in ${name}`).toMatch(/^#[0-9a-f]{3,6}$/i);
+                expect(a, `${fg} in ${name}`).toMatch(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+                expect(b, `${bg} in ${name}`).toMatch(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
                 const r = contrast(a, b);
                 if (r < 4.5) low.push(`${fg} ${a} on ${bg} ${b}: ${r.toFixed(2)}`);
+            }
+            for (const alpha of footOpacity(name)) {
+                const bg = resolve(tokens, "nav");
+                const r = contrast(blend(resolve(tokens, "nav-text"), bg, alpha), bg);
+                if (r < 4.5) low.push(`nav footer at opacity ${alpha}: ${r.toFixed(2)}`);
             }
             expect(low).toEqual([]);
         });

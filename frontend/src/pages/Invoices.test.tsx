@@ -187,6 +187,18 @@ describe("Invoices, new design", () => {
         expect(screen.getByLabelText("Erstattet (€)")).toHaveValue("200,48");
     });
 
+    it("closes a popover when its invoice is filtered out", async () => {
+        const user = userEvent.setup();
+        renderAt("/", "/", <Invoices/>);
+        const card = await screen.findByRole("article", {name: /Dr. Muster/});
+        await user.click(within(card).getAllByLabelText("erstattet")[0]);
+        expect(screen.getByRole("dialog", {name: "Erstattung Beihilfe"})).toBeInTheDocument();
+        await user.click(screen.getByRole("button", {name: "Erstattung offen"})); // Dr. Muster is not submitted
+        await user.click(screen.getByRole("button", {name: "Alle"}));
+        expect(await screen.findByRole("article", {name: /Dr. Muster/})).toBeInTheDocument();
+        expect(screen.queryByRole("dialog", {name: "Erstattung Beihilfe"})).not.toBeInTheDocument();
+    });
+
     it("lists note, waiting time and documents below the card", async () => {
         svc.ListInvoices.mockResolvedValue([invoiceRow("a", "Dr. Muster", {
             note: "Rückfrage zur Ziffer 5", attachments: 2,
@@ -354,6 +366,29 @@ describe("Invoices, table view", () => {
         expect(second).toHaveFocus();
         await user.dblClick(within(first).getAllByRole("cell")[5]);
         expect(await screen.findByText("andere Seite")).toBeInTheDocument();
+    });
+
+    it("sorts by Bezahlt: paid by date, then unpaid by due date", async () => {
+        const user = userEvent.setup();
+        svc.ListInvoices.mockResolvedValue([
+            invoiceRow("a", "Offen ohne Frist"),
+            invoiceRow("b", "Offen fällig", {due: "2026-12-01"}),
+            invoiceRow("c", "Bezahlt spät", {paid: {done: true, date: "2026-05-01", note: ""}}),
+            invoiceRow("d", "Bezahlt früh", {paid: {done: true, date: "2025-02-01", note: ""}}),
+        ]);
+        renderAt("/", "/", <Invoices/>);
+        await screen.findByRole("table", {name: "Rechnungen, Tabellenansicht"});
+        await user.click(screen.getByRole("button", {name: "Bezahlt"}));
+        expect(bodyRows().map(r => within(r).getAllByRole("cell")[3].textContent))
+            .toEqual(["Bezahlt früh", "Bezahlt spät", "Offen fällig", "Offen ohne Frist"]);
+    });
+
+    it("does not open the invoice on a double click on its checkbox", async () => {
+        const user = userEvent.setup();
+        renderAt("/", "/", <Invoices/>);
+        await screen.findByRole("table", {name: "Rechnungen, Tabellenansicht"});
+        await user.dblClick(within(bodyRows()[0]).getByRole("checkbox"));
+        expect(screen.queryByText("andere Seite")).not.toBeInTheDocument();
     });
 
     it("renders only the visible rows of a long list", async () => {

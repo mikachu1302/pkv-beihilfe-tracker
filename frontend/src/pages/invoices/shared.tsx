@@ -1,7 +1,7 @@
 // What the invoice views share: the props they get from the list page, the
 // popovers for refund amount and Klärungsbedarf, status texts and the
 // keyboard navigation between invoices.
-import {useLayoutEffect, useRef, useState} from "react";
+import {useEffect, useLayoutEffect, useRef, useState} from "react";
 import type {KeyboardEvent as ReactKeyboardEvent} from "react";
 import {useVirtualizer} from "@tanstack/react-virtual";
 import type {ClaimViewDTO, InvoiceRowDTO, MarkChangeDTO, PayerDTO} from "../../api";
@@ -150,9 +150,30 @@ export function ClarifyFlag({claim: c, onClick}: {claim: ClaimViewDTO; onClick: 
     );
 }
 
-/** Whether a click inside an invoice should open it: not on controls, links, popovers or while selecting text. */
-export function opensInvoice(target: HTMLElement): boolean {
+/**
+ * Closes the open popover when its invoice is no longer rendered (scrolled
+ * away, filtered out): it would otherwise come back open later and take the
+ * focus.
+ */
+export function useDropPopover(v: ViewProps, rendered: string[]) {
+    const gone = v.pop !== null && !rendered.includes(v.pop.rowId);
+    const {setPop} = v;
+    useEffect(() => {
+        if (gone) setPop(null);
+    }, [gone, setPop]);
+}
+
+/**
+ * Whether a click inside an invoice should open it: not on controls, links,
+ * popovers or while selecting text. A double click always selects a word, so
+ * there the selection does not count (and is cleared).
+ */
+export function opensInvoice(target: HTMLElement, doubleClick = false): boolean {
     if (target.closest("input, button, a, label, select, textarea, .popover, [role=dialog], .markbox, .no-open")) return false;
+    if (doubleClick) {
+        window.getSelection()?.removeAllRanges();
+        return true;
+    }
     return !window.getSelection()?.toString();
 }
 
@@ -162,32 +183,53 @@ export function opensInvoice(target: HTMLElement): boolean {
  * when the invoice itself has the focus – in a checkbox or field the keys
  * keep their usual meaning. scrollTo brings a row into view first
  * (virtualised lists render only the visible rows).
+ *
+ * Virtualised lists pass the rendered ids and the first visible one: the tab
+ * stop moves to a visible row when the current one is scrolled away, and when
+ * the focused row is unmounted by scrolling, the focus goes to the list
+ * itself (container props), where the keys go on from the current row.
  */
-export function useRowNav(ids: string[], {open, toggle, scrollTo, keys, rendered}: {
+export function useRowNav(ids: string[], {open, toggle, scrollTo, keys, rendered, firstVisible}: {
     open: (id: string) => void;
     toggle: (id: string) => void;
     scrollTo?: (index: number) => void;
-    /** The ids rendered now (virtualised lists): the tab stop moves to the first of them when the current row is not. */
-    rendered?: string[];
     /** Further keys of a view (e.g. → to expand); return true when used. */
     keys?: (e: ReactKeyboardEvent, id: string) => boolean;
+    /** The ids rendered now (virtualised lists). */
+    rendered?: string[];
+    /** The first id in view (virtualised lists). */
+    firstVisible?: string;
 }) {
     const [cursor, setCursor] = useState<string | null>(null);
     const container = useRef<HTMLElement | null>(null);
     const pending = useRef<string | null>(null);
+    const focusWithin = useRef(false);
     const current = cursor !== null && ids.includes(cursor) ? cursor : ids[0] ?? null;
-    const tabStop = rendered && current !== null && !rendered.includes(current) ? rendered[0] ?? current : current;
+    const tabStop = rendered && current !== null && !rendered.includes(current) ? firstVisible ?? rendered[0] ?? current : current;
 
-    // Focus the row moved to as soon as it is rendered.
     useLayoutEffect(() => {
+        const list = container.current;
+        if (!list) return;
+        // Focus the row moved to as soon as it is rendered.
         const id = pending.current;
-        if (id === null || !container.current) return;
-        const el = [...container.current.querySelectorAll<HTMLElement>("[data-row-id]")].find(e => e.dataset.rowId === id);
+        const el = id === null ? undefined : [...list.querySelectorAll<HTMLElement>("[data-row-id]")].find(e => e.dataset.rowId === id);
         if (el) {
             pending.current = null;
             el.focus({preventScroll: !!scrollTo});
+        } else if (focusWithin.current && (document.activeElement === document.body || document.activeElement === null)) {
+            // The focused row was unmounted (scrolled out of the rendered range).
+            list.focus({preventScroll: true});
         }
     });
+
+    // A click elsewhere ends the keyboard session in the list.
+    useEffect(() => {
+        const down = (e: PointerEvent) => {
+            if (!container.current?.contains(e.target as Node)) focusWithin.current = false;
+        };
+        document.addEventListener("pointerdown", down, true);
+        return () => document.removeEventListener("pointerdown", down, true);
+    }, []);
 
     function go(index: number) {
         if (ids.length === 0) return;
@@ -197,8 +239,8 @@ export function useRowNav(ids: string[], {open, toggle, scrollTo, keys, rendered
         scrollTo?.(i);
     }
 
-    function onKeyDown(e: ReactKeyboardEvent, id: string) {
-        if (e.target !== e.currentTarget || e.altKey || e.ctrlKey || e.metaKey) return;
+    function handle(e: ReactKeyboardEvent, id: string) {
+        if (e.altKey || e.ctrlKey || e.metaKey) return;
         const i = ids.indexOf(id);
         let used = true;
         switch (e.key) {
@@ -229,10 +271,26 @@ export function useRowNav(ids: string[], {open, toggle, scrollTo, keys, rendered
     return {
         container,
         current,
+        /** For the element that holds the rows: takes the focus when a focused row is unmounted. */
+        containerProps: {
+            tabIndex: -1,
+            onKeyDown: (e: ReactKeyboardEvent) => {
+                if (e.target === e.currentTarget && current !== null) handle(e, current);
+            },
+            onFocus: () => {
+                focusWithin.current = true;
+            },
+            onBlur: (e: React.FocusEvent) => {
+                const to = e.relatedTarget as Node | null;
+                if (to && !e.currentTarget.contains(to)) focusWithin.current = false;
+            },
+        },
         item: (id: string) => ({
             "data-row-id": id,
             tabIndex: id === tabStop ? 0 : -1,
-            onKeyDown: (e: ReactKeyboardEvent) => onKeyDown(e, id),
+            onKeyDown: (e: ReactKeyboardEvent) => {
+                if (e.target === e.currentTarget) handle(e, id);
+            },
             onFocus: (e: React.FocusEvent) => {
                 if (e.target === e.currentTarget) setCursor(id);
             },
@@ -253,13 +311,16 @@ export function usePageVirtualizer(count: number, {estimateSize, getItemKey, gap
     gap?: number;
 }) {
     const list = useRef<HTMLElement | null>(null);
-    const [page, setPage] = useState<HTMLElement | null>(null);
+    // The page is there already when the list is opened: no first render of all items.
+    const [page, setPage] = useState<HTMLElement | null>(() => document.querySelector<HTMLElement>("main.content"));
     const [margin, setMargin] = useState(0);
+    const [barHeight, setBarHeight] = useState(0);
 
-    // Where the list starts below the top of the page. Measured after every
-    // render (the bulk bar or notices above may have changed it, and every
-    // scroll renders again); state is only set when the value changed, so
-    // this settles after one pass.
+    // Where the list starts below the top of the page, and the height of the
+    // sticky bulk bar (rows scrolled to by keyboard must not end up below it).
+    // Measured after every render (the bulk bar or notices above may have
+    // changed them, and every scroll renders again); state is only set when a
+    // value changed, so this settles after one pass.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     useLayoutEffect(() => {
         const el = list.current;
@@ -268,14 +329,21 @@ export function usePageVirtualizer(count: number, {estimateSize, getItemKey, gap
         if (el && content) {
             const m = Math.round(el.getBoundingClientRect().top - content.getBoundingClientRect().top + content.scrollTop);
             if (m !== margin) setMargin(m);
+            const bar = content.querySelector<HTMLElement>(".bulkbar");
+            const h = bar ? bar.offsetHeight + 12 : 0;
+            if (h !== barHeight) setBarHeight(h);
         }
     });
 
-    const virtual = useVirtualizer({count, getScrollElement: () => page, estimateSize, overscan: 8, scrollMargin: margin, getItemKey, gap});
+    const virtual = useVirtualizer({count, getScrollElement: () => page, estimateSize, overscan: 8, scrollMargin: margin, getItemKey, gap,
+        scrollPaddingStart: barHeight});
     const items = page ? virtual.getVirtualItems() : Array.from({length: count}, (_, index) => ({index, start: margin, end: margin}));
+    const offset = (virtual.scrollOffset ?? 0) + barHeight;
     return {
         list,
         items,
+        /** Index of the first item in view. */
+        firstVisible: (items.find(i => i.end > offset) ?? items[0])?.index,
         /** Heights of the spacers that stand in for the items above and below. */
         top: page && items.length ? items[0].start - margin : 0,
         bottom: page && items.length ? virtual.getTotalSize() - (items[items.length - 1].end - margin) : 0,
@@ -283,4 +351,3 @@ export function usePageVirtualizer(count: number, {estimateSize, getItemKey, gap
         scrollTo: (index: number) => virtual.scrollToIndex(index, {align: "auto"}),
     };
 }
-

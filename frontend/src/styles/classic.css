@@ -23,6 +23,7 @@
   --nav-text: #cfd6df;
   --nav-active: #ffffff;
   --nav-hover: rgba(255,255,255,.05);
+  --nav-toggle-hover: rgba(255,255,255,.08);
   --nav-active-bg: rgba(255,255,255,.05);
   --nav-track: rgba(255,255,255,.18);
   --row-hover: rgba(127,127,127,.07);

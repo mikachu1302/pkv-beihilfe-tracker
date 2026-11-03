@@ -10,7 +10,7 @@ import type {ClaimViewDTO, InvoiceRowDTO, PayerDTO} from "../../api";
 import {MarkBox} from "../../components/MarkBox";
 import {CATEGORY_LABELS, date, eur, num, plural, shortDate} from "../../lib/format";
 import {footerItems, PayerColumn} from "./DetailView";
-import {claimOf, claimState, opensInvoice, payerClass, usePageVirtualizer, useRowNav} from "./shared";
+import {claimOf, claimState, opensInvoice, payerClass, useDropPopover, usePageVirtualizer, useRowNav} from "./shared";
 import type {ViewProps} from "./shared";
 
 const LINE_HEIGHT = 46;
@@ -72,15 +72,20 @@ export function CompactView(v: ViewProps) {
         getItemKey: i => rows[i].id,
     });
 
-    const setOpen = (id: string, on: boolean) => setExpanded(s => {
-        const n = new Set(s);
-        if (on) n.add(id); else n.delete(id);
-        return n;
-    });
+    const setOpen = (id: string, on: boolean) => {
+        setExpanded(s => {
+            const n = new Set(s);
+            if (on) n.add(id); else n.delete(id);
+            return n;
+        });
+        if (!on && v.pop?.rowId === id) v.setPop(null); // its popover goes with the details
+    };
+    const rendered = pv.items.map(i => rows[i.index].id);
+    useDropPopover(v, rendered);
     const nav = useRowNav(rows.map(r => r.id), {
         open: v.open, toggle: v.toggleOne,
         scrollTo: pv.scrollTo,
-        rendered: pv.items.map(i => rows[i.index].id),
+        rendered, firstVisible: pv.firstVisible === undefined ? undefined : rows[pv.firstVisible]?.id,
         keys: (e: ReactKeyboardEvent, id: string) => {
             if (e.key === "ArrowRight") setOpen(id, true);
             else if (e.key === "ArrowLeft") setOpen(id, false);
@@ -108,7 +113,7 @@ export function CompactView(v: ViewProps) {
             <div ref={el => {
                 pv.list.current = el;
                 nav.container.current = el;
-            }} role="list">
+            }} role="list" {...nav.containerProps}>
                 {pv.top > 0 && <div aria-hidden="true" style={{height: pv.top}}/>}
                 {pv.items.map(item => {
                     const r = rows[item.index];
@@ -152,7 +157,7 @@ function CompactLine({row: r, payers, v, nav, expanded, setExpanded}: {
         <div className={`compact-row ${selected ? "sel" : ""} ${expanded ? "open" : ""}`}>
             <div className="compact-line" role="group" aria-label={label} {...nav}
                  onClick={e => opensInvoice(e.target as HTMLElement) && setExpanded(!expanded)}
-                 onDoubleClick={e => opensInvoice(e.target as HTMLElement) && v.open(r.id)}>
+                 onDoubleClick={e => opensInvoice(e.target as HTMLElement, true) && v.open(r.id)}>
                 <input type="checkbox" aria-label={`${r.provider} auswählen`} checked={selected} onChange={() => v.toggleOne(r.id)}/>
                 <span className="num muted">{shortDate(r.serviceDate) || "–"}</span>
                 <span className="compact-provider">

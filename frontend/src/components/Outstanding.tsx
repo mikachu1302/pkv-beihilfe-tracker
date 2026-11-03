@@ -20,7 +20,7 @@ export function OutstandingCards({payers, period}: {payers: PayerYearDTO[]; peri
                 return (
                     <div key={p.payerId} className="card">
                         <div className="label">{p.payerName} · Ausstand {period}</div>
-                        <div className={`value ${num(o.total) > 0 ? "due" : ""}`}>{eur(o.total)}</div>
+                        <div className={`value ${num(o.total) > 0 ? "owed" : ""}`}>{eur(o.total)}</div>
                         <div className="note">SOLL {eur(o.expected)} − IST {eur(o.actual)}</div>
                         {parts.length > 0 && <div className="note">davon {parts.join(" · ")}</div>}
                         {num(o.held) !== 0 && <div className="note">zurückgehalten {eur(o.held)} – nicht eingerechnet</div>}

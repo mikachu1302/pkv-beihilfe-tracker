@@ -198,6 +198,26 @@ All seven steps are done (commits "v0.4.0 step 1" … "step 7"). Decided or chan
   pair of both designs in light and dark (≥ 4.5:1). Headless screenshots (server mode, Firefox)
   of the main pages in all four combinations were checked by eye; they are not kept in the repo.
 
+### Review fixes (2026-11-03)
+
+Two independent reviews of the change (view logic; styles and the design switch) found:
+- new design: status badges lost their colour (a later rule of equal specificity); the outstanding
+  amount used a class name the views also use and turned brown in the classic design; the dimmed
+  menu footer fell below 4.5:1 on the light rail; menu buttons showed no colour on keyboard focus;
+- Tabelle: the sticky header cell over all invoice columns slid over the payer headers when
+  scrolling sideways (now only the first column's cell is sticky); "Bezahlt" sorted unpaid first;
+  a sort stayed on a hidden column; a double click on a checkbox opened the invoice (and a double
+  click anywhere selects a word, which must not count as "selecting text");
+- Kompakt: the panel's horizontal scroll clipped popovers (it now grows and the page scrolls);
+- virtualised views: a focused row scrolled out of the rendered range took the focus with it –
+  the list now takes it and the keys go on from the current row; the tab stop goes to the first row
+  in view; rows scrolled to by keyboard stay clear of the sticky bulk bar; the first render no
+  longer renders all items; a popover closes when its invoice is filtered out, scrolled away,
+  collapsed or the view changes; a late answer of the appearance load cannot undo a newer change.
+- The contrast test now follows the real cascade for "Neu dunkel" and checks the dimmed footer.
+- Kept on purpose: links use the accent colour in both designs (before: the browser's blue and
+  purple, hard to read in classic dark).
+
 ## Open points
 
 - Later, own step: the dashboard of mockup A (decided 2026-11-03: not in v0.4.0's first version).

@@ -7,7 +7,7 @@ import {Link} from "react-router";
 import type {ClaimViewDTO, InvoiceRowDTO, PayerDTO} from "../../api";
 import {MarkBox} from "../../components/MarkBox";
 import {CATEGORY_LABELS, date, eur, num, pct, plural, shortDate} from "../../lib/format";
-import {ClaimPopover, ClarifyFlag, claimOf, claimState, deadlineText, markBase, opensInvoice, payerClass, usePageVirtualizer, useRowNav} from "./shared";
+import {ClaimPopover, ClarifyFlag, claimOf, claimState, deadlineText, markBase, opensInvoice, payerClass, useDropPopover, usePageVirtualizer, useRowNav} from "./shared";
 import type {ViewProps} from "./shared";
 
 /** Space between two cards in px (views.css: article + article). */
@@ -16,13 +16,15 @@ const CARD_GAP = 12;
 export function DetailView(v: ViewProps) {
     const {rows, payers} = v;
     const pv = usePageVirtualizer(rows.length, {estimateSize: () => 190, getItemKey: i => rows[i].id, gap: CARD_GAP});
+    const rendered = pv.items.map(i => rows[i.index].id);
     const nav = useRowNav(rows.map(r => r.id), {open: v.open, toggle: v.toggleOne, scrollTo: pv.scrollTo,
-        rendered: pv.items.map(i => rows[i.index].id)});
+        rendered, firstVisible: pv.firstVisible === undefined ? undefined : rows[pv.firstVisible]?.id});
+    useDropPopover(v, rendered);
     const total = rows.reduce((s, r) => s + num(r.amount), 0);
     const own = rows.reduce((s, r) => s + num(r.ownShare), 0);
     return (
         <section className="inv-cards">
-            <div role="feed" aria-label="Rechnungen, Detailansicht" aria-busy="false" ref={el => {
+            <div role="feed" aria-label="Rechnungen, Detailansicht" aria-busy="false" {...nav.containerProps} ref={el => {
                 pv.list.current = el;
                 nav.container.current = el;
             }}>

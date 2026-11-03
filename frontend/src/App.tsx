@@ -237,12 +237,16 @@ export function useSetDesign(): (d: Design) => void {
 function AppearanceSync({dataDir}: {dataDir?: string}) {
     // again after the data folder was set: a device set up now gets no hint about the old design
     useEffect(() => {
+        let live = true; // a late answer of an earlier load must not undo a newer one
         Svc.Appearance().then(a => {
-            if (!a) return;
+            if (!a || !live) return;
             setAppearance(a);
             applyTheme(a.theme as Theme);
             applyDesign(a.design as Design);
         }, () => {});
+        return () => {
+            live = false;
+        };
     }, [dataDir]);
     return null;
 }

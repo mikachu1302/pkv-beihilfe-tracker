@@ -33,7 +33,7 @@ html, body {
 }
 .sidebar .icon { flex: none; }
 .nav-toggle { background: none; border: none; color: var(--nav-text); padding: 4px; border-radius: var(--radius-sm); cursor: pointer; display: grid; place-items: center; }
-.nav-toggle:hover, .nav-toggle:focus-visible { color: var(--nav-active); background: var(--nav-hover); }
+.nav-toggle:hover, .nav-toggle:focus-visible { color: var(--nav-active); background: var(--nav-toggle-hover); }
 .layout.nav-collapsed .sidebar { width: 56px; }
 .layout.nav-collapsed .brand { padding: 0 0 16px; justify-content: center; }
 .layout.nav-collapsed .brand-text, .layout.nav-collapsed .nav-label, .layout.nav-collapsed .nav-foot { display: none; }

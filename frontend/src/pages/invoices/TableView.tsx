@@ -12,7 +12,7 @@ import {useToast} from "../../components/feedback";
 import {patchAppearance, useAppearance} from "../../lib/appearance";
 import {CATEGORY_LABELS, date, eur, num, plural, shortDate} from "../../lib/format";
 import {useDialog} from "../../lib/useDialog";
-import {claimOf, payerClass, useRowNav} from "./shared";
+import {claimOf, opensInvoice, payerClass, useRowNav} from "./shared";
 import type {ViewProps} from "./shared";
 
 /** Column kinds, as kept in the table options (hidden columns). Per payer: expected … refunded. */
@@ -85,7 +85,8 @@ function columns(payers: PayerDTO[]): Col[] {
         {id: "amount", kind: "amount", label: "Betrag", width: 100, right: true, sortValue: r => num(r.amount),
             cell: r => ({text: amount(r.amount), title: eur(r.amount)}),
             sum: rows => amount(rows.reduce((s, r) => s + num(r.amount), 0))},
-        {id: "paid", kind: "paid", label: "Bezahlt", width: 100, sortValue: r => r.paid.done ? r.paid.date : `~${r.due}`,
+        // paid ones by date, then unpaid ones by due date, then those without
+        {id: "paid", kind: "paid", label: "Bezahlt", width: 100, sortValue: r => (r.paid.done ? `0${r.paid.date}` : r.due ? `1${r.due}` : "2"),
             cell: r => r.paid.done ? {text: shortDate(r.paid.date), title: `bezahlt am ${date(r.paid.date)}`}
                 : r.due ? {text: `fällig ${shortDate(r.due).slice(0, 6)}`, title: `fällig am ${date(r.due)}`, tone: "warn-text"} : dash},
     ];
@@ -148,7 +149,7 @@ export function TableView(v: ViewProps & {options: TableOptions}) {
 
     const rows = useMemo(() => {
         if (!sort) return v.rows;
-        const col = all.find(c => c.id === sort.id);
+        const col = cols.find(c => c.id === sort.id); // a hidden column does not sort
         if (!col) return v.rows;
         const sign = sort.dir === "asc" ? 1 : -1;
         return [...v.rows].sort((a, b) => {
@@ -156,7 +157,7 @@ export function TableView(v: ViewProps & {options: TableOptions}) {
             const d = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y), "de");
             return d * sign;
         });
-    }, [v.rows, sort, all]);
+    }, [v.rows, sort, cols]);
 
     const rowHeight = options.dense ? ROW_HEIGHT.dense : ROW_HEIGHT.normal;
     const scroller = useRef<HTMLDivElement | null>(null);
@@ -172,10 +173,12 @@ export function TableView(v: ViewProps & {options: TableOptions}) {
         getItemKey: i => rows[i].id,
     });
     const items = virtual.getVirtualItems();
+    const visibleFrom = (virtual.scrollOffset ?? 0) + HEAD_HEIGHT;
     const nav = useRowNav(rows.map(r => r.id), {
         open: v.open, toggle: v.toggleOne,
         scrollTo: i => virtual.scrollToIndex(i, {align: "auto"}),
         rendered: items.map(i => rows[i.index].id),
+        firstVisible: rows[(items.find(i => i.end > visibleFrom) ?? items[0])?.index ?? -1]?.id,
     });
 
     const top = items.length ? items[0].start - HEAD_HEIGHT : 0;
@@ -209,10 +212,15 @@ export function TableView(v: ViewProps & {options: TableOptions}) {
                 <thead>
                 <tr className="groups" aria-rowindex={1}>
                     <th className="sticky-a" aria-hidden="true"/>
-                    {groups.map((g, i) => (
-                        <th key={i} colSpan={g.span} scope={g.payer === undefined ? undefined : "colgroup"}
-                            className={`${i === 0 ? "sticky-b" : ""} ${g.payer !== undefined ? `group ${payerClass(g.payer)}` : ""}`}>{g.label}</th>
-                    ))}
+                    {/* the first column is sticky on its own; a wide sticky cell would cover the payer headers */}
+                    <th className="sticky-b" aria-hidden="true"/>
+                    {groups.map((g, i) => {
+                        const span = i === 0 ? g.span - 1 : g.span;
+                        return span > 0 && (
+                            <th key={i} colSpan={span} scope={g.payer === undefined ? undefined : "colgroup"}
+                                className={g.payer !== undefined ? `group ${payerClass(g.payer)}` : ""}>{g.label}</th>
+                        );
+                    })}
                 </tr>
                 <tr className="cols" aria-rowindex={2}>
                     <th className="sticky-a"><span className="sr-only">Auswahl</span></th>
@@ -230,7 +238,7 @@ export function TableView(v: ViewProps & {options: TableOptions}) {
                     })}
                 </tr>
                 </thead>
-                <tbody ref={el => {
+                <tbody {...nav.containerProps} ref={el => {
                     nav.container.current = el;
                 }}>
                 {top > 0 && <tr className="spacer" aria-hidden="true"><td colSpan={span} style={{height: top}}/></tr>}
@@ -239,7 +247,7 @@ export function TableView(v: ViewProps & {options: TableOptions}) {
                     const selected = v.selected.has(r.id);
                     return (
                         <tr key={r.id} className={`${item.index % 2 ? "zebra" : ""} ${selected ? "sel" : ""}`} aria-rowindex={item.index + 1 + headRows}
-                            {...nav.item(r.id)} onDoubleClick={() => v.open(r.id)}>
+                            {...nav.item(r.id)} onDoubleClick={e => opensInvoice(e.target as HTMLElement, true) && v.open(r.id)}>
                             <td className="sticky-a"><input type="checkbox" aria-label={`${r.provider} auswählen`} checked={selected} onChange={() => v.toggleOne(r.id)}/></td>
                             {cols.map((c, i) => {
                                 const cell = c.cell(r);
