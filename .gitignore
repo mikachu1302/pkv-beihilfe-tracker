@@ -27,3 +27,6 @@ frontend/bindings/
 frontend/public/ocr/
 frontend/public/pdfjs/
 frontend/public/licenses/
+
+# Python (scripts/ki-belegtest.py)
+__pycache__/
