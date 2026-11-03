@@ -39,6 +39,7 @@
   --nav-border: #e1e5ea;
   --row-hover: #f7f9fb;
   --row-selected: #eef6d9;
+  --zebra: #fafbfc;
   --toast-bg: #14171c;
   --toast-text: #f5f6f8;
   color-scheme: light;
@@ -86,6 +87,7 @@
   --nav-border: #262c34;
   --row-hover: #1a1f25;
   --row-selected: #222a1a;
+  --zebra: #171b21;
   --toast-bg: #e9ecef;
   --toast-text: #0d0f12;
   color-scheme: dark;

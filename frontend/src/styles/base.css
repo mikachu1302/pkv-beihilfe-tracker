@@ -364,3 +364,4 @@ figure.chart { margin: 0; }
 /* logo tile in the menu: only the new design shows it */
 .sidebar .logo { display: none; flex: none; width: 36px; height: 36px; border-radius: 10px; background: var(--accent); color: var(--accent-text);
   align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }

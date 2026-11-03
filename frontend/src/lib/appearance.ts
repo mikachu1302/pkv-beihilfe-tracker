@@ -14,9 +14,11 @@ export function setAppearance(a: AppearanceDTO | null) {
     listeners.forEach(l => l());
 }
 
-/** Changes some of the settings here; saving them is up to the caller. */
+const DEFAULTS: AppearanceDTO = {theme: "", design: "new", designHint: false, view: "detail", table: {dense: false, sum: true, hidden: []}};
+
+/** Changes some of the settings here (on the defaults if they did not load); saving them is up to the caller. */
 export function patchAppearance(p: Partial<AppearanceDTO>) {
-    if (state) setAppearance({...state, ...p});
+    setAppearance({...(state ?? DEFAULTS), ...p});
 }
 
 const subscribe = (l: () => void) => {

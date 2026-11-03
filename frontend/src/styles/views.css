@@ -56,3 +56,38 @@
   .inv-grid { grid-template-columns: repeat(var(--payers, 1), minmax(0, 1fr)); }
   .inv-main { grid-column: 1 / -1; border-right: none; border-bottom: 1px solid var(--border); }
 }
+
+/* ---------- Tabelle: read-only grid, only the visible rows rendered ---------- */
+.grid-wrap { overflow: auto; max-height: max(360px, calc(100vh - 64px)); background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; }
+.data-grid { border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 12.5px; background: var(--panel); }
+.data-grid th, .data-grid td { padding: 0 8px; border: none; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; background: var(--panel); }
+.data-grid .right { text-align: right; }
+.data-grid td.num { font-size: inherit; }
+.data-grid td.strong { font-weight: 600; }
+.data-grid thead th { position: sticky; z-index: 2; background: var(--panel-2); color: var(--text); font-size: 12.5px; }
+.data-grid tr.groups th { top: 0; height: 30px; text-align: center; font-weight: 600; }
+.data-grid tr.groups th.payer-1 { color: var(--payer-1); }
+.data-grid tr.groups th.payer-2 { color: var(--payer-2); }
+.data-grid tr.cols th { top: 30px; height: 34px; }
+.data-grid th[aria-sort="ascending"], .data-grid th[aria-sort="descending"] { color: var(--accent-fg); }
+.data-grid button.sort { border: none; background: none; padding: 0; font: inherit; font-weight: 600; color: inherit; cursor: pointer;
+  width: 100%; text-align: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 0; }
+.data-grid button.sort:focus-visible { outline: 2px solid var(--accent-fg); outline-offset: -2px; }
+.data-grid tbody tr:not(.spacer) { height: var(--row-h, 36px); }
+.data-grid tbody tr.spacer td { padding: 0; border: none; background: none; }
+.data-grid tbody tr.zebra td { background: var(--zebra, var(--panel)); }
+.data-grid tbody tr:hover td { background: var(--row-hover); }
+.data-grid tbody tr.sel td { background: var(--row-selected); }
+.data-grid tbody tr:focus-visible { outline: 2px solid var(--accent-fg); outline-offset: -2px; }
+.data-grid tbody tr:focus-visible td { background: var(--row-selected); }
+.data-grid .sticky-a { position: sticky; left: 0; z-index: 1; text-align: center; padding: 0; }
+.data-grid .sticky-b { position: sticky; left: 36px; z-index: 1; box-shadow: inset -1px 0 0 var(--border); }
+.data-grid thead .sticky-a, .data-grid thead .sticky-b, .data-grid tfoot .sticky-a, .data-grid tfoot .sticky-b { z-index: 3; }
+.data-grid tfoot td { position: sticky; bottom: 0; z-index: 2; height: 36px; background: var(--panel-2); font-weight: 700; border-top: 1px solid var(--border); }
+.grid-wrap.dense .data-grid { font-size: 12px; }
+.column-menu { right: 0; top: calc(100% + 6px); min-width: 380px; }
+.column-menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.column-menu-grid > div { display: flex; flex-direction: column; gap: 6px; }
+.column-menu hr { border: none; border-top: 1px solid var(--border); margin: 6px 0; width: 100%; }

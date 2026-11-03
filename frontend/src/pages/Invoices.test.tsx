@@ -9,7 +9,7 @@ import Invoices, {matchesFilter} from "./Invoices";
 
 const svc = vi.hoisted(() => ({
     Years: vi.fn(), GetSettings: vi.fn(), ListInvoices: vi.fn(), SetMark: vi.fn(), BulkSubmit: vi.fn(),
-    Dashboard: vi.fn(), Overview: vi.fn(),
+    Dashboard: vi.fn(), Overview: vi.fn(), SetTableOptions: vi.fn(),
 }));
 vi.mock("../api", () => ({Svc: svc}));
 
@@ -30,6 +30,7 @@ beforeEach(() => {
     svc.ListInvoices.mockResolvedValue(rows);
     svc.Dashboard.mockResolvedValue(figures("2026"));
     svc.Overview.mockResolvedValue({years: [], total: figures("alle")});
+    svc.SetTableOptions.mockResolvedValue(undefined);
 });
 
 /** Year figures with outstanding amounts (only what the cards read). */
@@ -246,5 +247,102 @@ describe("Invoices, new design", () => {
         await screen.findByText("Dr. Muster");
         expect(screen.queryByRole("group", {name: "Ansicht"})).not.toBeInTheDocument();
         expect(screen.queryByRole("article")).not.toBeInTheDocument();
+    });
+});
+
+/** Gives the table's scroll area a height: jsdom has no layout, the virtualiser would render no rows. */
+function stubTableHeight(px: number): () => void {
+    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+        configurable: true, get() {
+            return (this as HTMLElement).classList.contains("grid-wrap") ? px : 0;
+        },
+    });
+    return () => {
+        if (height) Object.defineProperty(HTMLElement.prototype, "offsetHeight", height);
+    };
+}
+
+describe("Invoices, table view", () => {
+    let restore = () => {};
+    beforeEach(() => {
+        setSessionView("table");
+        restore = stubTableHeight(400);
+    });
+    afterEach(() => restore());
+
+    const bodyRows = () => within(screen.getByRole("table", {name: "Rechnungen, Tabellenansicht"})).getAllByRole("row")
+        .filter(r => r.closest("tbody") && r.getAttribute("aria-hidden") !== "true");
+
+    it("shows every field as a column, grouped per payer, with a sum row", async () => {
+        renderAt("/", "/", <Invoices/>);
+        const table = await screen.findByRole("table", {name: "Rechnungen, Tabellenansicht"});
+        for (const name of ["Behandlung", "Rechnung", "Behandler", "Kategorie", "Re.-Nr.", "Betrag", "Bezahlt", "Notiz"]) {
+            expect(within(table).getByRole("columnheader", {name})).toBeInTheDocument();
+        }
+        expect(within(table).getAllByRole("columnheader", {name: "SOLL"})).toHaveLength(2);
+        expect(within(table).getByRole("columnheader", {name: "Muster PKV"})).toBeInTheDocument();
+        expect(within(table).getByText("Summe")).toBeInTheDocument();
+        expect(within(table).getByText("331,50")).toBeInTheDocument(); // 286,40 + 45,10
+        expect(table).toHaveAttribute("aria-rowcount", "5"); // 2 header rows, 2 invoices, sum row
+    });
+
+    it("sorts by a column, ascending, descending and back to the list order", async () => {
+        const user = userEvent.setup();
+        renderAt("/", "/", <Invoices/>);
+        await screen.findByRole("table", {name: "Rechnungen, Tabellenansicht"});
+        const providers = () => bodyRows().map(r => within(r).getAllByRole("cell")[3].textContent);
+        expect(providers()).toEqual(["Dr. Muster", "Apotheke am Markt"]);
+        await user.click(screen.getByRole("button", {name: "Behandler"}));
+        expect(screen.getByRole("columnheader", {name: "Behandler"})).toHaveAttribute("aria-sort", "ascending");
+        expect(providers()).toEqual(["Apotheke am Markt", "Dr. Muster"]);
+        await user.click(screen.getByRole("button", {name: "Behandler"}));
+        expect(screen.getByRole("columnheader", {name: "Behandler"})).toHaveAttribute("aria-sort", "descending");
+        await user.click(screen.getAllByRole("button", {name: "SOLL"})[0]); // sorting by another column
+        expect(screen.getByRole("columnheader", {name: "Behandler"})).toHaveAttribute("aria-sort", "none");
+        await user.click(screen.getByRole("button", {name: "Behandler"}));
+        await user.click(screen.getByRole("button", {name: "Behandler"}));
+        await user.click(screen.getByRole("button", {name: "Behandler"}));
+        expect(screen.getByRole("columnheader", {name: "Behandler"})).toHaveAttribute("aria-sort", "none");
+        expect(providers()).toEqual(["Dr. Muster", "Apotheke am Markt"]); // the list order again
+    });
+
+    it("hides columns with the column chooser and keeps the choice", async () => {
+        const user = userEvent.setup();
+        renderAt("/", "/", <Invoices/>);
+        await screen.findByRole("table", {name: "Rechnungen, Tabellenansicht"});
+        await user.click(screen.getByRole("button", {name: "Spalten 18 von 18 ▾"}));
+        const menu = screen.getByRole("dialog", {name: "Spalten"});
+        expect(within(menu).getByRole("checkbox", {name: "Behandlung"})).toBeDisabled();
+        await user.click(within(menu).getByRole("checkbox", {name: "Notiz"}));
+        expect(svc.SetTableOptions).toHaveBeenCalledWith({dense: false, sum: true, hidden: ["note"]});
+        expect(screen.queryByRole("columnheader", {name: "Notiz"})).not.toBeInTheDocument();
+        await user.click(within(menu).getByRole("checkbox", {name: "Summenzeile"}));
+        expect(screen.queryByText("Summe")).not.toBeInTheDocument();
+    });
+
+    it("opens an invoice with a double click or Enter, moves with the arrow keys", async () => {
+        const user = userEvent.setup();
+        renderAt("/", "/", <Invoices/>);
+        await screen.findByRole("table", {name: "Rechnungen, Tabellenansicht"});
+        const [first, second] = bodyRows();
+        first.focus();
+        await user.keyboard("{ArrowDown}");
+        expect(second).toHaveFocus();
+        await user.dblClick(within(first).getAllByRole("cell")[5]);
+        expect(await screen.findByText("andere Seite")).toBeInTheDocument();
+    });
+
+    it("renders only the visible rows of a long list", async () => {
+        svc.ListInvoices.mockResolvedValue(Array.from({length: 300}, (_, i) => invoiceRow(`r${i}`, `Praxis ${i + 1}`)));
+        renderAt("/", "/", <Invoices/>);
+        const table = await screen.findByRole("table", {name: "Rechnungen, Tabellenansicht"});
+        expect(table).toHaveAttribute("aria-rowcount", "303");
+        const rendered = bodyRows();
+        expect(rendered.length).toBeGreaterThan(5);
+        expect(rendered.length).toBeLessThan(40);
+        expect(rendered[0]).toHaveAttribute("aria-rowindex", "3");
+        expect(screen.queryByText("Praxis 300")).not.toBeInTheDocument();
+        expect(within(table).getByText("300 Rechnungen")).toBeInTheDocument(); // the sum row counts all
     });
 });

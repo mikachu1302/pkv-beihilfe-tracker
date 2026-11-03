@@ -6,7 +6,7 @@ import {useApp} from "../App";
 import {useConfirm, useToast} from "../components/feedback";
 import {OutstandingCards} from "../components/Outstanding";
 import {Empty, ErrorNotice, Loading, YearSelect} from "../components/ui";
-import {setSessionView, useInvoiceView, VIEW_LABELS} from "../lib/appearance";
+import {patchAppearance, setSessionView, useAppearance, useInvoiceView, VIEW_LABELS} from "../lib/appearance";
 import type {InvoiceView} from "../lib/appearance";
 import {useDesign} from "../lib/design";
 import {eur, num, plural, today} from "../lib/format";
@@ -14,11 +14,26 @@ import {useBackend} from "../lib/useBackend";
 import {dialogOpen, isTyping, key, mod, useKeydown} from "../lib/shortcuts";
 import {ClassicList} from "./invoices/ClassicList";
 import {DetailView} from "./invoices/DetailView";
+import {ColumnChooser, TableView} from "./invoices/TableView";
+import type {TableOptions} from "./invoices/TableView";
 import type {Pop, ViewProps} from "./invoices/shared";
 import {exportExcel} from "./Overview";
 
 /** The views of the new design, in the order of the switch. */
-const VIEWS: InvoiceView[] = ["detail", "classic"];
+const VIEWS: InvoiceView[] = ["detail", "table", "classic"];
+
+const DEFAULT_TABLE: TableOptions = {dense: false, sum: true, hidden: []};
+
+/** Options of the table view (device configuration); changes are saved right away. */
+function useTableOptions(): [TableOptions, (o: TableOptions) => void] {
+    const toast = useToast();
+    const a = useAppearance();
+    const options = a ? {...a.table, hidden: a.table.hidden ?? []} : DEFAULT_TABLE;
+    return [options, o => {
+        patchAppearance({table: o});
+        Svc.SetTableOptions(o).catch(toast.error);
+    }];
+}
 
 type Filter = "all" | "open" | "submitted" | "clarify" | "deadline" | "unpaid" | "warnings";
 
@@ -57,6 +72,7 @@ export default function Invoices() {
     const navigate = useNavigate();
     const design = useDesign();
     const view = useInvoiceView();
+    const [tableOptions, setTableOptions] = useTableOptions();
     const toast = useToast();
     const confirm = useConfirm();
     const years = useBackend(() => Svc.Years(), [dataVersion]);
@@ -154,6 +170,17 @@ export default function Invoices() {
                     <ViewSwitch view={view}/>
                     {view !== "classic" && visible.length > 0 && (
                         <div className="view-tools">
+                            {view === "table" && (
+                                <>
+                                    <span className="muted">Nur ansehen · Doppelklick öffnet die Rechnung</span>
+                                    <ColumnChooser payers={payers.length} options={tableOptions} onChange={setTableOptions}/>
+                                    <select aria-label="Zeilen" className="w-auto" value={tableOptions.dense ? "dense" : "normal"}
+                                            onChange={e => setTableOptions({...tableOptions, dense: e.target.value === "dense"})}>
+                                        <option value="normal">Zeilen: normal</option>
+                                        <option value="dense">Zeilen: eng</option>
+                                    </select>
+                                </>
+                            )}
                             <label className="inline">
                                 <input type="checkbox" checked={allSelected} onChange={toggleAll}/>
                                 Alle auswählen
@@ -185,7 +212,9 @@ export default function Invoices() {
                         ? <>Für {year === 0 ? "diesen Zeitraum" : year} sind noch keine Rechnungen erfasst. <Link to="/rechnung/neu">Neue Rechnung</Link> oder <Link to="/import">Excel importieren</Link>.</>
                         : "Keine Rechnung passt zum Filter."}
                 </Empty>
-            ) : view === "detail" ? <DetailView {...viewProps}/> : <ClassicList {...viewProps}/>}
+            ) : view === "detail" ? <DetailView {...viewProps}/>
+                : view === "table" ? <TableView {...viewProps} options={tableOptions}/>
+                    : <ClassicList {...viewProps}/>}
         </>
     );
 }
