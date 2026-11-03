@@ -94,6 +94,21 @@ payer, sticky header and first column, sortable by any column (`aria-sort`), col
 dense/normal rows, sum row (amount, SOLL, IST, diff per payer), horizontal scrolling inside the
 table only. Double click / Enter opens the invoice.
 
+**Only the visible rows are rendered** in Tabelle and Kompakt (decided 2026-11-03), so "alle
+Jahre" with several hundred invoices stays fast: `@tanstack/react-virtual` (headless, MIT, a few
+KB, version pinned) – rows above and below the visible area are replaced by spacers, with some
+rows of overscan. Details:
+- Tabelle: fixed row height per density (normal/dense); the sticky header, the sticky first
+  column and the sum row stay outside the virtualised body.
+- Kompakt: expanded rows are taller – their height is measured (`measureElement`).
+- Keyboard: ↑/↓ moves the selection and scrolls it into view (`scrollToIndex`); focus stays on
+  the selected row even when rows are recycled.
+- Screen readers: `aria-rowcount` on the table and `aria-rowindex` on every rendered row, so the
+  position ("Zeile 120 von 300") is announced although only part of the rows exists.
+- The search of the browser (Strg+F) cannot find rows that are not rendered – the app's own search
+  (Strg+F in the list) filters all invoices, as today.
+- Detail cards are fewer and taller; they use the same technique only if measurements show a need.
+
 **Klassische Liste** – today's invoice table with all its functions (ticks, popovers, bulk bar).
 
 Common to all views: the toolbar (year, search, filters, Ausstand per payer), keyboard
@@ -139,5 +154,4 @@ the same filters and search, the same sort order unless the table is sorted othe
 - Later, own step: the dashboard of mockup A (decided 2026-11-03: not in v0.4.0's first version).
 - Status dots need a text alternative in every place (screen readers, colour blindness): the
   short text next to them ("eingereicht 20.09.") stays visible, the dots are decoration.
-- Performance with several hundred invoices in the table ("alle Jahre"): render all rows first,
-  measure, virtualise only if needed.
+
