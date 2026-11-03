@@ -6,9 +6,15 @@ Schickt jeden Beleg eines Ordners an einen OpenAI-kompatiblen Server im
 lokalen Netz (LM Studio, Nexa, Ollama, llama.cpp), misst die Zeit und
 vergleicht die Felder mit den erwarteten Werten aus erwartet.json.
 
-    python3 scripts/ki-belegtest.py modelle --server http://192.168.178.38:1234/v1
+    export LLM_API_KEY=…                    # der Schlüssel des Servers
+    python3 scripts/ki-belegtest.py modelle
     python3 scripts/ki-belegtest.py vorlage ~/Belegtest
-    python3 scripts/ki-belegtest.py test ~/Belegtest --server http://192.168.178.38:1234/v1 --modell qwen3-vl-8b
+    python3 scripts/ki-belegtest.py test ~/Belegtest
+
+Voreingestellt ist der Server im Heimnetz (llama.cpp auf dem Galaxy Book,
+http://192.168.178.38:8080/v1, Modell qwen3-vl-8b); --server, --modell und
+--schluessel ändern das. Der Schlüssel kommt sonst aus LLM_API_KEY oder aus
+API_KEY in der Datei .env im Wurzelordner des Repositorys (nicht versioniert).
 
 Ein Beleg ist eine Bilddatei (jpg, png, webp), eine PDF-Datei (jede Seite
 ein Bild) oder ein Unterordner (seine Dateien sind die Seiten, nach Namen
@@ -21,6 +27,7 @@ ImageMagick (magick) zum Verkleinern großer Bilder, beides optional.
 import argparse
 import base64
 import json
+import os
 import re
 import shutil
 import statistics
@@ -46,6 +53,8 @@ FIELDS = {
 DATE_FIELDS = {"rechnungsdatum", "behandlung_von", "behandlung_bis"}
 IMAGE_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
 EXPECTED = "erwartet.json"
+SERVER = "http://192.168.178.38:8080/v1"
+MODEL = "qwen3-vl-8b"
 
 SYSTEM = ("Du liest Belege der deutschen privaten Krankenversicherung und Beihilfe aus: Arztrechnungen, "
           "Zahnarztrechnungen, Rezepte, Rechnungen von Apotheken und Therapeuten. Antworte nur mit JSON.")
@@ -63,6 +72,19 @@ SCHEMA = {
 
 
 # --- Belege finden und vorbereiten ---------------------------------------------------------
+
+def env_key() -> str:
+    """The API key: LLM_API_KEY, else API_KEY (or LLM_API_KEY) from .env in the repository root."""
+    if os.environ.get("LLM_API_KEY"):
+        return os.environ["LLM_API_KEY"]
+    env = Path(__file__).resolve().parent.parent / ".env"
+    if env.is_file():
+        for line in env.read_text().splitlines():
+            name, _, value = line.strip().partition("=")
+            if name.strip() in ("API_KEY", "LLM_API_KEY") and value.strip():
+                return value.strip().strip('"').strip("'")
+    return ""
+
 
 def natural_key(p: Path):
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", p.name)]
@@ -121,6 +143,25 @@ def call(server: str, path: str, key: str, body: dict | None, timeout: int) -> d
         return json.loads(resp.read())
 
 
+def key_refused(e: urllib.error.HTTPError):
+    sys.exit(f"Der Server lehnt ab (HTTP {e.code}): API-Schlüssel fehlt oder ist falsch – --schluessel, LLM_API_KEY oder API_KEY in .env.")
+
+
+def check_health(server: str):
+    """llama.cpp answers GET /health without a key; other servers may not have it (then nothing to check)."""
+    url = re.sub(r"/v1/?$", "", server.rstrip("/")) + "/health"
+    try:
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            body = resp.read().decode(errors="replace")
+        if '"ok"' not in body:
+            print(f"Hinweis: {url} meldet {body.strip()[:80]}")
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            print(f"Hinweis: {url} antwortet mit HTTP {e.code}")
+    except (urllib.error.URLError, TimeoutError) as e:
+        sys.exit(f"Server nicht erreichbar ({url}): {e}. Läuft das Galaxy Book, am Netzteil, im WLAN?")
+
+
 def ask(args, images: list[Path], use_schema: bool) -> tuple[dict, dict]:
     content = [{"type": "text", "text": PROMPT}] + [{"type": "image_url", "image_url": {"url": data_url(p)}} for p in images]
     body = {"model": args.modell, "temperature": 0, "max_tokens": 800,
@@ -129,7 +170,8 @@ def ask(args, images: list[Path], use_schema: bool) -> tuple[dict, dict]:
         body["response_format"] = {"type": "json_schema", "json_schema": {"name": "beleg", "strict": True, "schema": SCHEMA}}
     resp = call(args.server, "/chat/completions", args.schluessel, body, args.timeout)
     text = resp["choices"][0]["message"].get("content") or ""
-    return parse_json(text), resp.get("usage") or {}
+    # llama.cpp adds "timings" (tokens per second while reading and writing)
+    return parse_json(text), {**(resp.get("usage") or {}), **({"timings": resp["timings"]} if "timings" in resp else {})}
 
 
 def parse_json(text: str) -> dict:
@@ -195,7 +237,13 @@ def check_folder(folder: Path, force: bool):
 
 
 def cmd_models(args):
-    resp = call(args.server, "/models", args.schluessel, None, 30)
+    check_health(args.server)
+    try:
+        resp = call(args.server, "/models", args.schluessel, None, 30)
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            key_refused(e)
+        sys.exit(f"{args.server}/models: HTTP {e.code}")
     for m in resp.get("data", []):
         print(m.get("id"))
 
@@ -223,6 +271,9 @@ def cmd_test(args):
         sys.exit(f"{folder}: keine Belege gefunden")
     expected = json.loads((folder / EXPECTED).read_text())["dokumente"] if (folder / EXPECTED).exists() else {}
     use_schema = not args.ohne_schema
+    if not args.schluessel:
+        print("Hinweis: kein API-Schlüssel (--schluessel, LLM_API_KEY oder API_KEY in .env) – der Server im Heimnetz verlangt einen.")
+    check_health(args.server)
     results, per_field = [], {k: [0, 0] for k in FIELDS}
     print(f"{len(docs)} Belege → {args.server} ({args.modell})\n")
     for n, (name, pages) in enumerate(docs.items()):
@@ -233,6 +284,8 @@ def cmd_test(args):
                 try:
                     got, usage = ask(args, images, use_schema)
                 except urllib.error.HTTPError as e:
+                    if e.code in (401, 403):
+                        key_refused(e)
                     if not use_schema or e.code not in (400, 422, 500):
                         raise
                     use_schema = False  # der Server kennt kein JSON-Schema: ohne weiter
@@ -268,6 +321,11 @@ def cmd_test(args):
         per_page = [r["sekunden"] / r["seiten"] for r in warm]
         print(f"Zeit pro Seite: Median {statistics.median(per_page):.1f} s, Mittel {statistics.mean(per_page):.1f} s"
               + (f" (ohne den ersten Beleg, der das Modell lädt: {results[0]['sekunden']:.1f} s)" if len(ok) > 1 else ""))
+    timings = [r["usage"]["timings"] for r in warm if "timings" in r["usage"]]
+    if timings:
+        read = statistics.median(t.get("prompt_per_second", 0) for t in timings)
+        write = statistics.median(t.get("predicted_per_second", 0) for t in timings)
+        print(f"Lesen {read:.0f} Token/s, Schreiben {write:.0f} Token/s")
     total = sum(r["verglichen"] for r in ok)
     if total:
         print(f"Felder richtig: {sum(r['richtig'] for r in ok)} von {total} ({100 * sum(r['richtig'] for r in ok) / total:.0f} %)")
@@ -290,8 +348,9 @@ def main():
     sub = ap.add_subparsers(dest="befehl", required=True)
 
     def server_args(p):
-        p.add_argument("--server", required=True, help="OpenAI-kompatible Adresse, z. B. http://192.168.178.38:1234/v1")
-        p.add_argument("--schluessel", default="", help="API-Schlüssel, falls der Server einen verlangt")
+        p.add_argument("--server", default=SERVER, help=f"OpenAI-kompatible Adresse (Standard {SERVER})")
+        p.add_argument("--schluessel", default=env_key(),
+                       help="API-Schlüssel (Standard: LLM_API_KEY oder API_KEY aus .env im Repository)")
 
     m = sub.add_parser("modelle", help="Modelle auflisten, die der Server anbietet")
     server_args(m)
@@ -301,8 +360,8 @@ def main():
     t = sub.add_parser("test", help="alle Belege auslesen lassen, Zeit messen, mit erwartet.json vergleichen")
     t.add_argument("ordner")
     server_args(t)
-    t.add_argument("--modell", required=True, help="Name des Modells, wie „modelle“ ihn zeigt")
-    t.add_argument("--max-seite", type=int, default=1600, help="Bilder auf höchstens so viele Pixel Kantenlänge verkleinern (0: nie; Standard 1600)")
+    t.add_argument("--modell", default=MODEL, help=f"Name des Modells, wie „modelle“ ihn zeigt (Standard {MODEL})")
+    t.add_argument("--max-seite", type=int, default=1400, help="Bilder auf höchstens so viele Pixel Kantenlänge verkleinern (0: nie; Standard 1400)")
     t.add_argument("--timeout", type=int, default=600, help="Sekunden je Beleg (Standard 600)")
     t.add_argument("--ohne-schema", action="store_true", help="kein JSON-Schema mitschicken (für Server, die es nicht kennen)")
     t.add_argument("--trotzdem", action="store_true", help=argparse.SUPPRESS)

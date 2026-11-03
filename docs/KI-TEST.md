@@ -1,90 +1,46 @@
-# KI-Belegtest: lokales Modell auf dem Galaxy Book
+# KI-Belegtest: lokales Modell im Heimnetz
 
-Ziel: herausfinden, ob ein KI-Modell im Heimnetz Belege zuverlässiger ausliest als die
-Texterkennung der App – und wie lange es pro Seite braucht. Danach entscheiden wir, ob und wie
-die App eine KI als Ergänzung bekommt (nur im lokalen Netz, ohne Cloud).
+Ziel: herausfinden, ob das KI-Modell im Heimnetz Belege zuverlässiger ausliest als die
+Texterkennung der App – und wie lange es pro Seite braucht. Die Ergebnisse entscheiden die
+offenen Punkte in [PLAN-v0.5.md](PLAN-v0.5.md).
 
-Getestet werden zwei Wege auf dem Samsung Galaxy Book4 Edge (Snapdragon X Elite, 16 GB,
-Windows):
+## Der Server
 
-| | Weg A: LM Studio (oder Ollama) | Weg B: Nexa SDK |
-|---|---|---|
-| Rechnet auf | CPU (ggf. GPU) | NPU |
-| Modell | Qwen3-VL **8B** (und zum Vergleich 4B) | Qwen3-VL **4B** (NPU-Fassung) |
-| Erwartung | genauer, langsamer | schneller und sparsamer, etwas ungenauer |
+Eingerichtet am 2026-11-03 auf dem Galaxy Book4 Edge (Snapdragon X Elite, 16 GB, Windows 11):
 
-Beide bieten eine OpenAI-kompatible Schnittstelle – genau die würde die App später nutzen.
-Menüs und Befehle können sich mit neuen Versionen ändern; im Zweifel die Hilfe des jeweiligen
-Programms ansehen.
+| | |
+|---|---|
+| Adresse | `http://192.168.178.38:8080/v1` (OpenAI-kompatibel) |
+| Erreichbar? | `http://192.168.178.38:8080/health` → `{"status":"ok"}` (ohne Schlüssel) |
+| Schlüssel | API-Schlüssel (`Authorization: Bearer …`) – liegt auf dem Server, wird separat weitergegeben und **nie** ins Repository geschrieben |
+| Modell | `qwen3-vl-8b` (Qwen3-VL-8B-Instruct, Q4_0, mit Bildverständnis) |
+| Software | llama.cpp `llama-server`; Text auf der CPU, Bilder auf der Adreno-GPU (OpenCL) |
+| Betrieb | startet beim Booten, auch ohne Anmeldung; am Netzteil, Deckel zu |
+| Last | bis zu 4 Anfragen gleichzeitig (gemeinsam 16k Token Kontext); zwei Handys nutzen ihn mit |
 
-## 1. Galaxy Book vorbereiten
+Gemessen beim Einrichten: eine Rechnung als Bild (1000×1400 px) → JSON in etwa **47 s**, alle
+Felder richtig.
 
-1. **Netzteil anschließen und Ruhezustand aus** (PowerShell als Administrator):
+Den Schlüssel als `API_KEY=…` in die Datei `.env` im Wurzelordner des Repositorys schreiben –
+sie ist von Git ausgeschlossen (`.gitignore`) und wird vom Testskript gelesen. Alternativ die
+Umgebungsvariable `LLM_API_KEY` setzen. Schnelltest vom eigenen Rechner:
 
-   ```powershell
-   powercfg /change standby-timeout-ac 0
-   powercfg /change hibernate-timeout-ac 0
-   ```
+```sh
+export LLM_API_KEY=…   # der Schlüssel vom Server
+curl http://192.168.178.38:8080/health
+curl -H "Authorization: Bearer $LLM_API_KEY" http://192.168.178.38:8080/v1/models
+```
 
-   Zuklappen soll den Rechner nicht schlafen legen: Systemsteuerung → Energieoptionen →
-   „Auswählen, was beim Zuklappen des Computers geschehen soll“ → im Netzbetrieb „Nichts
-   unternehmen“.
-2. **Feste Adresse im Netz**: im Router dem Galaxy Book immer dieselbe IPv4-Adresse geben (bei
-   der FRITZ!Box: Heimnetz → Netzwerk → Gerät bearbeiten → „Diesem Netzwerkgerät immer die gleiche
-   IPv4-Adresse zuweisen“). Die Adresse zeigt `ipconfig` (IPv4-Adresse). **Das Galaxy Book hat die
-   feste Adresse `192.168.178.38`** – sie steht in allen Befehlen unten.
-3. **Netzwerkprofil „Privat“** (Einstellungen → Netzwerk und Internet → WLAN/Ethernet →
-   Netzwerkprofiltyp), damit die Freigabe nur im Heimnetz gilt.
-
-## 2a. Weg A: LM Studio (CPU/GPU)
-
-1. LM Studio für **Windows ARM64** von lmstudio.ai installieren.
-2. Unter „Discover“ nach **Qwen3-VL** suchen und die **8B**-Fassung laden (GGUF, Quantisierung
-   Q4_K_M – etwa 5–6 GB). Zum Vergleich später auch die **4B**-Fassung.
-3. Reiter „Developer“: Modell laden, Server starten, **„Serve on Local Network“** einschalten.
-   Port ist meist **1234**. Optional unter den Server-Einstellungen einen API-Schlüssel festlegen.
-4. Firewall öffnen (PowerShell als Administrator):
-
-   ```powershell
-   New-NetFirewallRule -DisplayName "KI-Server LM Studio" -Direction Inbound -Protocol TCP -LocalPort 1234 -Action Allow -Profile Private
-   ```
-
-Adresse für den Test: `http://192.168.178.38:1234/v1`
-
-**Alternativ Ollama:** installieren, `ollama pull qwen3-vl:8b`, die Umgebungsvariable
-`OLLAMA_HOST` auf `0.0.0.0:11434` setzen (Systemeigenschaften → Umgebungsvariablen), Ollama neu
-starten, Firewall für Port 11434 öffnen. Adresse: `http://192.168.178.38:11434/v1`
-
-## 2b. Weg B: Nexa SDK (NPU)
-
-1. Aktuelle **NPU-Treiber** für den Snapdragon installieren (Windows Update bzw. Samsung Update).
-2. Nexa SDK von github.com/NexaAI/nexa-sdk installieren – die **arm64-Fassung mit Qualcomm-NPU**.
-3. Modell laden und einmal ausprobieren (in einer Eingabeaufforderung):
-
-   ```
-   nexa infer NexaAI/Qwen3-VL-4B-Instruct-NPU
-   ```
-
-4. Server fürs Heimnetz starten:
-
-   ```
-   nexa serve --host 0.0.0.0:8080
-   ```
-
-   (`nexa serve --help` zeigt die Optionen, falls sich etwas geändert hat.)
-5. Firewall für Port 8080 öffnen (wie oben, mit `-LocalPort 8080`).
-
-Adresse für den Test: `http://192.168.178.38:8080/v1`
-
-## 3. Testbelege zusammenstellen
+## 1. Testbelege zusammenstellen
 
 1. Einen Ordner **außerhalb** des Repositorys anlegen, z. B. `~/Belegtest` (das Skript verweigert
    Ordner im Repository – echte Belege gehören nicht dorthin).
-2. 5–10 Belege hineinlegen, vor allem solche, bei denen die Texterkennung der App scheitert oder
-   Felder falsch füllt; dazu ein, zwei einfache zum Vergleich.
+2. 5–10 Rechnungen und 2–3 Bescheide hineinlegen, vor allem solche, bei denen die Texterkennung der
+   App scheitert oder Felder falsch füllt; dazu ein, zwei einfache zum Vergleich.
    - ein Beleg = eine Bilddatei (jpg, png, webp) oder eine PDF;
    - ein mehrseitiger Beleg aus Fotos = ein Unterordner mit den Seiten (Namen in Seitenfolge,
-     z. B. `01.jpg`, `02.jpg`).
+     z. B. `01.jpg`, `02.jpg`). Mindestens ein mehrseitiger Beleg sollte dabei sein – ob drei
+     Seiten in eine Anfrage passen, ist eine der offenen Fragen.
 3. Die Vorlage für die erwarteten Werte anlegen:
 
    ```sh
@@ -94,54 +50,61 @@ Adresse für den Test: `http://192.168.178.38:8080/v1`
    und in `~/Belegtest/erwartet.json` je Beleg eintragen, was richtig wäre (Behandler,
    Rechnungsdatum, Behandlungszeitraum, Betrag, Rechnungsnummer, IBAN, Zahlungsempfänger).
    Datum und Betrag dürfen wie auf dem Beleg geschrieben werden („21.09.2026“, „1.234,56“).
-   Leere Felder werden nicht verglichen.
+   Leere Felder werden nicht verglichen. (Bei Bescheiden genügen vorerst Absender und Datum – die
+   einzelnen Zeilen prüft der Test noch nicht.)
 
-## 4. Test ausführen
+## 2. Test ausführen
 
-Vom Rechner mit dem Tracker aus (Python 3 genügt; für PDFs `pdftoppm`, zum Verkleinern großer
-Fotos ImageMagick – beides ist unter Fedora meist schon da):
+Vom eigenen Rechner aus (Python 3 genügt; für PDFs `pdftoppm`, zum Verkleinern großer Fotos
+ImageMagick – beides ist unter Fedora meist schon da). Server, Modell und Schlüssel (aus
+`LLM_API_KEY` oder `API_KEY` in `.env`) sind voreingestellt:
 
 ```sh
-# Verbindung prüfen und den Modellnamen ablesen
-python3 scripts/ki-belegtest.py modelle --server http://192.168.178.38:1234/v1
-
-# Test (Modellname wie von „modelle“ angezeigt)
-python3 scripts/ki-belegtest.py test ~/Belegtest --server http://192.168.178.38:1234/v1 --modell qwen3-vl-8b
+python3 scripts/ki-belegtest.py modelle            # Verbindung und Modell prüfen
+python3 scripts/ki-belegtest.py test ~/Belegtest
 ```
 
-Optionen: `--schluessel …` (API-Schlüssel), `--max-seite 1600` (Bilder vor dem Senden auf diese
-Kantenlänge verkleinern; größer = genauer, aber langsamer; `0` = nie), `--timeout 600`
-(Sekunden je Beleg), `--ohne-schema` (falls der Server kein JSON-Schema versteht – das Skript
-merkt das meist selbst).
+Optionen: `--server …`, `--modell …`, `--schluessel …` (statt `.env`/`LLM_API_KEY`), `--max-seite 1400`
+(Bilder vor dem Senden auf diese Kantenlänge verkleinern; größer = genauer, aber langsamer; `0` =
+nie), `--timeout 600` (Sekunden je Beleg), `--ohne-schema` (falls ein Server kein JSON-Schema
+versteht – das Skript merkt das meist selbst).
 
-Für jeden Weg und jedes Modell einmal laufen lassen. Ausgabe:
+Am besten zweimal laufen lassen: einmal, wenn die Handys den Server nicht nutzen, einmal
+nebenbei – dann zeigt sich, wie langsam es im Alltag wird. Ausgabe:
 
 ```
 rechnung-zahnarzt.jpg               1 S.    41.3 s    6/7
     betrag: „1.284,50“ statt „1.248,50“
 …
 Zeit pro Seite: Median 38.2 s, Mittel 40.1 s (ohne den ersten Beleg, der das Modell lädt: 95.0 s)
+Lesen 41 Token/s, Schreiben 14 Token/s
 Felder richtig: 41 von 46 (89 %)
 ```
 
 Die vollständigen Antworten liegen danach in `~/Belegtest/ki-ergebnisse/` (eine Datei je Lauf).
 
-## 5. Auswerten
+## 3. Auswerten
 
 - **Genauigkeit**: Wie viele Felder stimmen – und vor allem: Erfindet das Modell Werte (z. B.
   einen Betrag, der nicht auf dem Beleg steht)? Ein leeres Feld ist harmlos, ein falscher Betrag
   nicht.
 - **Zeit pro Seite**: Für „schwierige Belege auf Knopfdruck“ sind auch 30–60 s in Ordnung, für
   jeden Beleg nebenbei eher nicht.
-- **Vergleich A/B**: Reicht das 4B-Modell auf der NPU, oder braucht es das 8B-Modell?
+- **Mehrseitige Belege**: Kommt eine Antwort, oder lehnt der Server ab (Kontext zu klein)?
+- **Bescheide**: Liest das Modell die Zeilen brauchbar? (Dann lohnt sich Phase 2 im Plan.)
 
-Mit den Zahlen planen wir die Umsetzung in der App (Einstellungen: Adresse und Modell; „Mit KI
-auslesen“ im Posteingang und Formular; Gegenprüfungen wie Summe der Positionen und IBAN-Prüfziffer;
-alles bleibt zur Prüfung, nichts wird ungefragt gespeichert).
+Die Zusammenfassung des Skripts (Zeit pro Seite, Felder richtig, auffällige Fehler) reicht als
+Rückmeldung; die Belege selbst müssen dafür nicht weitergegeben werden.
+
+## Später vergleichen: die NPU
+
+Der Snapdragon hat eine NPU. Über das Nexa SDK gibt es Qwen3-VL in der **4B**-Fassung für die NPU
+(`nexa serve`, ebenfalls OpenAI-kompatibel) – vermutlich schneller und sparsamer, aber etwas
+ungenauer als das 8B-Modell. Falls das 8B-Modell zu langsam ist, lässt sich das mit demselben
+Skript vergleichen (`--server`, `--modell`).
 
 ## Datenschutz
 
 Die Belege gehen nur vom eigenen Rechner zum Galaxy Book im Heimnetz, nicht ins Internet. Die
-Verbindung ist im Heimnetz unverschlüsselt (HTTP); deshalb die Freigabe nur für das private
-Netzwerkprofil und optional mit API-Schlüssel. Testordner und Ergebnisse bleiben außerhalb des
-Repositorys.
+Verbindung ist im Heimnetz unverschlüsselt (HTTP); der Server ist nur im Heimnetz erreichbar und
+verlangt einen API-Schlüssel. Testordner und Ergebnisse bleiben außerhalb des Repositorys.

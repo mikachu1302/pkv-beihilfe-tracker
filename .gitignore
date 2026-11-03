@@ -30,3 +30,6 @@ frontend/public/licenses/
 
 # Python (scripts/ki-belegtest.py)
 __pycache__/
+
+# local secrets (API key of the LLM server) – never commit
+.env

@@ -281,9 +281,10 @@ into the repo.
 ## 15. Open points
 
 - App name (working title: pkv-beihilfe-tracker; window title "PKV Beihilfe Tracker").
-- A local AI model in the home network (e.g. Qwen3-VL on a spare Snapdragon laptop, through an
-  OpenAI-compatible server) to read documents the text recognition gets wrong – first a test of
-  accuracy and time per page: [KI-TEST.md](KI-TEST.md), `scripts/ki-belegtest.py`.
+- A local AI model in the home network to read documents the text recognition gets wrong: the
+  server runs (llama.cpp, Qwen3-VL-8B on a spare Snapdragon laptop, OpenAI-compatible, LAN only);
+  plan: [PLAN-v0.5.md](PLAN-v0.5.md); test of accuracy and time per page first:
+  [KI-TEST.md](KI-TEST.md), `scripts/ki-belegtest.py`.
 - A screen to view and delete learned aliases and column layouts.
 - Phone upload: optional end-to-end encryption (key in the URL fragment); cropping and
   deskewing photos on the desktop.
