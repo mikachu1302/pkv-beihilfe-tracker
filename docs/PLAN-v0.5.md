@@ -299,6 +299,7 @@ or was decided on the way:
   | 15 new questions after fixing those misses, run once | 12 (80 %) | 11 (73 %) |
   | 15 more new questions, run once | 10 (66 %) | 12 (80 %) |
   | all 87 at the end (most of them known to the rules) | 62 (71 %) | 85 (97 %) |
+  | all 87 after the review fixes (rules rewritten to whole words) | 61 (70 %) | 87 (100 %) |
 
   So the honest figure for questions phrased in a new way is **about three in four** – below the
   85 % aimed for; the chips make each miss visible and fixable without asking again. Every new
@@ -317,4 +318,22 @@ or was decided on the way:
   query. Questions about the date of submission or refund cannot be expressed either (the date
   filters are about the treatment). Open point 5 stays: collect such questions during use.
 - "Fragen" is a menu entry only while the AI is on; the shortcuts number the visible entries.
+
+**Review (2026-11-03, three agents: Go backend, query model, frontend).** Fixed in 5645b17,
+3e1cc92 and 3eba495, among others:
+- CI was red on main after the first push (a Windows file-mode test, gofmt, new lint findings –
+  golangci-lint had not been on the PATH locally).
+- Questions: the rules had matched word parts ("zurück" in "zurückbekommen", "kürz" in
+  "kürzlich", "mehr als" in "mehr als 500 Euro") and ignored negation ("ohne Klärungsbedarf");
+  provider names with category words, payer names in other words ("ERGO" in "Ergotherapie"),
+  "noch zahlen" said by a payer, several year phrasings. Now the question is folded and the rules
+  read whole words; `misread_test.go` holds phrasings where a rule must not fire; every recorded
+  model answer must be corrected right.
+- Run: "ohne Klärungsbedarf" per invoice, no double counting by payer, sort by size.
+- Reading: a treatment period from two readings kept in order, date checks against the invoice
+  date that is taken, due dates ahead allowed, parts of an invoice number no confirmation, stale
+  notes of the text recognition dropped.
+- Frontend: late readings of changed pages dropped, AI values replaceable when the pages change,
+  "Speichern & nächste" and "Verlauf leeren" cancel, focus and screen-reader fixes, "Fragen" last
+  in the menu (the shortcuts of the other entries stay).
 
