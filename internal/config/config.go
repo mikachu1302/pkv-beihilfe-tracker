@@ -22,6 +22,9 @@ type Config struct {
 	// BackupDir receives zip snapshots of the data folder (device-local:
 	// each device may keep its own backups).
 	BackupDir string `json:"backupDir,omitempty"`
+	// Theme is the colour scheme of this device: "" follows the system,
+	// "light" or "dark".
+	Theme string `json:"theme,omitempty"`
 }
 
 // Dir returns the folder for the device-local configuration.

@@ -6,6 +6,8 @@ import {Svc} from "./api";
 import type {StatusDTO} from "./api";
 import {FeedbackProvider, useConfirm, useToast} from "./components/feedback";
 import {ErrorNotice, Loading, Notice} from "./components/ui";
+import {THEME_LABELS, applyTheme, nextTheme, useTheme} from "./lib/theme";
+import type {Theme} from "./lib/theme";
 import {useBackend} from "./lib/useBackend";
 import {clearUnsavedChanges, dialogOpen, hasUnsavedChanges, isMac, isTyping, key, mod, useKeydown} from "./lib/shortcuts";
 import {useDialog} from "./lib/useDialog";
@@ -112,6 +114,7 @@ function Layout({status, children}: {status: StatusDTO; children: ReactNode}) {
                         {to === "/posteingang" && waiting > 0 && <span className="nav-count" aria-label={`${waiting} Belege`}>{waiting}</span>}
                     </NavLink>
                 ))}
+                <ThemeToggle/>
                 <div className="nav-foot">
                     {status.dataDir && <>Daten: {status.dataDir}<br/></>}
                     Version {status.version}
@@ -174,6 +177,45 @@ function AppRoutes({status}: {status: StatusDTO}) {
     );
 }
 
+/**
+ * Sets the colour scheme of this device and keeps it in the device
+ * configuration. A failure to save is reported; the scheme still applies.
+ */
+export function useSetTheme(): (t: Theme) => void {
+    const toast = useToast();
+    return t => {
+        applyTheme(t);
+        Svc.SetTheme(t).catch(toast.error);
+    };
+}
+
+/** Quick toggle in the menu: System → Hell → Dunkel. */
+function ThemeToggle() {
+    const theme = useTheme();
+    const setTheme = useSetTheme();
+    const next = nextTheme(theme);
+    const label = `Farbschema: ${THEME_LABELS[theme]} – umschalten auf ${THEME_LABELS[next]}`;
+    return (
+        <button type="button" className="nav-button" title={label} aria-label={label} onClick={() => setTheme(next)}>
+            <Icon name={theme === "" ? "theme-system" : theme === "light" ? "theme-light" : "theme-dark"}/>
+            <span className="nav-label">{THEME_LABELS[theme]}</span>
+        </button>
+    );
+}
+
+/** Takes the colour scheme from the device configuration (localStorage may be empty). */
+function ThemeSync() {
+    const theme = useTheme();
+    useEffect(() => {
+        Svc.Appearance().then(a => {
+            if (a && a.theme !== theme) applyTheme(a.theme as Theme);
+        }, () => {});
+        // once at start
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+    return null;
+}
+
 /** Listens for changes another device made to the data folder. */
 function LiveUpdates({onChange}: {onChange: () => void}) {
     const toast = useToast();
@@ -209,6 +251,7 @@ export default function App() {
     return (
         <FeedbackProvider>
             <LiveUpdates onChange={onChange}/>
+            <ThemeSync/>
             <HashRouter>
                 {error && <main className="content"><ErrorNotice error={error}/></main>}
                 {!status && !error && <Loading/>}
@@ -232,6 +275,9 @@ const ICONS: Record<string, ReactNode> = {
     settings: <><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></>,
     collapse: <path d="M15 6l-6 6 6 6"/>,
     expand: <path d="M9 6l6 6-6 6"/>,
+    "theme-system": <><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></>,
+    "theme-light": <><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></>,
+    "theme-dark": <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>,
 };
 
 /** Small line icons for the menu (inline SVG, colour from the text). */

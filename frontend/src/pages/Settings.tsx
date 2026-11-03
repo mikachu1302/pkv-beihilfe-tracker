@@ -1,12 +1,14 @@
 import {useEffect, useRef, useState} from "react";
 import {Desktop, Svc} from "../api";
 import type {BackupStatusDTO, CoverageDTO, PayerDTO, ProblemDTO, SettingsDTO, YearSettingDTO} from "../api";
-import {useApp} from "../App";
+import {useApp, useSetTheme} from "../App";
 import {useToast} from "../components/feedback";
 import {ErrorNotice, Field, Loading, Notice} from "../components/ui";
 import {errMsg, toInput} from "../lib/format";
 import {key, useSaveShortcut, useUnsavedChanges} from "../lib/shortcuts";
 import {useBackend} from "../lib/useBackend";
+import {THEME_LABELS, useTheme} from "../lib/theme";
+import type {Theme} from "../lib/theme";
 
 /** Amounts in the form use the German format. */
 function forForm(s: SettingsDTO): SettingsDTO {
@@ -116,6 +118,7 @@ export default function Settings() {
                 reloadStatus();
                 loaded.reload();
             }}/>
+            <Appearance/>
             <Backups onChanged={reloadStatus}/>
             {newer && (
                 <Notice kind="warn">
@@ -230,6 +233,27 @@ export default function Settings() {
                 }}>Zurücksetzen</button>
             </div>
         </>
+    );
+}
+
+/** Darstellung: settings of this device only (not synced with the data folder). */
+function Appearance() {
+    const theme = useTheme();
+    const setTheme = useSetTheme();
+    return (
+        <section className="panel" aria-label="Darstellung">
+            <h2 style={{marginTop: 0}}>Darstellung</h2>
+            <fieldset className="choice">
+                <legend>Farbschema</legend>
+                {(Object.keys(THEME_LABELS) as Theme[]).map(t => (
+                    <label key={t} className="inline">
+                        <input type="radio" name="theme" checked={theme === t} onChange={() => setTheme(t)}/>
+                        {THEME_LABELS[t]}
+                    </label>
+                ))}
+            </fieldset>
+            <p className="muted small">Gilt nur für dieses Gerät. Schnell umschalten lässt es sich auch unten im Menü.</p>
+        </section>
     );
 }
 

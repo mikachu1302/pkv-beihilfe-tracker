@@ -22,25 +22,24 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #14181e;
-    --panel: #1c222b;
-    --border: #2e3744;
-    --text: #e4e8ee;
-    --muted: #97a3b2;
-    --accent: #5b8ff0;
-    --accent-text: #0f1a2e;
-    --good: #4cc282;
-    --warn: #e0a84a;
-    --bad: #f07272;
-    --bad-strong: #b83434;
-    --good-bg: #183327;
-    --warn-bg: #3a2e17;
-    --bad-bg: #3d1e1e;
-    --nav: #10141a;
-    color-scheme: dark;
-  }
+/* Dark: chosen on this device or, with "Wie das System", by the system (lib/theme.ts sets data-theme). */
+:root[data-theme="dark"] {
+  --bg: #14181e;
+  --panel: #1c222b;
+  --border: #2e3744;
+  --text: #e4e8ee;
+  --muted: #97a3b2;
+  --accent: #5b8ff0;
+  --accent-text: #0f1a2e;
+  --good: #4cc282;
+  --warn: #e0a84a;
+  --bad: #f07272;
+  --bad-strong: #b83434;
+  --good-bg: #183327;
+  --warn-bg: #3a2e17;
+  --bad-bg: #3d1e1e;
+  --nav: #10141a;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -82,6 +81,13 @@ html, body {
 .layout.nav-collapsed .sidebar a { padding: 10px 0 10px 16px; position: relative; }
 .layout.nav-collapsed .nav-count { position: absolute; top: 3px; left: 30px; margin: 0; min-width: 16px; padding: 0 4px; font-size: 10px; }
 .sidebar a:hover { color: var(--nav-active); }
+.nav-button { margin-top: auto; background: none; border: none; border-left: 3px solid transparent; border-radius: 0; color: var(--nav-text);
+  padding: 8px 20px 8px 17px; display: flex; align-items: center; gap: 10px; white-space: nowrap; font: inherit; cursor: pointer; text-align: left; }
+.nav-button:hover, .nav-button:focus-visible { color: var(--nav-active); background: rgba(255,255,255,.05); }
+.layout.nav-collapsed .nav-button { padding: 10px 0 10px 16px; }
+.nav-button + .nav-foot { margin-top: 0; }
+fieldset.choice { border: none; padding: 0; margin: 0 0 8px; display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; }
+fieldset.choice legend { padding: 0; margin-bottom: 6px; font-weight: 600; width: 100%; }
 .sidebar a.active { color: var(--nav-active); border-left-color: var(--accent); background: rgba(255,255,255,.05); }
 .nav-foot { margin-top: auto; padding: 12px 20px 0; color: var(--nav-text); font-size: 11px; opacity: .7; word-break: break-all; }
 
@@ -210,16 +216,14 @@ input[type=checkbox], input[type=radio] { width: auto; margin: 0; }
   --grid: #e1e0d9;
   --axis: #c3c2b7;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --series-1: #3987e5;
-    --series-2: #d95926;
-    --series-3: #199e70;
-    --series-4: #c98500;
-    --series-5: #d55181;
-    --grid: #2c2c2a;
-    --axis: #383835;
-  }
+:root[data-theme="dark"] {
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --grid: #2c2c2a;
+  --axis: #383835;
 }
 
 .page-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
