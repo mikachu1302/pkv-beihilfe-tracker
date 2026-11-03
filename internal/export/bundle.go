@@ -2,6 +2,7 @@ package export
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -57,37 +58,62 @@ func WriteBundle(b Bundle, out string) (BundleResult, error) {
 		return res, err
 	}
 	parts := []string{cover}
-	ctx := context.Background()
 	for i, it := range b.Items {
-		found := false
-		for j, doc := range it.Documents {
-			ext := strings.ToLower(filepath.Ext(doc))
-			switch {
-			case ext == ".pdf":
-				if _, err := os.Stat(doc); err == nil {
-					parts = append(parts, doc)
-					found = true
-					res.Documents++
-				}
-			case imageExt[ext]:
-				// A photo that cannot be converted is left out and the
-				// invoice is reported as missing if nothing else is there.
-				page := filepath.Join(tmp, fmt.Sprintf("%02d-%02d.pdf", i+1, j+1))
-				if err := api.ImportImagesFile(ctx, []string{doc}, page, pdfcpu.DefaultImportConfig(), nil); err == nil {
-					parts = append(parts, page)
-					found = true
-					res.Documents++
-				}
-			}
-		}
-		if !found {
+		docs := pdfParts(it.Documents, tmp, fmt.Sprintf("%02d", i+1))
+		if len(docs) == 0 {
 			res.Missing = append(res.Missing, it.Provider)
 		}
+		res.Documents += len(docs)
+		parts = append(parts, docs...)
 	}
 	if len(parts) == 1 {
 		return res, copyFile(cover, out)
 	}
-	return res, api.MergeCreateFile(ctx, parts, out, false, nil)
+	return res, api.MergeCreateFile(context.Background(), parts, out, false, nil)
+}
+
+// ErrNoDocuments means none of the documents could be put into a PDF.
+var ErrNoDocuments = errors.New("keine der Dateien kann als PDF zusammengefasst werden")
+
+// MergeDocuments writes the documents (PDFs and photos, in order) into one
+// PDF – the pages of a multi-page document, to open them together. Files
+// that cannot be included are left out; it reports how many went in.
+func MergeDocuments(docs []string, out string) (int, error) {
+	tmp, err := os.MkdirTemp("", "pkv-merge-")
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = os.RemoveAll(tmp) }()
+	parts := pdfParts(docs, tmp, "p")
+	switch len(parts) {
+	case 0:
+		return 0, ErrNoDocuments
+	case 1:
+		return 1, copyFile(parts[0], out)
+	}
+	return len(parts), api.MergeCreateFile(context.Background(), parts, out, false, nil)
+}
+
+// pdfParts returns the documents as PDF files: PDFs as they are, photos
+// converted to a page each (written to tmp, named with prefix). Missing files
+// and photos that cannot be converted (e.g. HEIC) are left out.
+func pdfParts(docs []string, tmp, prefix string) []string {
+	var parts []string
+	for j, doc := range docs {
+		ext := strings.ToLower(filepath.Ext(doc))
+		switch {
+		case ext == ".pdf":
+			if _, err := os.Stat(doc); err == nil {
+				parts = append(parts, doc)
+			}
+		case imageExt[ext]:
+			page := filepath.Join(tmp, fmt.Sprintf("%s-%02d.pdf", prefix, j+1))
+			if err := api.ImportImagesFile(context.Background(), []string{doc}, page, pdfcpu.DefaultImportConfig(), nil); err == nil {
+				parts = append(parts, page)
+			}
+		}
+	}
+	return parts
 }
 
 func writeCover(b Bundle, path string) error {

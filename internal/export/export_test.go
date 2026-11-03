@@ -2,6 +2,7 @@ package export
 
 import (
 	"context"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
@@ -126,5 +127,32 @@ func TestBundle(t *testing.T) {
 	}
 	if n, _ := api.PageCountFile(context.Background(), only); n != 1 {
 		t.Errorf("cover only: %d pages", n)
+	}
+}
+
+func TestMergeDocuments(t *testing.T) {
+	dir := t.TempDir()
+	pdfPath := filepath.Join(dir, "seite1.pdf")
+	p := gofpdf.New("P", "mm", "A4", "")
+	p.AddPage()
+	p.AddPage()
+	if err := p.OutputFileAndClose(pdfPath); err != nil {
+		t.Fatal(err)
+	}
+	imgPath := filepath.Join(dir, "seite3.png")
+	fh, _ := os.Create(imgPath)
+	png.Encode(fh, image.NewRGBA(image.Rect(0, 0, 60, 80)))
+	fh.Close()
+
+	out := filepath.Join(dir, "alle.pdf")
+	n, err := MergeDocuments([]string{pdfPath, imgPath, filepath.Join(dir, "fehlt.jpg"), filepath.Join(dir, "foto.heic")}, out)
+	if err != nil || n != 2 {
+		t.Fatalf("merged %d, %v", n, err)
+	}
+	if pages, err := api.PageCountFile(context.Background(), out); err != nil || pages != 3 {
+		t.Errorf("pages %d, %v", pages, err)
+	}
+	if _, err := MergeDocuments([]string{filepath.Join(dir, "foto.heic")}, filepath.Join(dir, "x.pdf")); !errors.Is(err, ErrNoDocuments) {
+		t.Errorf("nothing to merge: %v", err)
 	}
 }

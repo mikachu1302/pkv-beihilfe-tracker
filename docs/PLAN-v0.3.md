@@ -1,6 +1,6 @@
 # v0.3.0 – Documents in the invoice form, multi-page documents (plan)
 
-Status: planned in detail · 2026-11-03
+Status: in progress · plan 2026-11-03
 
 The redesign (new look, views Detail/Kompakt/Tabelle, switch between classic and new design)
 follows in v0.4.0 – see [PLAN-v0.4.md](PLAN-v0.4.md).
@@ -147,7 +147,7 @@ files noted; files in such a folder are relevant. The data-changed event gets
 - **Removing** an attachment (✕ at the page) takes effect on saving. A file no other record uses
   any more (invoices incl. deleted ones, Bescheide) goes **back into the inbox** instead of being
   deleted – nothing is lost, and a document attached to the wrong invoice can be assigned anew
-  from there. A file still used elsewhere is only unlinked.
+  from there (decided 2026-11-03). A file still used elsewhere is only unlinked.
 - **UI**: a drop zone / button "Beleg hinzufügen …" in the "Belege" area of the form (always
   visible). Pages as small tiles (thumbnail, "Seite n", open, ✕); new pages marked
   "wird beim Speichern abgelegt"; several files at once = pages of one document in the chosen
@@ -187,12 +187,12 @@ files noted; files in such a folder are relevant. The data-changed event gets
 - On the computer the entry appears with the first page and grows; the recognition runs again
   when pages arrive.
 
-### 8. Optional: theme switch
+### 8. Theme switch (decided 2026-11-03: in v0.3.0)
 
 `Config.Theme` (`""` = system, `light`, `dark`), `data-theme` on the root element, the dark
 token blocks also under `:root[data-theme="dark"]` and the media query only for
 `:root:not([data-theme="light"])`; Settings → "Darstellung" with three options; a copy in
-`localStorage` avoids a flash at start. Small; if time is short it moves to v0.4.0.
+`localStorage` avoids a flash at start.
 
 ## Implementation steps
 
@@ -221,7 +221,7 @@ Each step ends with `make check` green and a commit; pushed when a step is compl
    ambiguous → none, contradicting numbers → none, continuation page, kinds not mixed.
 6. **Phone page** – multi-page mode (`page.html`), `X-Beleg` handling in `upload.go`. Tests:
    pages of one id land in one folder in order, invalid id refused, single mode unchanged.
-7. *Optional* – theme switch (section 8).
+7. **Theme switch** (section 8).
 8. **Finish** – review by sub-agents (Go and frontend, as for v0.2.0) and fixes; manual test in
    the dev app with synthetic documents (real documents of the owner only locally, never in the
    repo); docs: README, `docs/PLAN.md`, `docs/INSTALLATION.md` (phone page); release notes.

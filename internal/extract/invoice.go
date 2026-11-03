@@ -426,8 +426,11 @@ func provider(lines []Line, text, lower []string) string {
 			}
 		}
 		if len(t) < 3 || len(t) > 70 || dateRe.MatchString(t) || streetRe.MatchString(t) || strings.ContainsAny(t, "@") ||
-			strings.HasSuffix(t, ":") || noise(l) || bankLine(l) || salutation(l) || (i > 0 && salutation(lower[i-1])) {
-			continue // header noise, labels, or the patient's name after "Herrn"/"Frau"
+			strings.HasSuffix(t, ":") || noise(l) || bankLine(l) || salutation(l) || (i > 0 && salutation(lower[i-1])) ||
+			len(amounts(t)) > 0 {
+			// header noise, labels, the patient's name after "Herrn"/"Frau", or
+			// a line with an amount ("Übertrag 230,10" atop a continuation page)
+			continue
 		}
 		score := base
 		for _, w := range providerWords {

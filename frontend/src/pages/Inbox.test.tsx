@@ -12,7 +12,7 @@ const svc = vi.hoisted(() => ({
     GetSettings: vi.fn(), AnalyzeRefund: vi.fn(), ReviewRefund: vi.fn(), ConfirmRefund: vi.fn(),
 }));
 const desktop = vi.hoisted(() => ({ChooseFiles: vi.fn()}));
-const capture = vi.hoisted(() => ({recognize: vi.fn(), renderPdfPreview: vi.fn()}));
+const capture = vi.hoisted(() => ({recognizePages: vi.fn(), renderPdfPreview: vi.fn()}));
 vi.mock("../api", () => ({Svc: svc, Desktop: desktop}));
 vi.mock("../lib/capture", () => capture);
 
@@ -29,7 +29,7 @@ function analysis(kind = "invoice"): AnalysisDTO {
 beforeEach(() => {
     vi.clearAllMocks();
     svc.ListInbox.mockResolvedValue([{name: "scan.pdf", size: 1000, modified: "2026-11-02 10:15", type: "pdf", url: "/datafile/inbox/scan.pdf"}]);
-    capture.recognize.mockResolvedValue({lines: [{text: "Rechnung", page: 1, x: 0, y: 0, w: 0, h: 0}], qr: ["BCD"], ocr: false});
+    capture.recognizePages.mockResolvedValue({lines: [{text: "Rechnung", page: 1, x: 0, y: 0, w: 0, h: 0}], qr: ["BCD"], ocr: false, pages: 1, truncated: false});
     capture.renderPdfPreview.mockResolvedValue(undefined);
     svc.AnalyzeDocument.mockResolvedValue(analysis());
     svc.StopPhoneUpload.mockResolvedValue(undefined);
@@ -45,7 +45,8 @@ describe("Inbox", () => {
         expect(screen.getByLabelText("Betrag (€) *")).toHaveValue("286,40");
         expect(screen.getByText("aus GiroCode")).toBeInTheDocument();
         expect(screen.getByText("bitte prüfen")).toBeInTheDocument();
-        expect(capture.recognize).toHaveBeenCalledWith("/datafile/inbox/scan.pdf", "pdf", expect.any(Function), expect.any(AbortSignal));
+        expect(capture.recognizePages).toHaveBeenCalledWith([expect.objectContaining({url: "/datafile/inbox/scan.pdf", type: "pdf"})],
+            expect.any(Function), expect.any(AbortSignal));
         expect(svc.AnalyzeDocument).toHaveBeenCalledWith({lines: [{text: "Rechnung", page: 1, x: 0, y: 0, w: 0, h: 0}], qr: ["BCD"]});
 
         await user.clear(screen.getByLabelText("Betrag (€) *"));
@@ -86,7 +87,7 @@ describe("Inbox", () => {
     });
 
     it("lets the user fill the fields when recognition fails", async () => {
-        capture.recognize.mockRejectedValue(new Error("Das Bild kann nicht gelesen werden."));
+        capture.recognizePages.mockRejectedValue(new Error("Das Bild kann nicht gelesen werden."));
         renderAt("/", "/", <Inbox/>);
         expect(await screen.findByText(/Das Bild kann nicht gelesen werden/)).toBeInTheDocument();
         expect(screen.getByLabelText("Behandler *")).toHaveValue("");
@@ -119,7 +120,7 @@ describe("Inbox", () => {
         view.setApp({dataVersion: 1});
         expect(await screen.findByText("foto.jpg")).toBeInTheDocument();
         expect(screen.getByLabelText("Behandler *")).toHaveValue("Praxis Beispiel");
-        expect(capture.recognize).toHaveBeenCalledTimes(1);
+        expect(capture.recognizePages).toHaveBeenCalledTimes(1);
         expect(capture.renderPdfPreview).toHaveBeenCalledTimes(1);
     });
 
@@ -133,7 +134,7 @@ describe("Inbox", () => {
         svc.ListInbox.mockResolvedValue([{name: "scan.pdf", size: 1200, modified: "2026-11-02 10:20", type: "pdf", url: "/datafile/inbox/scan.pdf"}]);
         svc.AnalyzeDocument.mockResolvedValue({...analysis(), draft: {invoice: {...draft, provider: "Dr. Neu"}, view: invoiceRow("", "Dr. Neu")}});
         view.setApp({dataVersion: 1});
-        await waitFor(() => expect(capture.recognize).toHaveBeenCalledTimes(2));
+        await waitFor(() => expect(capture.recognizePages).toHaveBeenCalledTimes(2));
         await waitFor(() => expect(svc.AnalyzeDocument).toHaveBeenCalledTimes(2));
         expect(screen.getByLabelText("Behandler *")).toHaveValue("Praxis Beispiel");
         expect(capture.renderPdfPreview).toHaveBeenCalledTimes(2);

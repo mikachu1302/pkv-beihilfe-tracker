@@ -33,6 +33,7 @@ func newTestService(t *testing.T) *Service {
 	s := NewWithConfigDir(t.TempDir())
 	s.now = func() time.Time { return time.Date(2026, 11, 2, 9, 0, 0, 0, time.Local) }
 	s.watchDebounce = 50 * time.Millisecond
+	s.tmpRoot = t.TempDir()
 	t.Cleanup(func() { _ = s.ServiceShutdown() })
 	st, err := s.SetDataDir(filepath.Join(t.TempDir(), "daten"))
 	if err != nil || !st.Configured || !st.NeedsSetup {

@@ -11,21 +11,16 @@ import zxingWasmUrl from "zxing-wasm/reader/zxing_reader.wasm?url";
 import {errMsg} from "./format";
 import {groupLines} from "./lines";
 import type {Piece, TextLine} from "./lines";
+import {MAX_PAGES, createRecognizer} from "./pages";
+import type {PageFile, Progress, Recognized} from "./pages";
+
+export type {PageFile, Recognized};
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 prepareZXingModule({
     overrides: {locateFile: (path: string, prefix: string) => (path.endsWith(".wasm") ? zxingWasmUrl : prefix + path)},
 });
 
-export interface Recognized {
-    lines: TextLine[];
-    qr: string[];
-    ocr: boolean; // text came from OCR (less reliable than a PDF text layer)
-}
-
-type Progress = (message: string) => void;
-
-const MAX_PAGES = 4;
 const MAX_SIDE = 2600;
 
 /**
@@ -196,8 +191,8 @@ function recognizePdf(url: string, progress?: Progress, signal?: AbortSignal): P
     progress?.("PDF wird gelesen …");
     return withPdf(url, signal, async task => {
         const doc = await task.promise;
-        const out: Recognized = {lines: [], qr: [], ocr: false};
         const pages = Math.min(doc.numPages, MAX_PAGES);
+        const out: Recognized = {lines: [], qr: [], ocr: false, pages, truncated: doc.numPages > pages};
         for (let n = 1; n <= pages; n++) {
             signal?.throwIfAborted();
             const page = await doc.getPage(n);
@@ -244,7 +239,7 @@ async function recognizeImage(url: string, progress?: Progress, signal?: AbortSi
     bitmap.close();
     const qr = await qrCodes(canvas);
     const lines = await ocrUpright(canvas, 1, progress, signal);
-    return {lines, qr, ocr: true};
+    return {lines, qr, ocr: true, pages: 1, truncated: false};
 }
 
 /**
@@ -257,6 +252,18 @@ export async function recognize(url: string, type: string, progress?: Progress, 
     if (type === "image") return recognizeImage(url, progress, signal);
     throw new Error("Dieser Dateityp kann nicht gelesen werden – bitte PDF oder Foto verwenden.");
 }
+
+const shared = createRecognizer((f, progress, signal) => recognize(f.url, f.type, progress, signal));
+
+/**
+ * Recognises a document of one or more files (pages in order), see
+ * pages.ts. Results are kept per file: an entry selected again, or
+ * recognised in the background before, is there at once.
+ */
+export const recognizePages = shared.recognizePages;
+
+/** The recognition result of a file if it is known already. */
+export const recognizedFile = shared.peek;
 
 // pdf.js refuses two renders into one canvas at the same time: a new preview
 // cancels the one still drawing into the same canvas.

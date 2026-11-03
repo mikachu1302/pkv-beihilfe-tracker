@@ -61,6 +61,8 @@ type Service struct {
 	bg            sync.WaitGroup // background backups
 	upload        *upload.Server
 	inboxSeen     []string // inbox file names at the last reload
+	session       string   // temporary folder of this run (see sessionDir)
+	tmpRoot       string   // where session folders are made; "" = os.TempDir() (tests set it)
 
 	now func() time.Time
 }
@@ -186,6 +188,7 @@ func (s *Service) ServiceShutdown() error {
 		_ = s.upload.Stop()
 		s.upload = nil
 	}
+	s.removeSession()
 	s.mu.Unlock()
 	// Let a running backup finish (it writes to a temp file first, so an
 	// interrupted one leaves no broken snapshot – but a finished one is better).

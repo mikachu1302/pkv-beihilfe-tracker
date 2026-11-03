@@ -5,7 +5,7 @@ import type {AnalysisDTO, AnalyzeInputDTO, InboxItemDTO, InvoiceDTO, PayerDTO, P
 import {useApp, useInboxChanged} from "../App";
 import {useConfirm, useToast} from "../components/feedback";
 import {Badge, Empty, ErrorNotice, Field, Notice} from "../components/ui";
-import {recognize, renderPdfPreview} from "../lib/capture";
+import {recognizePages, renderPdfPreview} from "../lib/capture";
 import {CATEGORY_LABELS, errMsg, eur, plural, toInput, today} from "../lib/format";
 import {key, useSaveShortcut, useUnsavedChanges} from "../lib/shortcuts";
 import {useBackend} from "../lib/useBackend";
@@ -196,7 +196,7 @@ function InboxItem({item, payers, onDone, onDiscard}: {item: InboxItemDTO; payer
     const touched = useRef(false);
     const [edited, setEdited] = useState(false); // the user typed into the draft: leaving asks first
     useUnsavedChanges(edited && !saving);
-    const {url, type, modified} = item;
+    const {url, type, modified, size} = item;
     useSaveShortcut(() => void save(), draft !== null && review === null);
 
     async function asRefund(inp: AnalyzeInputDTO) {
@@ -223,13 +223,14 @@ function InboxItem({item, payers, onDone, onDiscard}: {item: InboxItemDTO; payer
             let done = "";
             setError("");
             try {
-                const rec = await recognize(url, type, msg => !signal.aborted && setStatus(msg), signal);
+                const rec = await recognizePages([{url, type, modified, size}], msg => !signal.aborted && setStatus(msg), signal);
                 if (signal.aborted) return;
                 setStatus("Felder werden zugeordnet …");
                 const inp = {lines: rec.lines, qr: rec.qr};
                 const a = await Svc.AnalyzeDocument(inp);
                 if (signal.aborted) return;
-                done = rec.ocr ? "Text per Texterkennung gelesen – bitte die Felder prüfen." : "";
+                done = [rec.ocr ? "Text per Texterkennung gelesen – bitte die Felder prüfen." : "",
+                    rec.truncated ? `Nur die ersten ${rec.pages} Seiten wurden gelesen.` : ""].filter(Boolean).join(" ");
                 setInput(inp);
                 setAnalysis(a);
                 if (touched.current) return;
@@ -253,7 +254,7 @@ function InboxItem({item, payers, onDone, onDiscard}: {item: InboxItemDTO; payer
             }
         })();
         return () => run.abort();
-    }, [url, type, modified]);
+    }, [url, type, modified, size]);
 
     async function save() {
         if (!draft || saving) return;
