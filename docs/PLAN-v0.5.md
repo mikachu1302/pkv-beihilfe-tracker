@@ -51,7 +51,7 @@ a key answers 401 – as described.
 ### Flow
 
 1. The user opens a document (inbox or form); the OCR runs as today and fills the fields.
-2. "**Mit KI auslesen**" (or automatically, see open point 2): the frontend renders the pages
+2. "**Mit KI auslesen**" – only when the user clicks it (decided, see below): the frontend renders the pages
    (≤ 1,400 px, JPEG) and calls `Svc.ReadWithAI(ctx, {pages, lines, qr})` – the OCR lines and
    GiroCode go along for the cross-checks. The call is a Wails `CancellablePromise`; cancelling
    (button, leaving the document) cancels the Go `context` and the HTTP request.
@@ -112,7 +112,7 @@ trying if the matcher misses cases the AI gets right (measure in the test).
 1. **Real-world test** (before building): 5–10 real invoices and 2–3 Bescheide with
    `scripts/ki-belegtest.py` against the server – accuracy per field, time per page, multi-page
    behaviour (does a 3-page document fit one request?), with the phones idle and in use.
-   Results decide open points 2, 4 and 5. Guide: [KI-TEST.md](KI-TEST.md).
+   Results decide open points 4 and 5. Guide: [KI-TEST.md](KI-TEST.md).
 2. `internal/airead`: client, schema, checks; unit tests against an `httptest` server (answers,
    401, timeouts, cancel, unreachable, invalid JSON, wrong IBAN, amount not in the OCR text).
 3. Settings and device config (address, model, key, test connection).
@@ -127,10 +127,10 @@ trying if the matcher misses cases the AI gets right (measure in the test).
    mode 0600 – simple, like the other device settings) or the OS keyring (Secret Service,
    Keychain, Credential Manager – via `github.com/zalando/go-keyring`, one new dependency, needs a
    running keyring on Linux). Recommendation: the config file; the key only guards a LAN service.
-2. **When it runs** (open): only on the button, or also automatically when the OCR is unsure
-   (no amount or provider, or only "bitte prüfen" values). Recommendation: button first;
-   automatic later, only for the document on screen (never for the whole inbox – the server is
-   shared and slow).
+2. **When it runs – decided 2026-11-03: only on a manual trigger.** Every AI feature starts
+   with a click ("Mit KI auslesen", later the same for Bescheide); nothing runs automatically –
+   not when the OCR is unsure, not in the background for the inbox. (The server is shared and
+   slow, and health data leaves the device only when the user asks for it.)
 3. **Conflicts** (open): when OCR (label) and AI disagree, which wins? Recommendation: GiroCode >
    AI confirmed by OCR > OCR label > AI alone; a disagreement is shown as a hint ("Texterkennung:
    …") instead of silently replacing.
