@@ -6,7 +6,10 @@
 import {useLayoutEffect, useMemo, useRef, useState} from "react";
 import type {CSSProperties, ReactNode} from "react";
 import {useVirtualizer} from "@tanstack/react-virtual";
+import {Svc} from "../../api";
 import type {ClaimViewDTO, InvoiceRowDTO, PayerDTO} from "../../api";
+import {useToast} from "../../components/feedback";
+import {patchAppearance, useAppearance} from "../../lib/appearance";
 import {CATEGORY_LABELS, date, eur, num, plural, shortDate} from "../../lib/format";
 import {useDialog} from "../../lib/useDialog";
 import {claimOf, payerClass, useRowNav} from "./shared";
@@ -33,6 +36,19 @@ export interface TableOptions {
     dense: boolean;
     sum: boolean;
     hidden: string[];
+}
+
+const DEFAULT_OPTIONS: TableOptions = {dense: false, sum: true, hidden: []};
+
+/** Options of the table view (device configuration); changes are saved right away. */
+export function useTableOptions(): [TableOptions, (o: TableOptions) => void] {
+    const toast = useToast();
+    const a = useAppearance();
+    const options = a ? {...a.table, hidden: a.table.hidden ?? []} : DEFAULT_OPTIONS;
+    return [options, o => {
+        patchAppearance({table: o});
+        Svc.SetTableOptions(o).catch(toast.error);
+    }];
 }
 
 interface Col {

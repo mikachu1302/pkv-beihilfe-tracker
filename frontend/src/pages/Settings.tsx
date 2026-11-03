@@ -7,9 +7,13 @@ import {ErrorNotice, Field, Loading, Notice} from "../components/ui";
 import {errMsg, toInput} from "../lib/format";
 import {key, useSaveShortcut, useUnsavedChanges} from "../lib/shortcuts";
 import {useBackend} from "../lib/useBackend";
+import {patchAppearance, setSessionView, useAppearance, VIEW_LABELS, VIEW_ORDER} from "../lib/appearance";
+import type {InvoiceView} from "../lib/appearance";
 import {DESIGN_LABELS, DESIGN_ORDER, useDesign} from "../lib/design";
+import type {Design} from "../lib/design";
 import {THEME_LABELS, THEME_ORDER, useTheme} from "../lib/theme";
 import type {Theme} from "../lib/theme";
+import {COLUMN_KINDS, useTableOptions} from "./invoices/TableView";
 
 /** Amounts in the form use the German format. */
 function forForm(s: SettingsDTO): SettingsDTO {
@@ -243,34 +247,103 @@ function Appearance() {
     const setTheme = useSetTheme();
     const design = useDesign();
     const setDesign = useSetDesign();
+    const appearance = useAppearance();
+    const setView = useSetView();
+    const [table, setTable] = useTableOptions();
+    const view = (appearance?.view ?? "detail") as InvoiceView;
+    const hiddenCount = COLUMN_KINDS.filter(k => table.hidden.includes(k)).length;
     return (
         <section className="panel" aria-label="Darstellung">
             <h2>Darstellung</h2>
-            <fieldset className="choice">
-                <legend>Design</legend>
-                {DESIGN_ORDER.map(d => (
-                    <label key={d} className="inline">
-                        <input type="radio" name="design" checked={design === d} onChange={() => setDesign(d)}/>
-                        {DESIGN_LABELS[d]}
-                    </label>
-                ))}
-            </fieldset>
-            <fieldset className="choice">
-                <legend>Farbschema</legend>
-                {THEME_ORDER.map((t: Theme) => (
-                    <label key={t} className="inline">
-                        <input type="radio" name="theme" checked={theme === t} onChange={() => setTheme(t)}/>
-                        {THEME_LABELS[t]}
-                    </label>
-                ))}
-            </fieldset>
-            <p className="muted small">
-                „Klassisch“ ist das Aussehen bis Version 0.3. „Automatisch“ richtet sich nach der Einstellung von Windows,
-                macOS oder Linux; schnell umschalten lässt es sich auch unten im Menü mit dem Schalter „Dunkel“.
-                Gilt nur für dieses Gerät.
+            <p className="muted small">Gilt nur für dieses Gerät; der Datenordner bleibt unberührt.</p>
+            <div className="appearance">
+                <fieldset className="choice-cards">
+                    <legend>Design</legend>
+                    {DESIGN_ORDER.map(d => (
+                        <label key={d} className={`choice-card ${design === d ? "on" : ""}`}>
+                            <input type="radio" name="design" checked={design === d} onChange={() => setDesign(d)}
+                                   aria-labelledby={`design-${d}`} aria-describedby={`design-${d}-hint`}/>
+                            <span>
+                                <span className="choice-title" id={`design-${d}`}>{DESIGN_LABELS[d]}{d === "new" && " (Standard)"}</span>
+                                <span className="choice-hint" id={`design-${d}-hint`}>{DESIGN_HINTS[d]}</span>
+                            </span>
+                        </label>
+                    ))}
+                </fieldset>
+                {design === "new" && (
+                    <fieldset className="choice-cards">
+                        <legend>Standardansicht der Rechnungen</legend>
+                        {VIEW_ORDER.map(v => (
+                            <label key={v} className={`choice-card ${view === v ? "on" : ""}`}>
+                                <input type="radio" name="view" checked={view === v} onChange={() => setView(v)}
+                                       aria-labelledby={`view-${v}`} aria-describedby={`view-${v}-hint`}/>
+                                <span>
+                                    <span className="choice-title" id={`view-${v}`}>{VIEW_LABELS[v]}{v === "detail" && " (Standard)"}</span>
+                                    <span className="choice-hint" id={`view-${v}-hint`}>{VIEW_HINTS[v]}</span>
+                                </span>
+                            </label>
+                        ))}
+                    </fieldset>
+                )}
+                <div className="appearance-side">
+                    <fieldset className="choice stacked">
+                        <legend>Farbschema</legend>
+                        {THEME_ORDER.map((t: Theme) => (
+                            <label key={t} className="inline">
+                                <input type="radio" name="theme" checked={theme === t} onChange={() => setTheme(t)}/>
+                                {THEME_LABELS[t]}
+                            </label>
+                        ))}
+                    </fieldset>
+                    {design === "new" && (
+                        <fieldset className="choice stacked">
+                            <legend>Tabellenansicht</legend>
+                            <label className="inline">
+                                <input type="checkbox" checked={table.sum} onChange={e => setTable({...table, sum: e.target.checked})}/>
+                                Summenzeile
+                            </label>
+                            <label className="inline">
+                                <input type="checkbox" checked={table.dense} onChange={e => setTable({...table, dense: e.target.checked})}/>
+                                enge Zeilen
+                            </label>
+                            <span className="muted small">
+                                {hiddenCount === 0 ? "Alle Spalten sichtbar" : `${hiddenCount} Spaltenart${hiddenCount === 1 ? "" : "en"} ausgeblendet`}
+                                {" – "}auswählen in der Tabelle über „Spalten“.
+                                {hiddenCount > 0 && <> <button className="link" onClick={() => setTable({...table, hidden: []})}>Alle zeigen</button></>}
+                            </span>
+                        </fieldset>
+                    )}
+                </div>
+            </div>
+            <p className="muted small mt-3">
+                „Automatisch“ richtet sich nach der Einstellung von Windows, macOS oder Linux; schnell umschalten lässt es sich
+                auch unten im Menü mit dem Schalter „Dunkel“.
+                {design === "new" && " Die Ansicht lässt sich auch direkt in der Rechnungsliste wechseln – die Auswahl dort gilt bis zum nächsten Start."}
             </p>
         </section>
     );
+}
+
+const DESIGN_HINTS: Record<Design, string> = {
+    new: "Ruhige Flächen, eine Akzentfarbe, Beträge in Festbreitenschrift; Rechnungen als Detail, Kompakt oder Tabelle",
+    classic: "Das Aussehen bis Version 0.3 mit der bisherigen Rechnungsliste",
+};
+
+const VIEW_HINTS: Record<InvoiceView, string> = {
+    detail: "Jede Rechnung als Karte mit SOLL, IST und Daten je Kostenträger",
+    compact: "Eine Zeile pro Rechnung, Status als Punkte, Details zum Aufklappen",
+    table: "Alle Felder als Spalten wie in Excel, sortierbar, nur zum Ansehen",
+    classic: "Die bisherige Liste mit Häkchen in der Tabelle",
+};
+
+/** Sets the default view of the invoice list; a quick choice made in the list gives way to it. */
+function useSetView(): (v: InvoiceView) => void {
+    const toast = useToast();
+    return v => {
+        patchAppearance({view: v});
+        setSessionView(null);
+        Svc.SetView(v).catch(toast.error);
+    };
 }
 
 export function Backups({onChanged}: {onChanged: () => void}) {

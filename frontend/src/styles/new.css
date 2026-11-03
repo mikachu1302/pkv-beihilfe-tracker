@@ -137,7 +137,7 @@
 [data-design="new"] .cards.outstanding { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
 [data-design="new"] .notice { border-radius: 12px; padding: 12px 16px; }
 [data-design="new"] fieldset { border-radius: 14px; padding: 14px 16px 16px; }
-[data-design="new"] fieldset.choice { border: none; padding: 0; }
+[data-design="new"] fieldset.choice, [data-design="new"] fieldset.choice-cards { border: none; padding: 0; }
 [data-design="new"] .modal { border: 1px solid var(--border); padding: 24px; box-shadow: 0 18px 48px rgba(0,0,0,.25); }
 [data-design="new"] .popover { border-radius: 14px; padding: 14px; }
 [data-design="new"] .tooltip { border-radius: 10px; }
@@ -167,3 +167,9 @@
 [data-design="new"] .table-wrap table td:first-child, [data-design="new"] .table-wrap table th:first-child { padding-left: 14px; }
 [data-design="new"] table.invoices tfoot td { background: var(--panel-2); }
 [data-design="new"] .provider-link { font-weight: 600; }
+
+/* ---------- settings ---------- */
+[data-design="new"] .choice-card { border-width: 1.5px; border-radius: 12px; padding: 10px 12px; }
+[data-design="new"] .choice-title { font-size: 15px; }
+[data-design="new"] .choice-hint { font-size: 13px; }
+[data-design="new"] fieldset.choice-cards legend, [data-design="new"] fieldset.choice legend { font-weight: 700; }

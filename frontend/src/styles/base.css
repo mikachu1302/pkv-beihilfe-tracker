@@ -365,3 +365,16 @@ figure.chart { margin: 0; }
 .sidebar .logo { display: none; flex: none; width: 36px; height: 36px; border-radius: 10px; background: var(--accent); color: var(--accent-text);
   align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* Settings · Darstellung: options as cards (title and hint) and stacked choices */
+.appearance { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; align-items: start; }
+.appearance-side { display: flex; flex-direction: column; gap: 12px; }
+fieldset.choice-cards { border: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+fieldset.choice-cards legend { padding: 0; margin-bottom: 6px; font-weight: 600; }
+.choice-card { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; margin: 0; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); cursor: pointer; color: var(--text); font-size: 13px; }
+.choice-card.on { border-color: var(--accent-fg); background: var(--row-selected); }
+.choice-card input { margin-top: 3px; flex: none; }
+.choice-title { display: block; font-weight: 600; }
+.choice-hint { display: block; color: var(--muted); font-size: 12px; }
+fieldset.choice.stacked { flex-direction: column; align-items: flex-start; gap: 6px; }

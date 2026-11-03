@@ -6,7 +6,7 @@ import {useApp} from "../App";
 import {useConfirm, useToast} from "../components/feedback";
 import {OutstandingCards} from "../components/Outstanding";
 import {Empty, ErrorNotice, Loading, YearSelect} from "../components/ui";
-import {patchAppearance, setSessionView, useAppearance, useInvoiceView, VIEW_LABELS} from "../lib/appearance";
+import {setSessionView, useInvoiceView, VIEW_LABELS} from "../lib/appearance";
 import type {InvoiceView} from "../lib/appearance";
 import {useDesign} from "../lib/design";
 import {eur, num, plural, today} from "../lib/format";
@@ -15,26 +15,12 @@ import {dialogOpen, isTyping, key, mod, useKeydown} from "../lib/shortcuts";
 import {ClassicList} from "./invoices/ClassicList";
 import {CompactView} from "./invoices/CompactView";
 import {DetailView} from "./invoices/DetailView";
-import {ColumnChooser, TableView} from "./invoices/TableView";
-import type {TableOptions} from "./invoices/TableView";
+import {ColumnChooser, TableView, useTableOptions} from "./invoices/TableView";
 import type {Pop, ViewProps} from "./invoices/shared";
 import {exportExcel} from "./Overview";
 
 /** The views of the new design, in the order of the switch. */
 const VIEWS: InvoiceView[] = ["detail", "compact", "table", "classic"];
-
-const DEFAULT_TABLE: TableOptions = {dense: false, sum: true, hidden: []};
-
-/** Options of the table view (device configuration); changes are saved right away. */
-function useTableOptions(): [TableOptions, (o: TableOptions) => void] {
-    const toast = useToast();
-    const a = useAppearance();
-    const options = a ? {...a.table, hidden: a.table.hidden ?? []} : DEFAULT_TABLE;
-    return [options, o => {
-        patchAppearance({table: o});
-        Svc.SetTableOptions(o).catch(toast.error);
-    }];
-}
 
 type Filter = "all" | "open" | "submitted" | "clarify" | "deadline" | "unpaid" | "warnings";
 

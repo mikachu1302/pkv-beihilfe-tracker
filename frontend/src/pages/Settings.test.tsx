@@ -4,21 +4,26 @@ import {beforeEach, describe, expect, it, vi} from "vitest";
 import type {SettingsDTO} from "../api";
 import {settings} from "../test/fixtures";
 import {renderAt, testStatus} from "../test/render";
+import {setAppearance, setSessionView} from "../lib/appearance";
+import {applyDesign} from "../lib/design";
 import Settings, {Backups} from "./Settings";
 
 const svc = vi.hoisted(() => ({
     BackupStatus: vi.fn(), SetBackupDir: vi.fn(), BackupNow: vi.fn(), GetSettings: vi.fn(), SaveSettings: vi.fn(), Reload: vi.fn(), SetDataDir: vi.fn(),
-    SetDesign: vi.fn(), SetTheme: vi.fn(),
+    SetDesign: vi.fn(), SetTheme: vi.fn(), SetView: vi.fn(), SetTableOptions: vi.fn(),
 }));
 const desktop = vi.hoisted(() => ({ChooseFolder: vi.fn(), OpenPath: vi.fn()}));
 vi.mock("../api", () => ({Svc: svc, Desktop: desktop}));
 
 beforeEach(() => {
     vi.clearAllMocks();
+    setAppearance(null);
     svc.BackupStatus.mockResolvedValue({dir: "", last: "", lastSize: 0, count: 0, error: ""});
     svc.GetSettings.mockResolvedValue(settings);
     svc.SetDesign.mockResolvedValue(undefined);
     svc.SetTheme.mockResolvedValue(undefined);
+    svc.SetView.mockResolvedValue(undefined);
+    svc.SetTableOptions.mockResolvedValue(undefined);
 });
 
 const tolerance = () => screen.getByLabelText("Toleranz für Klärungsbedarf (€)");
@@ -109,7 +114,34 @@ describe("Backups", () => {
         expect(svc.SetDesign).toHaveBeenCalledWith("classic");
         expect(document.documentElement.dataset.design).toBe("classic");
         expect(localStorage.getItem("pkv.design")).toBe("classic");
-        await user.click(within(darstellung).getByRole("radio", {name: "Neu"}));
+        await user.click(within(darstellung).getByRole("radio", {name: "Neu (Standard)"}));
         expect(document.documentElement.dataset.design).toBe("new");
+    });
+
+    it("sets the default view and the table options with the new design", async () => {
+        const user = userEvent.setup();
+        setSessionView("table");
+        renderAt("/", "/", <Settings/>);
+        const darstellung = await screen.findByRole("region", {name: "Darstellung"});
+        const views = within(darstellung).getByRole("group", {name: "Standardansicht der Rechnungen"});
+        expect(within(views).getByRole("radio", {name: /Detail \(Standard\)/})).toBeChecked();
+        await user.click(within(views).getByRole("radio", {name: "Kompakt"}));
+        expect(svc.SetView).toHaveBeenCalledWith("compact");
+        expect(within(views).getByRole("radio", {name: "Kompakt"})).toBeChecked();
+
+        const table = within(darstellung).getByRole("group", {name: "Tabellenansicht"});
+        await user.click(within(table).getByRole("checkbox", {name: "enge Zeilen"}));
+        expect(svc.SetTableOptions).toHaveBeenLastCalledWith({dense: true, sum: true, hidden: []});
+        await user.click(within(table).getByRole("checkbox", {name: "Summenzeile"}));
+        expect(svc.SetTableOptions).toHaveBeenLastCalledWith({dense: true, sum: false, hidden: []});
+    });
+
+    it("shows no default view and no table options with the classic design", async () => {
+        applyDesign("classic");
+        renderAt("/", "/", <Settings/>);
+        const darstellung = await screen.findByRole("region", {name: "Darstellung"});
+        expect(within(darstellung).queryByRole("group", {name: "Standardansicht der Rechnungen"})).not.toBeInTheDocument();
+        expect(within(darstellung).queryByRole("group", {name: "Tabellenansicht"})).not.toBeInTheDocument();
+        applyDesign("new");
     });
 });
