@@ -254,7 +254,7 @@ function Appearance() {
             </fieldset>
             <p className="muted small">
                 „Automatisch“ richtet sich nach der Einstellung von Windows, macOS oder Linux. Gilt nur für dieses Gerät;
-                schnell umschalten lässt es sich auch unten im Menü mit „Dunkler Modus“.
+                schnell umschalten lässt es sich auch unten im Menü mit dem Schalter „Dunkel“.
             </p>
         </section>
     );

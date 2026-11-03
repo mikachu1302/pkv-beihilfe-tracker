@@ -190,17 +190,17 @@ export function useSetTheme(): (t: Theme) => void {
 }
 
 /**
- * Switch in the menu: dark mode on or off. It shows the scheme in effect
+ * Switch "Dunkel" in the menu: dark mode on or off. It shows the scheme in effect
  * (also with "Automatisch"); switching chooses light or dark for this device.
  */
 function ThemeToggle() {
     const dark = useDarkActive();
     const setTheme = useSetTheme();
     return (
-        <button type="button" role="switch" aria-checked={dark} aria-label="Dunkler Modus" title="Dunkler Modus"
+        <button type="button" role="switch" aria-checked={dark} aria-label="Dunkel" title="Dunkel"
                 className="nav-button theme-switch" onClick={() => setTheme(dark ? "light" : "dark")}>
             <Icon name={dark ? "theme-dark" : "theme-light"}/>
-            <span className="nav-label">Dunkler Modus</span>
+            <span className="nav-label">Dunkel</span>
             <span className="switch" aria-hidden="true"/>
         </button>
     );
