@@ -1,6 +1,6 @@
 # v0.6.0 – Checking invoices against other documents with AI (plan)
 
-Status: draft · 2026-11-03 · builds on v0.5.0 ([PLAN-v0.5.md](PLAN-v0.5.md): AI client, settings,
+Status: ready to build · 2026-11-03 – open points decided · builds on v0.5.0 ([PLAN-v0.5.md](PLAN-v0.5.md): AI client, settings,
 manual trigger, order of trust).
 
 For an invoice already in the app, the user starts a **check** ("Abgleich"): the invoice and other
@@ -32,7 +32,7 @@ marked as such.
 
 | Type | Fields |
 |---|---|
-| Rechnung | header (provider, date, number, total, period, IBAN) and **positions**: date, number (GOÄ/GOZ Ziffer), text, factor, count, amount, reason for the factor |
+| Rechnung | header (provider, date, number, total, period, IBAN) and **positions**: date, number (GOÄ/GOZ Ziffer), text, count, amount |
 | Bescheid | header (payer, date, payout, application date) and **lines**: invoice date, provider, billed, eligible, refund, rate, reason / note for a cut (text and code) |
 | Heil- und Kostenplan / Kostenvoranschlag | provider, date, positions (number, text, count, amount), totals (fee, material and lab costs, expected own share) |
 | Verordnung (therapy) | date, prescriber, remedy, count, frequency, diagnosis/ICD (only what the check needs), valid until |
@@ -50,14 +50,8 @@ checksum against the payout stay deterministic.
 - read header vs. the invoice in the app (amount, date, provider, number) – a mismatch means the
   stored data is wrong or it is another invoice.
 
-**GOÄ / GOZ rules** (a small rule table in the app, to be researched and tested before use)
-- factor above the threshold (GOÄ: 2.3 personal services, 1.8 technical services, 1.15 laboratory;
-  GOZ: 2.3) **without a reason** → "Begründung fehlt";
-- factor above the maximum (GOÄ 3.5 / 2.5 / 1.3, GOZ 3.5) → needs an agreement (§ 2 GOÄ/GOZ);
-- the amount of a position = points × point value × factor × count, where the number is known
-  (point values: GOÄ 5.82873 ct, GOZ 5.62421 ct) – hint only, never an automatic correction.
-- The values above are those of the current GOÄ and GOZ; a new GOÄ has been in preparation for
-  years – check the state before building, and keep the table versioned by date of treatment.
+No checks of the fee rules (GOÄ/GOZ factors, thresholds, points): the payers check those, and a
+cut shows in the app as a deviation with its reason from the Bescheid (decided 2026-11-03).
 
 **Invoice vs. Bescheid**
 - the Bescheid line belonging to the invoice (via the existing matcher), billed amount = invoice
@@ -69,9 +63,8 @@ checksum against the payout stay deterministic.
 
 **Invoice vs. Heil- und Kostenplan / Kostenvoranschlag**
 - positions in the invoice that the plan does not have, and the other way round;
-- amounts per position and the total vs. the plan, beyond a **tolerance the user sets** (Einstellungen,
-  explained there: "Abweichung vom Kostenvoranschlag melden ab … %"; default 15 % – the margin above
-  which a dentist must inform the patient before going on, § 9 Abs. 2 GOZ);
+- amounts per position and the total vs. the plan – shown as information with the difference in
+  euros and per cent, no tolerance and no verdict (decided 2026-11-03);
 - expected own share vs. what the payers refunded.
 
 **Invoice vs. Verordnung (therapy)**
@@ -100,26 +93,22 @@ checksum against the payout stay deterministic.
 
 ## Steps
 
-1. Test with real documents (as in v0.5): positions of 3–5 GOÄ/GOZ invoices, 2–3 Bescheide with
-   cuts, one Heil- und Kostenplan – are positions and cut texts read reliably? (Extend
-   `scripts/ki-belegtest.py` with the document types.)
-2. Research and test the GOÄ/GOZ rule table (sections, thresholds, maxima, point values).
-3. `internal/check` with unit tests (made-up invoices, Bescheide, plans, prescriptions).
-4. Schemas per document type, the job with progress events, cancel.
-5. UI: the panel in the invoice form, the result list, the actions; the tolerance setting.
-6. Type recognition and reminders in the inbox.
-7. Docs (README privacy section: what is sent for a check).
+1. Test with made-up but realistic documents (no real ones – the user's wish): multi-page GOÄ and
+   GOZ invoices with positions, Bescheide with cut lines and reason texts, a Heil- und Kostenplan, a
+   prescription – clean and as poor phone photos. Are positions and cut texts read reliably?
+   (Extend `scripts/ki-belegtest.py` with the document types.)
+2. `internal/check` with unit tests (made-up invoices, Bescheide, plans, prescriptions).
+3. Schemas per document type, the job with progress events, cancel.
+4. UI: the panel in the invoice form, the result list, the actions.
+5. Type recognition and reminders in the inbox.
+6. Docs (README privacy section: what is sent for a check).
 
 ## Open points
 
 1. ~~Keep the last check?~~ Yes, in the invoice record (decided 2026-11-03).
-2. How far the GOÄ/GOZ rules go: thresholds and maxima are clear; the section of each number needs a
-   table (maintained in the app, from the official lists). Start with GOÄ, GOZ afterwards?
-   (Explained to the user 2026-11-03; decision open.)
-3. ~~Tolerances?~~ A setting, explained in the settings, default 15 % (§ 9 Abs. 2 GOZ) – decided
-   2026-11-03.
+2. ~~GOÄ/GOZ rules?~~ None – the payers check them (decided 2026-11-03).
+3. ~~Tolerances?~~ Not needed: differences to a cost plan are shown as information (decided
+   2026-11-03).
 4. ~~Draft letters?~~ Not now (decided 2026-11-03).
-5. Test documents: no real documents (the user's wish). Public filled-in examples are scarce
-   (insurers' and consumer centres' sample pages move or are blank forms; no sample Bescheid
-   found). Proposal: made-up but realistic documents with real GOÄ/GOZ numbers, points and
-   factors, as in v0.5's test – decision open.
+5. ~~Test documents?~~ Made-up but realistic ones (decided 2026-11-03; public filled-in examples
+   are scarce – sample pages move or are blank forms, no sample Bescheid found).
