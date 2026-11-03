@@ -186,3 +186,22 @@ func TestMultiPageDocument(t *testing.T) {
 		}
 	}
 }
+
+func TestPhonePageNeverOverwrites(t *testing.T) {
+	s, dir := start(t)
+	sendPage(t, s, "beleg0001", "image/jpeg", jpeg)
+	folder := dir + "/Handy-20261102-101530"
+	// On the computer another page was merged into the folder as page 02.
+	os.WriteFile(folder+"/02 Seite.jpg", []byte("von woanders"), 0o644)
+	if _, name := sendPage(t, s, "beleg0001", "image/jpeg", jpeg); name != "Handy-20261102-101530/03 Seite.jpg" {
+		t.Errorf("next page %q", name)
+	}
+	if b, _ := os.ReadFile(folder + "/02 Seite.jpg"); string(b) != "von woanders" {
+		t.Errorf("page replaced: %q", b)
+	}
+	// The document was booked on the computer: further pages land in the folder again.
+	os.RemoveAll(folder)
+	if code, name := sendPage(t, s, "beleg0001", "image/jpeg", jpeg); code != 200 || name != "Handy-20261102-101530/04 Seite.jpg" {
+		t.Errorf("after the folder was removed: %d %q", code, name)
+	}
+}

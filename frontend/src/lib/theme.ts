@@ -45,7 +45,11 @@ export function applyTheme(t: Theme) {
     paint();
 }
 
-/** Called once at start: the stored choice now, and following the system when it changes. */
+// Applied as soon as this module is evaluated (main.tsx imports it first),
+// before the rest of the app is loaded.
+paint();
+
+/** Called once at start: following the system when it changes. */
 export function initTheme() {
     paint();
     if (typeof window.matchMedia === "function") {

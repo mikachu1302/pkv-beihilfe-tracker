@@ -32,6 +32,13 @@ describe("fillEmpty", () => {
         expect(fillEmpty(fresh, found).next.invoiceDate).toBe("2026-11-03"); // without defaults: kept
     });
 
+    it("replaces values filled from a document before, unless edited", () => {
+        const first = {...blank, amount: "100,00", provider: "Praxis"};
+        const {next} = fillEmpty(first, {...found, amount: "286.40"}, undefined, ["amount"]);
+        expect(next.amount).toBe("286,40");
+        expect(next.provider).toBe("Praxis"); // typed by the user: stays
+    });
+
     it("ignores a missing amount", () => {
         expect(fillEmpty(blank, {...found, amount: "0.00"}).filled).not.toContain("amount");
     });

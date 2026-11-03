@@ -83,7 +83,8 @@ func TestSuggestBySameInvoiceNumber(t *testing.T) {
 }
 
 func TestSuggestContinuationPage(t *testing.T) {
-	head := without(orthoPage1, "Seite 1 von 3", "Rechnungsnummer", "Zwischensumme")
+	// The letterhead page names the bank account in its footer, as the last page does.
+	head := without(orthoPage1, "Seite 1 von 3", "Rechnungsnummer", "Zwischensumme") + "\nBankverbindung: IBAN DE89 3704 0044 0532 0130 00"
 	tail := without(orthoPage3, "Seite 3 von 3")
 	got := SuggestGroups([]DocText{doc("ende.jpg", tail), doc("brief.pdf", pvsInvoice), doc("anfang.jpg", head)}, now)
 	if len(got) != 1 || !slices.Equal(got[0].Names, []string{"anfang.jpg", "ende.jpg"}) || got[0].Reason != "Folgeseite ohne eigenen Briefkopf" {
@@ -107,5 +108,20 @@ func TestSuggestionsDoNotMixKinds(t *testing.T) {
 	got = SuggestGroups([]DocText{doc("s2.jpg", noticePage2), doc("s1.jpg", noticePage1)}, now)
 	if len(got) != 1 || !slices.Equal(got[0].Names, []string{"s1.jpg", "s2.jpg"}) {
 		t.Errorf("Bescheid: %+v", got)
+	}
+}
+
+func TestNoSuggestionForUnrelatedDocuments(t *testing.T) {
+	// A short numeric invoice number turns up as an amount or a postcode elsewhere.
+	labInvoice := "Labor Nord GmbH\nRechnungsnummer: 20431\nRechnungsdatum: 01.10.2026\nPosition   12,00"
+	pharmacy := "Apotheke Hamburg\nHauptstraße 1, 20431 Hamburg\nQuittung\nSumme 204,31"
+	if got := SuggestGroups([]DocText{doc("labor.pdf", labInvoice), doc("apo.jpg", pharmacy)}, now); len(got) != 0 {
+		t.Errorf("numeric number: %+v", got)
+	}
+	// A letterhead-only and a total-only document without a shared IBAN or provider.
+	physio := "Physiotherapie Beispiel\nRechnungsdatum: 02.10.2026\nKrankengymnastik 6x"
+	receipt := "Quittung\nZu zahlen 19,45 EUR"
+	if got := SuggestGroups([]DocText{doc("physio.jpg", physio), doc("quittung.jpg", receipt)}, now); len(got) != 0 {
+		t.Errorf("unrelated head and tail: %+v", got)
 	}
 }

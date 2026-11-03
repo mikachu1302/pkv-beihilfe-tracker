@@ -186,3 +186,65 @@ func TestSuggestInboxGroups(t *testing.T) {
 		t.Errorf("empty: %+v", got)
 	}
 }
+
+func TestBescheidPagesBookedOnce(t *testing.T) {
+	s := newTestService(t)
+	ids := refundFixture(t, s)
+	r, _ := s.AnalyzeRefund(AnalyzeInputDTO{Lines: linesOf(notice)})
+	g := addPages(t, s, "S1.png", "S2.png")
+	first, err := s.ConfirmRefund(g, r, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Page 2 alone again (it could not be removed from the inbox last time).
+	only2 := addPages(t, s, "x.png", "S2 again.png") // contents of S1 and S2
+	if err := s.SplitInbox(only2 + "/01 x.png"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DiscardInbox("x.png", nil); err != nil {
+		t.Fatal(err)
+	}
+	items, _ := s.ListInbox()
+	if len(items) != 1 {
+		t.Fatalf("inbox %+v", items)
+	}
+	if _, err := s.ConfirmRefund(items[0].Name, r, false); err == nil || !strings.Contains(err.Error(), "gehören schon zum gebuchten Bescheid") {
+		t.Errorf("partial rebooking: %v", err)
+	}
+	det, _ := s.GetInvoice(ids[0])
+	if c := claim(det.View, "beihilfe-bund"); c.Actual != "180.20" {
+		t.Errorf("refund booked twice: %+v", c)
+	}
+	// Both pages again, in the other order: the booking is replaced.
+	_ = s.DiscardInbox(items[0].Name, nil)
+	again := addPages(t, s, "b.png", "a.png")
+	if err := s.ReorderInbox(again, []string{again + "/02 a.png", again + "/01 b.png"}); err != nil {
+		t.Fatal(err)
+	}
+	items, _ = s.ListInbox()
+	res, err := s.ConfirmRefund(items[0].Name, r, false)
+	if err != nil || !res.Rebooked || res.DocID != first.DocID {
+		t.Errorf("rebooking: %+v %v", res, err)
+	}
+}
+
+func TestDiscardOnlyTheSeenPages(t *testing.T) {
+	s := newTestService(t)
+	g := addPages(t, s, "a.png", "b.png")
+	items, _ := s.ListInbox()
+	seen := []string{items[0].Pages[0].Name, items[0].Pages[1].Name}
+	// A third page arrives after the user looked at the document.
+	if err := os.WriteFile(filepath.Join(s.st.InboxDirPath(), g, "03 c.png"), tinyPNG(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DiscardInbox(g, seen); err != nil {
+		t.Fatal(err)
+	}
+	items, _ = s.ListInbox()
+	if len(items) != 1 || len(items[0].Pages) != 1 || !strings.HasSuffix(items[0].Pages[0].Name, "03 c.png") {
+		t.Errorf("after discarding %+v", items)
+	}
+	if err := s.DiscardInbox(g, []string{"anderer/01 x.png"}); err == nil {
+		t.Error("page of another document accepted")
+	}
+}

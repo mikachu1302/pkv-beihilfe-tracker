@@ -73,6 +73,9 @@ type docFacts struct {
 	tokens   [][]string // normalised words per line, to find another document's number
 }
 
+// amountWord is a word that is an amount ("204,31", "1.234,56").
+var amountWord = regexp.MustCompile(`^\d{1,3}(?:\.\d{3})*,\d{2}\D*$`)
+
 var leadingWords = regexp.MustCompile(`^(?i)(?:rechnung(?:snummer)?|rg|re|nr|no)\.?\s*`)
 
 func normRef(s string) string {
@@ -109,8 +112,13 @@ func facts(i int, d DocText, now time.Time) docFacts {
 		f.ref = normRef(a.Reference)
 	}
 	markers := PageMarkers(d.Lines)
-	for _, m := range markers {
-		if f.of == 0 || m.Of == f.of {
+	pages := make([]int, 0, len(markers))
+	for p := range markers {
+		pages = append(pages, p)
+	}
+	slices.Sort(pages) // the first page's total decides
+	for _, p := range pages {
+		if m := markers[p]; f.of == 0 || m.Of == f.of {
 			f.of = m.Of
 			f.pages = append(f.pages, m.Page)
 		}
@@ -119,6 +127,9 @@ func facts(i int, d DocText, now time.Time) docFacts {
 	for _, l := range d.Lines {
 		var words []string
 		for _, w := range strings.Fields(l.Text) {
+			if amountWord.MatchString(w) {
+				continue // an amount is never an invoice number
+			}
 			if n := normWord(w); n != "" {
 				words = append(words, n)
 			}
@@ -151,16 +162,26 @@ func finalTotal(lines []Line) bool {
 	return false
 }
 
-// mentions reports whether the document's text contains ref (also split
-// into up to three words: "R 2026 0815").
+// mentions reports whether the document's text contains ref (with letters
+// also split into up to three words: "R 2026 0815"). A number of digits only
+// must have at least 7 and stand as one word – shorter ones are found in
+// postcodes, dates and amounts all the time.
 func (f *docFacts) mentions(ref string) bool {
 	if ref == "" {
 		return false
 	}
+	numeric := strings.Trim(ref, "0123456789") == ""
+	if numeric && len(ref) < 7 {
+		return false
+	}
+	join := 3
+	if numeric {
+		join = 1
+	}
 	for _, words := range f.tokens {
 		for i := range words {
 			joined := ""
-			for j := i; j < len(words) && j < i+3; j++ {
+			for j := i; j < len(words) && j < i+join; j++ {
 				joined += words[j]
 				if joined == ref {
 					return true
@@ -172,6 +193,15 @@ func (f *docFacts) mentions(ref string) bool {
 		}
 	}
 	return false
+}
+
+// sameSender reports positive evidence that two pages come from the same
+// sender: the same IBAN or the same provider.
+func sameSender(a, b *docFacts) bool {
+	if a.iban != "" && a.iban == b.iban {
+		return true
+	}
+	return a.provider != "" && b.provider != "" && (strings.Contains(a.provider, b.provider) || strings.Contains(b.provider, a.provider))
 }
 
 func kindsFit(a, b string) bool { return a == b || a == KindUnknown || b == KindUnknown }
@@ -233,7 +263,8 @@ func SuggestGroups(docs []DocText, now time.Time) []GroupSuggestion {
 		group := []*docFacts{a}
 		for j := range all {
 			b := &all[j]
-			if b.i == a.i || used[b.i] || (b.ref != a.ref && !b.mentions(a.ref)) || contradict(a, b) {
+			if b.i == a.i || used[b.i] || (b.ref != a.ref && !b.mentions(a.ref)) ||
+				slices.ContainsFunc(group, func(m *docFacts) bool { return contradict(m, b) }) {
 				continue
 			}
 			if a.header && a.total && b.header && b.total {
@@ -247,7 +278,8 @@ func SuggestGroups(docs []DocText, now time.Time) []GroupSuggestion {
 	}
 
 	// 3. A page with letterhead but no total and a page with a total but no
-	// letterhead – only when there is exactly one of each left.
+	// letterhead, with the same IBAN or provider – only when there is exactly
+	// one of each left.
 	var heads, tails []*docFacts
 	for i := range all {
 		f := &all[i]
@@ -259,7 +291,8 @@ func SuggestGroups(docs []DocText, now time.Time) []GroupSuggestion {
 			tails = append(tails, f)
 		}
 	}
-	if len(heads) == 1 && len(tails) == 1 && !contradict(heads[0], tails[0]) && heads[0].kind != KindRefundDoc {
+	if len(heads) == 1 && len(tails) == 1 && !contradict(heads[0], tails[0]) && heads[0].kind != KindRefundDoc &&
+		sameSender(heads[0], tails[0]) {
 		add([]*docFacts{heads[0], tails[0]}, "Folgeseite ohne eigenen Briefkopf")
 	}
 	return out

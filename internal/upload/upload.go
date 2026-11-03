@@ -30,6 +30,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -220,14 +221,16 @@ func (s *Server) receive(r *http.Request) (string, error) {
 	}
 	if err := os.Rename(tmp.Name(), filepath.Join(s.dir, filepath.FromSlash(name))); err != nil {
 		os.Remove(tmp.Name())
-		return "", err
+		return "", errors.New("Die Datei konnte am Computer nicht abgelegt werden – bitte erneut senden")
 	}
 	return name, nil
 }
 
 // pagePath returns the inbox name ("Handy-…/02 Seite.jpg") of the next page
 // of a multi-page document, creating its folder for the first page (caller
-// holds the lock). The page names follow the app's "NN name" convention.
+// holds the lock). The page names follow the app's "NN name" convention; the
+// number follows the highest page in the folder, and an existing file is
+// never replaced (the user may have merged other pages into the folder).
 func (s *Server) pagePath(id, ext string) (string, error) {
 	g := s.groups[id]
 	if g == nil {
@@ -239,14 +242,40 @@ func (s *Server) pagePath(id, ext string) (string, error) {
 			}
 			folder = fmt.Sprintf("%s-%d", base, i)
 		}
-		if err := os.Mkdir(filepath.Join(s.dir, folder), 0o755); err != nil {
-			return "", err
-		}
 		g = &group{folder: folder}
 		s.groups[id] = g
 	}
-	g.pages++
-	return fmt.Sprintf("%s/%02d Seite%s", g.folder, g.pages, ext), nil
+	dir := filepath.Join(s.dir, g.folder)
+	// MkdirAll: also when the document was booked or split on the computer
+	// meanwhile – the further pages then form a document of their own.
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", errors.New("Die Datei konnte am Computer nicht abgelegt werden – bitte erneut senden")
+	}
+	n := max(g.pages, highestPage(dir)) + 1
+	for {
+		name := fmt.Sprintf("%02d Seite%s", n, ext)
+		if _, err := os.Lstat(filepath.Join(dir, name)); errors.Is(err, os.ErrNotExist) {
+			g.pages = n
+			return g.folder + "/" + name, nil
+		}
+		n++
+	}
+}
+
+var pageNumberRe = regexp.MustCompile(`^(\d{2,3}) `)
+
+// highestPage returns the highest "NN " number of the files in dir.
+func highestPage(dir string) int {
+	entries, _ := os.ReadDir(dir)
+	high := 0
+	for _, e := range entries {
+		if m := pageNumberRe.FindStringSubmatch(e.Name()); m != nil {
+			if n, err := strconv.Atoi(m[1]); err == nil && n > high {
+				high = n
+			}
+		}
+	}
+	return high
 }
 
 // matchesType checks the first bytes of a file against its MIME type, so

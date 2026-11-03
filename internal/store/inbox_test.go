@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -157,12 +158,62 @@ func TestHandMadeFolders(t *testing.T) {
 	if err != nil || !e.Group || len(e.Pages) != 3 || e.Pages[0].Name != "Rechnung Zahnarzt/Seite 1.jpg" {
 		t.Errorf("entry %+v, %v", e, err)
 	}
-	// Removing the entry removes the folder with everything in it.
+	// Removing the entry removes its pages and system junk, never what the
+	// inbox does not show (the deeper folder).
+	os.WriteFile(filepath.Join(dir, "Thumbs.db"), []byte("x"), 0o644)
+	if got := inboxNames(t, s); len(got) != 1 || strings.Contains(got[0], "Thumbs") {
+		t.Errorf("junk listed: %v", got)
+	}
 	if err := s.RemoveFromInbox("Rechnung Zahnarzt"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(dir); !os.IsNotExist(err) {
-		t.Error("folder still there")
+	if _, err := os.Stat(filepath.Join(dir, "tiefer", "x.jpg")); err != nil {
+		t.Error("deeper folder removed")
+	}
+	if got := inboxNames(t, s); len(got) != 0 {
+		t.Errorf("after removing %v", got)
+	}
+}
+
+func TestRemoveOnlyTheReadPages(t *testing.T) {
+	// A page arriving after the pages were read (phone, sync) is kept.
+	s := open(t, t.TempDir(), "a", "2026-11-03T10:00:00Z")
+	dir := filepath.Join(s.InboxDirPath(), "Handy")
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, "01 Seite.jpg"), []byte("1"), 0o644)
+	os.WriteFile(filepath.Join(dir, "02 Seite.jpg"), []byte("2"), 0o644)
+	e, _ := s.InboxEntry("Handy")
+	os.WriteFile(filepath.Join(dir, "03 Seite.jpg"), []byte("3"), 0o644) // arrives now
+	os.WriteFile(filepath.Join(dir, ".upload-123"), []byte("4"), 0o644)  // still being written
+	var read []string
+	for _, p := range e.Pages {
+		read = append(read, p.Name)
+	}
+	if err := s.RemoveInboxPages(read); err != nil {
+		t.Fatal(err)
+	}
+	if got := inboxNames(t, s); !slices.Equal(got, []string{"Handy[03 Seite.jpg]"}) {
+		t.Errorf("after removing the read pages %v", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".upload-123")); err != nil {
+		t.Error("file being written removed")
+	}
+}
+
+func TestReorderNeverOverwrites(t *testing.T) {
+	s := open(t, t.TempDir(), "a", "2026-11-03T10:00:00Z")
+	dir := filepath.Join(s.InboxDirPath(), "Scan")
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, "01 a.jpg"), []byte("a"), 0o644)
+	os.WriteFile(filepath.Join(dir, "02 b.jpg"), []byte("b"), 0o644)
+	// Moving b to the front while a file named like the target exists already.
+	files := []string{filepath.Join(dir, "02 b.jpg"), filepath.Join(dir, "01 a.jpg")}
+	os.WriteFile(filepath.Join(dir, "01 b.jpg"), []byte("neu"), 0o644)
+	if err := s.placePages(dir, files); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "01 b.jpg")); string(b) != "neu" {
+		t.Errorf("existing file replaced: %q", b)
 	}
 }
 

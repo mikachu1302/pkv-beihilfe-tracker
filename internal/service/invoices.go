@@ -189,7 +189,7 @@ func (s *Service) SaveInvoice(d InvoiceDTO, original *InvoiceDTO, staged []strin
 		}
 	}
 	out := s.detail(&data.Settings, &saved)
-	out.MovedToInbox = backToInbox(st, data, &saved, removed)
+	out.MovedToInbox, out.Warning = backToInbox(st, data, &saved, removed)
 	return out, nil
 }
 

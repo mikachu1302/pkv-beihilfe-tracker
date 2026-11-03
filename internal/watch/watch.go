@@ -180,7 +180,7 @@ func (w *Watcher) handle(ev fsnotify.Event) {
 	}
 	if ev.Has(fsnotify.Remove) || ev.Has(fsnotify.Rename) {
 		// A year or record folder moved away (to the trash, or renamed by
-		// hand): its records are gone. The app never removes folders.
+		// hand): its records are gone. The app never removes year or record folders.
 		if d == 1 && yearRe.MatchString(name) || d == 2 && yearRe.MatchString(filepath.Base(filepath.Dir(ev.Name))) && filepath.Ext(name) == "" {
 			w.mu.Lock()
 			w.force = true

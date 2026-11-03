@@ -69,6 +69,7 @@ describe("createRecognizer", () => {
         expect(runSignal?.aborted).toBe(false);
         two.abort();
         await expect(b).rejects.toBeDefined();
+        await new Promise(r => setTimeout(r, 5)); // cancelled a moment later
         expect(runSignal?.aborted).toBe(true);
         // The cancelled run is not kept: the next use starts again.
         r.recognizeFile(file("a.jpg"));
@@ -118,5 +119,47 @@ describe("createRecognizer", () => {
         const out = await r.recognizePages([file("a.jpg"), file("b.jpg")]);
         expect(run).toHaveBeenCalledTimes(1);
         expect(out).toMatchObject({pages: MAX_PAGES, truncated: true});
+    });
+
+    it("keeps a run when its consumer restarts at once", async () => {
+        const d = deferred<Recognized>();
+        let runSignal: AbortSignal | undefined;
+        const run = vi.fn((_f: PageFile, _p: unknown, s: AbortSignal) => {
+            runSignal = s;
+            return d.promise;
+        });
+        const r = createRecognizer(run);
+        const first = new AbortController();
+        const a = r.recognizeFile(file("a.jpg"), undefined, first.signal);
+        first.abort(); // an effect cleaned up …
+        const b = r.recognizeFile(file("a.jpg")); // … and runs again
+        await expect(a).rejects.toBeDefined();
+        await new Promise(res => setTimeout(res, 5));
+        expect(runSignal?.aborted).toBe(false);
+        expect(run).toHaveBeenCalledTimes(1);
+        d.resolve(rec(1));
+        await expect(b).resolves.toMatchObject({pages: 1});
+    });
+
+    it("lets foreground runs go first", async () => {
+        const order: string[] = [];
+        const gates = new Map<string, () => void>();
+        const r = createRecognizer(f => new Promise<Recognized>(res => {
+            order.push(f.url);
+            gates.set(f.url, () => res(rec(1)));
+        }));
+        // A foreground run is going on …
+        const front = r.recognizePages([file("selected.jpg")]);
+        await Promise.resolve();
+        // … the background waits with its next entry until it is done.
+        const back = r.recognizePages([file("other.jpg")], undefined, undefined, {background: true});
+        await new Promise(res => setTimeout(res, 5));
+        expect(order).toEqual(["/datafile/inbox/selected.jpg"]);
+        gates.get("/datafile/inbox/selected.jpg")!();
+        await front;
+        await new Promise(res => setTimeout(res, 5));
+        expect(order).toEqual(["/datafile/inbox/selected.jpg", "/datafile/inbox/other.jpg"]);
+        gates.get("/datafile/inbox/other.jpg")!();
+        await back;
     });
 });

@@ -60,12 +60,13 @@ const amount = (v: string) => parseAmount(v) || 0;
  * lines, their matching invoices and the checksum. Nothing is booked before
  * "Erstattungen übernehmen".
  */
-export default function RefundReview({inboxName, initial, payers, onDone, onDiscard}: {
+export default function RefundReview({inboxName, initial, payers, onDone, onDiscard, onEdit}: {
     inboxName: string;
     initial: RefundReviewDTO;
     payers: PayerDTO[];
     onDone: () => void;
     onDiscard: () => void;
+    onEdit?: () => void; // the user changed something (a new reading must not replace it)
 }) {
     const toast = useToast();
     const [r, setR] = useState<RefundReviewDTO>(() => forForm(initial));
@@ -79,6 +80,7 @@ export default function RefundReview({inboxName, initial, payers, onDone, onDisc
 
     // Re-check (amounts, matches, checksum) shortly after every change.
     function update(next: RefundReviewDTO, now = false) {
+        onEdit?.();
         setR(next);
         window.clearTimeout(timer.current);
         const n = ++seq.current;

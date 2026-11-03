@@ -1,4 +1,5 @@
 import {useEffect, useId, useRef, useState} from "react";
+import {useLocation} from "react-router";
 import {Desktop, Svc} from "../api";
 import type {AnalysisDTO, AnalyzeInputDTO, InboxItemDTO, InboxPageDTO, InboxSuggestionDTO, InvoiceDTO, LineDTO, PayerDTO, PhoneUploadDTO,
     RefundReviewDTO} from "../api";
@@ -9,7 +10,7 @@ import {Badge, Empty, ErrorNotice, Field, Notice, SourceBadge} from "../componen
 import {recognizePages, renderPdfPreview} from "../lib/capture";
 import {bySize, readAsDataURL, tooBigText, useFileDrop} from "../lib/files";
 import {CATEGORY_LABELS, errMsg, eur, plural, toInput, today} from "../lib/format";
-import {key, useSaveShortcut, useUnsavedChanges} from "../lib/shortcuts";
+import {hasUnsavedChanges, key, useSaveShortcut, useUnsavedChanges} from "../lib/shortcuts";
 import {useBackend} from "../lib/useBackend";
 import {useDialog} from "../lib/useDialog";
 import RefundReview from "./RefundReview";
@@ -22,7 +23,11 @@ export default function Inbox() {
     const confirm = useConfirm();
     const list = useBackend(() => Svc.ListInbox(), [dataVersion]);
     const settings = useBackend(() => Svc.GetSettings(), [dataVersion]);
-    const [selected, setSelected] = useState<string>("");
+    const location = useLocation();
+    // An entry to select as soon as the list has it (after merging, or a
+    // Bescheid moved here from the invoice form).
+    const wanted = useRef<string>((location.state as {select?: string} | null)?.select ?? "");
+    const [selected, setSelected] = useState<string>(wanted.current);
     const [phone, setPhone] = useState(false);
     const {dragging, handlers} = useFileDrop(files => void addDropped(files));
     // Entries ticked to be merged into one document.
@@ -88,9 +93,14 @@ export default function Inbox() {
 
     useEffect(() => {
         const all = list.data ?? [];
-        if (all.length && !all.some(i => i.name === selected)) setSelected(all[0].name);
+        if (wanted.current && all.some(i => i.name === wanted.current)) {
+            setSelected(wanted.current);
+            wanted.current = "";
+        } else if (all.length && !all.some(i => i.name === selected) && !(wanted.current && list.loading)) {
+            setSelected(all[0].name);
+        }
         setTicked(t => t.filter(n => all.some(i => i.name === n)));
-    }, [list.data, selected]);
+    }, [list.data, list.loading, selected]);
 
     // After own changes: reload the list and the count in the navigation.
     const reload = () => {
@@ -125,10 +135,13 @@ export default function Inbox() {
     }
 
     async function merge(names: string[]) {
+        if (current && names.includes(current.name) && hasUnsavedChanges() &&
+            !await confirm("Die Eingaben zu diesem Beleg gehen beim Zusammenfassen verloren. Trotzdem zusammenfassen?", "Zusammenfassen")) return;
         setMerging(true);
         try {
             const name = await Svc.MergeInbox(names);
             setTicked([]);
+            wanted.current = name;
             setSelected(name);
             toast.show(`${names.length} Belege zu einem zusammengefasst`);
             reload();
@@ -152,10 +165,11 @@ export default function Inbox() {
     const tick = (name: string, on: boolean) => setTicked(t => (on ? [...t, name] : t.filter(n => n !== name)));
 
     async function discard(item: InboxItemDTO) {
-        const what = item.group ? `„${item.name}“ mit ${pagesOf(item).length} Seiten` : `„${item.name}“`;
+        const what = item.group ? `„${item.name}“ mit ${plural(pagesOf(item).length, "Seite", "Seiten")}` : `„${item.name}“`;
         if (!await confirm(`${what} aus dem Posteingang löschen?`, "Löschen")) return;
         try {
-            await Svc.DiscardInbox(item.name);
+            // Only the pages shown: one arriving meanwhile stays.
+            await Svc.DiscardInbox(item.name, item.group ? pagesOf(item).map(p => p.name) : []);
             reload();
         } catch (e) {
             toast.error(e);
@@ -267,7 +281,7 @@ const pagesOf = (i: InboxItemDTO): InboxPageDTO[] =>
     i.pages?.length ? i.pages : [{name: i.name, size: i.size, modified: i.modified, type: i.type, url: i.url}];
 
 function kindLabel(i: InboxItemDTO): string {
-    if (i.group) return `${pagesOf(i).length} Seiten`;
+    if (i.group) return plural(pagesOf(i).length, "Seite", "Seiten");
     return i.type === "pdf" ? "PDF" : i.type === "image" ? "Bild" : "Datei";
 }
 
@@ -334,11 +348,21 @@ function InboxItem({item, payers, onDone, onChanged, onDiscard}: {
     const [draft, setDraft] = useState<InvoiceDTO | null>(null);
     const [saving, setSaving] = useState(false);
     const [input, setInput] = useState<AnalyzeInputDTO | null>(null);
-    const [review, setReview] = useState<RefundReviewDTO | null>(null);
+    const [review, setReviewState] = useState<RefundReviewDTO | null>(null);
+    // Every new reading gets a fresh review form (RefundReview keeps its own state).
+    const [reviewKey, setReviewKey] = useState(0);
+    const setReview = (r: RefundReviewDTO | null) => {
+        setReviewState(r);
+        if (r) setReviewKey(k => k + 1);
+    };
     // Set once the user edits the draft or switches between invoice and refund
     // document: a later recognition run (the file changed) must not undo that.
     const touched = useRef(false);
     const [edited, setEdited] = useState(false); // the user typed into the draft: leaving asks first
+    // The pages changed after the user edited the draft or review: offer to read them again.
+    const [stale, setStale] = useState(false);
+    const [reread, setReread] = useState(0);
+    const reads = useRef(0);
     useUnsavedChanges(edited && !saving);
     // Recognition runs again when the pages change (not when the list is reloaded).
     const pages = pageFiles(item);
@@ -381,7 +405,11 @@ function InboxItem({item, payers, onDone, onChanged, onDiscard}: {
                     rec.truncated ? `Nur die ersten ${rec.pages} Seiten wurden gelesen.` : ""].filter(Boolean).join(" ");
                 setInput(inp);
                 setAnalysis(a);
-                if (touched.current) return;
+                reads.current++;
+                if (touched.current) {
+                    if (reads.current > 1) setStale(true);
+                    return;
+                }
                 if (a.kind === "refund") {
                     try {
                         const r = await Svc.AnalyzeRefund(inp);
@@ -402,7 +430,15 @@ function InboxItem({item, payers, onDone, onChanged, onDiscard}: {
             }
         })();
         return () => run.abort();
-    }, [pagesKey]);
+    }, [pagesKey, reread]);
+
+    function readAgain() {
+        touched.current = false;
+        setEdited(false);
+        setStale(false);
+        setReview(null);
+        setReread(n => n + 1);
+    }
 
     async function save() {
         if (!draft || saving) return;
@@ -435,7 +471,7 @@ function InboxItem({item, payers, onDone, onChanged, onDiscard}: {
             <div className="panel">
                 <div className="payer-head">
                     <h2>{item.name}</h2>
-                    {item.group && <Badge>{pagesOf(item).length} Seiten</Badge>}
+                    {item.group && <Badge>{plural(pagesOf(item).length, "Seite", "Seiten")}</Badge>}
                     {analysis?.kind === "invoice" && <Badge kind="good">Rechnung erkannt</Badge>}
                     {analysis?.kind === "refund" && <Badge kind="good">Erstattungsbeleg erkannt</Badge>}
                     <span className="spacer"/>
@@ -443,10 +479,20 @@ function InboxItem({item, payers, onDone, onChanged, onDiscard}: {
                         ? <button className="link" onClick={asInvoice}>Als Rechnung behandeln</button>
                         : <button className="link" onClick={() => asRefund(input)}>Als Erstattungsbeleg behandeln</button>)}
                 </div>
-                {item.group && <PageStrip item={item} onChanged={onChanged}/>}
+                {item.group && <PageStrip item={item} onChanged={onChanged} edited={edited}/>}
+                {stale && (
+                    <Notice kind="warn">
+                        Die Seiten dieses Belegs haben sich geändert – die Angaben unten stammen noch von vorher.{" "}
+                        <button className="link" onClick={readAgain}>Neu einlesen</button> (eigene Eingaben gehen dabei verloren)
+                    </Notice>
+                )}
                 {status && <p className="muted small" role="status">{status}</p>}
                 {error && <Notice kind="warn">{error} Die Felder lassen sich von Hand ausfüllen.</Notice>}
-                {review && <RefundReview inboxName={item.name} initial={review} payers={payers} onDone={onDone} onDiscard={onDiscard}/>}
+                {review && <RefundReview key={reviewKey} inboxName={item.name} initial={review} payers={payers} onDone={onDone}
+                                         onDiscard={onDiscard} onEdit={() => {
+                                             touched.current = true;
+                                             setEdited(true);
+                                         }}/>}
                 {!review && (analysis?.notes ?? []).map(n => <Notice key={n} kind={n.startsWith("Rezept erkannt –") ? undefined : "warn"}>{n}</Notice>)}
                 {!review && draft && (
                     <>
@@ -506,11 +552,24 @@ function InboxItem({item, payers, onDone, onChanged, onDiscard}: {
 }
 
 /** The pages of a multi-page document: change the order, take pages out. */
-function PageStrip({item, onChanged}: {item: InboxItemDTO; onChanged: () => void}) {
+function PageStrip({item, onChanged, edited}: {item: InboxItemDTO; onChanged: () => void; edited: boolean}) {
     const toast = useToast();
+    const confirm = useConfirm();
     const [busy, setBusy] = useState(false);
     const [dragFrom, setDragFrom] = useState<number | null>(null);
-    const names = pagesOf(item).map(p => p.name);
+    // After moving a page with the keyboard the focus follows it.
+    const focusAfter = useRef("");
+    const pages = pagesOf(item);
+    const names = pages.map(p => p.name);
+    // Busy until the list was loaded again (a second move needs the new names);
+    // every reload hands in a new item object.
+    useEffect(() => {
+        setBusy(false);
+        if (focusAfter.current) {
+            document.querySelector<HTMLElement>(`[data-focus="${CSS.escape(focusAfter.current)}"]`)?.focus();
+            focusAfter.current = "";
+        }
+    }, [item]);
     async function run(p: Promise<unknown>) {
         setBusy(true);
         try {
@@ -518,49 +577,65 @@ function PageStrip({item, onChanged}: {item: InboxItemDTO; onChanged: () => void
             onChanged();
         } catch (e) {
             toast.error(e);
-        } finally {
             setBusy(false);
         }
     }
-    const move = (from: number, to: number) => {
+    const move = (from: number, to: number, focus = "") => {
+        if (busy || to < 0 || to >= names.length) return;
         const next = [...names];
         const [page] = next.splice(from, 1);
         next.splice(to, 0, page);
+        focusAfter.current = focus;
         void run(Svc.ReorderInbox(item.name, next));
     };
+    // Taking pages out dissolves the document when at most one page is left:
+    // the entries typed for it are lost then.
+    async function split(name: string, all: boolean) {
+        if (busy) return;
+        if (edited && (all || names.length <= 2) &&
+            !await confirm("Die Eingaben zu diesem Beleg gehen dabei verloren. Trotzdem trennen?", "Trennen")) return;
+        void run(Svc.SplitInbox(name));
+    }
     return (
         <div className="page-strip">
             <div className="doc-tiles" aria-label="Seiten">
-                {pagesOf(item).map((p, i) => (
-                    <div key={p.name} className={`doc-tile ${dragFrom === i ? "dragging" : ""}`} draggable={!busy}
-                         onDragStart={e => {
-                             e.dataTransfer.effectAllowed = "move";
-                             setDragFrom(i);
-                         }}
-                         onDragOver={e => dragFrom !== null && e.preventDefault()}
-                         onDrop={e => {
-                             e.preventDefault();
-                             if (dragFrom !== null && dragFrom !== i) move(dragFrom, i);
-                             setDragFrom(null);
-                         }}
-                         onDragEnd={() => setDragFrom(null)}>
-                        <div className="doc-open"><DocThumb url={p.url} type={p.type} label={`Seite ${i + 1}`}/></div>
-                        <div className="doc-meta">
-                            <span>Seite {i + 1}</span>
-                            <span className="spacer"/>
-                            <button className="link" disabled={busy || i === 0} aria-label={`Seite ${i + 1} nach vorne`} title="Nach vorne"
-                                    onClick={() => move(i, i - 1)}>←</button>
-                            <button className="link" disabled={busy || i === names.length - 1} aria-label={`Seite ${i + 1} nach hinten`}
-                                    title="Nach hinten" onClick={() => move(i, i + 1)}>→</button>
+                {pages.map((p, i) => {
+                    const k = pageKey(p);
+                    return (
+                        <div key={k} className={`doc-tile ${dragFrom === i ? "dragging" : ""}`} draggable={!busy}
+                             onDragStart={e => {
+                                 e.dataTransfer.effectAllowed = "move";
+                                 setDragFrom(i);
+                             }}
+                             onDragOver={e => dragFrom !== null && e.preventDefault()}
+                             onDrop={e => {
+                                 if (dragFrom === null) return; // files from outside: the page's drop zone takes them
+                                 e.preventDefault();
+                                 e.stopPropagation();
+                                 if (dragFrom !== i) move(dragFrom, i);
+                                 setDragFrom(null);
+                             }}
+                             onDragEnd={() => setDragFrom(null)}>
+                            <div className="doc-open"><DocThumb url={p.url} type={p.type} label={`Seite ${i + 1}`}/></div>
+                            <div className="doc-meta">
+                                <span>Seite {i + 1}</span>
+                                <span className="spacer"/>
+                                <button className="link" aria-disabled={busy || i === 0} data-focus={`${k}:prev`}
+                                        aria-label={`Seite ${i + 1} nach vorne`} title="Nach vorne"
+                                        onClick={() => move(i, i - 1, `${k}:prev`)}>←</button>
+                                <button className="link" aria-disabled={busy || i === names.length - 1} data-focus={`${k}:next`}
+                                        aria-label={`Seite ${i + 1} nach hinten`} title="Nach hinten"
+                                        onClick={() => move(i, i + 1, `${k}:next`)}>→</button>
+                            </div>
+                            <button className="link small" aria-disabled={busy} aria-label={`Seite ${i + 1} herauslösen`}
+                                    onClick={() => void split(p.name, false)}>Herauslösen</button>
                         </div>
-                        <button className="link small" disabled={busy} aria-label={`Seite ${i + 1} herauslösen`}
-                                onClick={() => void run(Svc.SplitInbox(p.name))}>Herauslösen</button>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
             <p className="muted small">
                 Reihenfolge per Pfeil oder durch Ziehen ändern. „Herauslösen“ macht eine Seite wieder zu einem eigenen Beleg.{" "}
-                <button className="link" disabled={busy} onClick={() => void run(Svc.SplitInbox(item.name))}>Alle Seiten trennen</button>
+                <button className="link" aria-disabled={busy} onClick={() => void split(item.name, true)}>Alle Seiten trennen</button>
             </p>
         </div>
     );

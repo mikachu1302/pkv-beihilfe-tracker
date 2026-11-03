@@ -137,16 +137,25 @@ func (s *Service) AddFilesToInbox(paths []string) ([]string, error) {
 	return names, nil
 }
 
-// DiscardInbox deletes a document from the inbox (all its pages), or one
-// page of a multi-page document ("folder/file").
-func (s *Service) DiscardInbox(name string) error {
+// DiscardInbox deletes a document from the inbox, or one page of a
+// multi-page document ("folder/file"). pages are the pages the user saw: only
+// they are deleted, a page that arrived meanwhile stays (empty: all pages).
+func (s *Service) DiscardInbox(name string, pages []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	st, _, err := s.ready()
 	if err != nil {
 		return err
 	}
-	return st.RemoveFromInbox(name)
+	if len(pages) == 0 {
+		return st.RemoveFromInbox(name)
+	}
+	for _, p := range pages {
+		if p != name && !strings.HasPrefix(p, name+"/") {
+			return fmt.Errorf("„%s“ gehört nicht zu „%s“", p, name)
+		}
+	}
+	return st.RemoveInboxPages(pages)
 }
 
 // MergeInbox makes one document of several inbox documents, in the given
@@ -191,31 +200,32 @@ type inboxPage struct {
 }
 
 // readInboxPages reads the pages of an inbox document in order. The same
-// file twice (photographed twice) is kept once.
-func readInboxPages(st *store.Store, name string) ([]inboxPage, error) {
+// file twice (photographed twice) is kept once. read are all files read –
+// exactly these are removed from the inbox after booking.
+func readInboxPages(st *store.Store, name string) (pages []inboxPage, read []string, err error) {
 	e, err := st.InboxEntry(name)
 	if err != nil {
-		return nil, fmt.Errorf("Datei im Posteingang nicht gefunden: %w", err)
+		return nil, nil, fmt.Errorf("Datei im Posteingang nicht gefunden: %w", err)
 	}
-	var out []inboxPage
 	for _, p := range e.Pages {
 		path, err := st.InboxPath(p.Name)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		b, err := os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("Datei im Posteingang nicht gefunden: %w", err)
+			return nil, nil, fmt.Errorf("Datei im Posteingang nicht gefunden: %w", err)
 		}
 		doc, err := documentName(b, p.Name)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		if !slices.ContainsFunc(out, func(x inboxPage) bool { return x.doc == doc }) {
-			out = append(out, inboxPage{name: p.Name, doc: doc, content: b})
+		read = append(read, p.Name)
+		if !slices.ContainsFunc(pages, func(x inboxPage) bool { return x.doc == doc }) {
+			pages = append(pages, inboxPage{name: p.Name, doc: doc, content: b})
 		}
 	}
-	return out, nil
+	return pages, read, nil
 }
 
 // storePages puts the pages into belege/ and returns their names there.
@@ -275,7 +285,7 @@ func (s *Service) CreateInvoiceFromInbox(name string, d InvoiceDTO) (InvoiceDeta
 	if err != nil {
 		return InvoiceDetailDTO{}, err
 	}
-	pages, err := readInboxPages(st, name)
+	pages, read, err := readInboxPages(st, name)
 	if err != nil {
 		return InvoiceDetailDTO{}, err
 	}
@@ -312,7 +322,7 @@ func (s *Service) CreateInvoiceFromInbox(name string, d InvoiceDTO) (InvoiceDeta
 	replaceInvoice(data, saved)
 	// The invoice is saved. If the files cannot be removed (locked by the sync
 	// tool), they stay in the inbox; using them again is caught above.
-	_ = st.RemoveFromInbox(name)
+	_ = st.RemoveInboxPages(read)
 	return s.detail(&data.Settings, &saved), nil
 }
 

@@ -76,13 +76,22 @@ func (s *Store) InboxPath(name string) (string, error) {
 	return filepath.Join(s.InboxDirPath(), rel), nil
 }
 
+// junkFiles are files the operating system puts into folders by itself
+// (hidden on Windows and macOS by attribute, not by a leading dot).
+var junkFiles = map[string]bool{"thumbs.db": true, "desktop.ini": true, "icon\r": true, ".ds_store": true, "ehthumbs.db": true}
+
+func isJunk(name string) bool { return junkFiles[strings.ToLower(name)] }
+
+// visible reports whether an inbox file is a document (not hidden, no system junk).
+func visible(name string) bool { return !strings.HasPrefix(name, ".") && !isJunk(name) }
+
 // visibleFiles returns the visible files directly in dir, in natural name order.
 func visibleFiles(dir string) ([]os.DirEntry, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
-	out := slices.DeleteFunc(entries, func(e os.DirEntry) bool { return e.IsDir() || strings.HasPrefix(e.Name(), ".") })
+	out := slices.DeleteFunc(entries, func(e os.DirEntry) bool { return e.IsDir() || !visible(e.Name()) })
 	slices.SortStableFunc(out, func(a, b os.DirEntry) int { return naturalCompare(a.Name(), b.Name()) })
 	return out, nil
 }
@@ -99,7 +108,7 @@ func (s *Store) ListInbox() ([]InboxEntry, error) {
 	}
 	var out []InboxEntry
 	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), ".") {
+		if !visible(e.Name()) {
 			continue
 		}
 		if !e.IsDir() {
@@ -195,8 +204,10 @@ func (s *Store) AddToInbox(name string, data []byte) (string, error) {
 	return filepath.Base(path), nil
 }
 
-// RemoveFromInbox deletes a document of the inbox – a file, or a folder with
-// all its pages – or one page ("folder/file"; the folder goes with its last page).
+// RemoveFromInbox deletes a document of the inbox – a file, or the pages a
+// folder holds now – or one page ("folder/file"). Callers that read the
+// pages before (booking, discarding what the user saw) use RemoveInboxPages,
+// so that a page arriving in between is kept.
 func (s *Store) RemoveFromInbox(name string) error {
 	path, err := s.InboxPath(name)
 	if err != nil {
@@ -209,38 +220,61 @@ func (s *Store) RemoveFromInbox(name string) error {
 	case err != nil:
 		return err
 	case fi.IsDir():
-		files, err := visibleFiles(path)
+		e, err := s.InboxEntry(name)
+		if err != nil {
+			return nil // no pages (any more)
+		}
+		pages := make([]string, len(e.Pages))
+		for i, p := range e.Pages {
+			pages[i] = p.Name
+		}
+		return s.RemoveInboxPages(pages)
+	}
+	return s.RemoveInboxPages([]string{name})
+}
+
+// RemoveInboxPages deletes exactly these inbox files (names as ListInbox
+// gives them). A page folder goes when nothing but system junk is left in it;
+// anything else in it – pages that arrived meanwhile, files being synced,
+// deeper folders – is kept.
+func (s *Store) RemoveInboxPages(names []string) error {
+	dirs := map[string]bool{}
+	for _, n := range names {
+		path, err := s.InboxPath(n)
 		if err != nil {
 			return err
 		}
-		for _, f := range files {
-			if err := s.remove(filepath.Join(path, f.Name())); err != nil {
-				return err
-			}
+		if err := s.remove(path); err != nil {
+			return err
 		}
-		return s.removeDir(path)
-	}
-	if err := s.remove(path); err != nil {
-		return err
-	}
-	if dir := filepath.Dir(path); dir != s.InboxDirPath() {
-		if files, err := visibleFiles(dir); err == nil && len(files) == 0 {
-			return s.removeDir(dir)
+		if dir := filepath.Dir(path); dir != s.InboxDirPath() {
+			dirs[dir] = true
 		}
+	}
+	for dir := range dirs {
+		s.removeEmptyDir(dir)
 	}
 	return nil
 }
 
-// removeDir deletes a page folder that has no visible files left (hidden
-// ones such as .DS_Store go with it).
-func (s *Store) removeDir(dir string) error {
-	if err := os.RemoveAll(dir); err != nil {
-		return err
+// removeEmptyDir deletes a page folder if nothing but system junk is left
+// in it (never with its contents: a file that arrives meanwhile stays).
+func (s *Store) removeEmptyDir(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
 	}
-	s.ownMu.Lock()
-	s.own[dir] = ownStamp{removed: true}
-	s.ownMu.Unlock()
-	return nil
+	for _, e := range entries {
+		if e.IsDir() || !isJunk(e.Name()) {
+			return
+		}
+	}
+	for _, e := range entries {
+		_ = os.Remove(filepath.Join(dir, e.Name()))
+	}
+	if os.Remove(dir) == nil {
+		s.markRemoved(dir)
+	}
 }
 
 // pagePrefix is the number the app puts before page names.
@@ -279,10 +313,13 @@ func (s *Store) placePages(dir string, files []string) error {
 		s.markRemoved(m.from)
 	}
 	for _, m := range moves {
-		if err := os.Rename(m.tmp, m.to); err != nil {
+		// A file that arrived meanwhile under the same name (the phone) is
+		// never replaced: this page then takes a free name.
+		to := freeName(dir, filepath.Base(m.to))
+		if err := os.Rename(m.tmp, to); err != nil {
 			return err
 		}
-		s.noteOwn(m.to)
+		s.noteOwn(to)
 	}
 	return nil
 }
@@ -358,10 +395,7 @@ func (s *Store) MergeInbox(names []string) (string, error) {
 		if g == target {
 			continue
 		}
-		gd := filepath.Join(s.InboxDirPath(), g)
-		if files, err := visibleFiles(gd); err == nil && len(files) == 0 {
-			_ = s.removeDir(gd)
-		}
+		s.removeEmptyDir(filepath.Join(s.InboxDirPath(), g))
 	}
 	return target, nil
 }
@@ -427,7 +461,8 @@ func (s *Store) SplitInbox(name string) error {
 		s.noteOwn(to)
 	}
 	if len(keep) == 0 {
-		return s.removeDir(dir)
+		s.removeEmptyDir(dir)
+		return nil
 	}
 	return s.placePages(dir, keep)
 }

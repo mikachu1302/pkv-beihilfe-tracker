@@ -368,17 +368,35 @@ func (s *Service) ConfirmRefund(inboxName string, r RefundReviewDTO, saveLayout 
 	// or the same Bescheid scanned twice), the earlier booking is replaced
 	// instead of counting the refunds twice.
 	var pages []inboxPage
+	var read []string
 	if inboxName != "" {
-		if pages, err = readInboxPages(st, inboxName); err != nil {
+		if pages, read, err = readInboxPages(st, inboxName); err != nil {
 			return out, err
 		}
 		doc.Attachment = pages[0].doc
 		for _, p := range pages[1:] {
 			doc.MorePages = append(doc.MorePages, p.doc)
 		}
+		// The same pages again (in any order) replace the earlier booking;
+		// only some of them would book their refunds a second time.
 		for _, d := range data.RefundDocs {
-			if d.Attachment == doc.Attachment && !d.Deleted {
+			if d.Deleted {
+				continue
+			}
+			shared := 0
+			for _, p := range doc.Pages() {
+				if slices.Contains(d.Pages(), p) {
+					shared++
+				}
+			}
+			switch {
+			case shared == 0:
+			case shared == len(d.Pages()) && shared == len(doc.Pages()):
 				doc.ID, out.Rebooked = d.ID, true
+			default:
+				return out, fmt.Errorf("Seiten dieses Belegs gehören schon zum gebuchten Bescheid vom %s – bitte alle Seiten zusammen buchen oder die übrigen im Posteingang verwerfen", d.Date.DE())
+			}
+			if out.Rebooked {
 				break
 			}
 		}
@@ -517,7 +535,7 @@ func (s *Service) ConfirmRefund(inboxName string, r RefundReviewDTO, saveLayout 
 		}
 	}
 	if inboxName != "" {
-		if err := st.RemoveFromInbox(inboxName); err != nil {
+		if err := st.RemoveInboxPages(read); err != nil {
 			out.Warnings = append(out.Warnings, "Die Datei bleibt im Posteingang, weil sie nicht entfernt werden konnte: "+err.Error())
 		}
 	}

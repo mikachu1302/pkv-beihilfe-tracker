@@ -72,10 +72,14 @@ function abortError(signal: AbortSignal): unknown {
  * Shares recognition runs between consumers (the inbox detail, the background
  * recognition for suggestions, the invoice form) and keeps the results of the
  * last `size` files. A run is cancelled only when every consumer gave up on
- * it; failed and cancelled runs are not kept.
+ * it – checked a moment later, so a consumer that restarts (an effect run
+ * again) joins the same run; failed and cancelled runs are not kept. Runs in
+ * the foreground go first: background runs wait until none is going on.
  */
 export function createRecognizer(run: Run, size = 60) {
     const jobs = new Map<string, Job>();
+    let foreground = 0;
+    let idle: (() => void)[] = [];
     const key = (f: PageFile) => f.key ?? `${f.url}\n${f.modified ?? ""}\n${f.size ?? ""}`;
 
     function job(f: PageFile): Job {
@@ -124,10 +128,11 @@ export function createRecognizer(run: Run, size = 60) {
             };
             const onAbort = () => {
                 if (!leave()) return;
-                if (j.users === 0 && !j.result) {
+                setTimeout(() => {
+                    if (j.users > 0 || j.result) return; // someone joined again
                     j.ctrl.abort();
                     for (const [k, v] of jobs) if (v === j) jobs.delete(k);
-                }
+                }, 0);
                 reject(abortError(signal!));
             };
             signal?.addEventListener("abort", onAbort);
@@ -135,27 +140,60 @@ export function createRecognizer(run: Run, size = 60) {
         });
     }
 
+    /** Resolves when no foreground run is going on. */
+    function whenIdle(signal?: AbortSignal): Promise<void> {
+        if (foreground === 0) return Promise.resolve();
+        return new Promise((resolve, reject) => {
+            const done = () => {
+                signal?.removeEventListener("abort", stop);
+                resolve();
+            };
+            const stop = () => {
+                idle = idle.filter(f => f !== done);
+                reject(abortError(signal!));
+            };
+            idle.push(done);
+            signal?.addEventListener("abort", stop);
+        });
+    }
+
     /**
      * Recognises the files of one document one after another and joins them
      * (see combinePages). With several files the progress names the file.
+     * Background runs (suggestions) let foreground runs go first.
      */
-    async function recognizePages(files: PageFile[], progress?: Progress, signal?: AbortSignal): Promise<Recognized> {
-        const parts: Recognized[] = [];
-        let read = 0;
-        for (const [i, f] of files.entries()) {
-            if (read >= MAX_PAGES) break;
-            const p = progress && files.length > 1 ? (m: string) => progress(`Seite ${i + 1} von ${files.length}: ${m}`) : progress;
-            const r = await recognizeFile(f, p, signal);
-            parts.push(r);
-            read += r.pages;
+    async function recognizePages(files: PageFile[], progress?: Progress, signal?: AbortSignal,
+                                  opts: {background?: boolean} = {}): Promise<Recognized> {
+        if (!opts.background) foreground++;
+        try {
+            const parts: Recognized[] = [];
+            let read = 0;
+            for (const [i, f] of files.entries()) {
+                if (read >= MAX_PAGES) break;
+                if (opts.background) {
+                    while (foreground > 0 && !peek(f)) await whenIdle(signal);
+                }
+                const p = progress && files.length > 1 ? (m: string) => progress(`Seite ${i + 1} von ${files.length}: ${m}`) : progress;
+                const r = await recognizeFile(f, p, signal);
+                parts.push(r);
+                read += r.pages;
+            }
+            const out = combinePages(parts);
+            if (parts.length < files.length) out.truncated = true;
+            return out;
+        } finally {
+            if (!opts.background && --foreground === 0) {
+                const waiting = idle;
+                idle = [];
+                waiting.forEach(f => f());
+            }
         }
-        const out = combinePages(parts);
-        if (parts.length < files.length) out.truncated = true;
-        return out;
     }
 
     /** The result if the file was recognised already. */
-    const peek = (f: PageFile): Recognized | undefined => jobs.get(key(f))?.result;
+    function peek(f: PageFile): Recognized | undefined {
+        return jobs.get(key(f))?.result;
+    }
 
     return {recognizeFile, recognizePages, peek};
 }

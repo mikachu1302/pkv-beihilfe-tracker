@@ -284,6 +284,11 @@ into the repo.
 - HEIC photos (iPhone) are stored and recognised, but cannot go into the PDF bundle (pdfcpu
   cannot convert them); they are listed as missing there.
 
+- Attachments are one leaf for the merge of two devices' versions: if one device adds a page
+  while another removes one before they synced, one change wins (the files stay in `belege/`,
+  a removed page is copied to the inbox, nothing is deleted). Merging the list element by element
+  would need removal markers.
+
 ## 16. Changes during implementation
 
 - **M1:** Groups (several lines = one invoice) are matched *before* the 1:1 assignment, otherwise
@@ -405,4 +410,16 @@ into the repo.
   keep further pages in `RefundDoc.MorePages` (no schema bump, see the field). Recognition reads
   up to 12 pages per document, results are cached per file. Theme switch (system/light/dark) per
   device. Verified headless (server mode + Playwright/Firefox) with made-up pages: the two pages
-  were suggested in the right order, merged, and all fields recognised across both pages.
+  were suggested in the right order, merged, all fields recognised across both pages, and saved
+  with both pages attached in order.
+- v0.3.0 review fixes: booking or discarding removes exactly the pages that were read or shown
+  (a page arriving meanwhile, files being synced and deeper folders stay; folders are removed only
+  when nothing but system junk such as `Thumbs.db` is left); a Bescheid sharing only some pages
+  with a booked one is refused; phone pages and renumbering never replace an existing file; a
+  removed page is copied to the inbox and stays in `belege/`; suggestions need a 7-digit number
+  for numeric invoice numbers and the same IBAN or provider for continuation pages. Frontend: a
+  run of the recognition shared by several consumers is cancelled only a moment after the last one
+  left (effects that restart join it again), background runs wait for the selected entry,
+  "Speichern & nächste" and removing a page stop a running recognition, saving waits for
+  documents still being taken over, the review of a Bescheid is read again when its pages change
+  (or offers to), the merged document is selected, the first paint follows the system scheme.

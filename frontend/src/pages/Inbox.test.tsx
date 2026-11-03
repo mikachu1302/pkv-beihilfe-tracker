@@ -24,7 +24,7 @@ const draft: InvoiceDTO = {
 };
 
 function analysis(kind = "invoice"): AnalysisDTO {
-    return {kind, draft: {invoice: draft, view: invoiceRow("", draft.provider), movedToInbox: 0}, sources: {amount: "qr", provider: "label", category: "guess"}, notes: []};
+    return {kind, draft: {invoice: draft, view: invoiceRow("", draft.provider), movedToInbox: 0, warning: ""}, sources: {amount: "qr", provider: "label", category: "guess"}, notes: []};
 }
 
 beforeEach(() => {
@@ -201,7 +201,8 @@ describe("Inbox", () => {
         const user = userEvent.setup();
         const page = (n: number) => ({name: `Scan/0${n} Scan ${n}.jpg`, size: 10 + n, modified: "2026-11-03 10:00:00", type: "image",
             url: `/datafile/inbox/Scan/0${n}%20Scan%20${n}.jpg`});
-        svc.ListInbox.mockResolvedValue([{name: "Scan", size: 23, modified: "2026-11-03 10:00", type: "group", url: "", group: true,
+        // Every reload hands in new objects, as the backend does.
+        svc.ListInbox.mockImplementation(async () => [{name: "Scan", size: 23, modified: "2026-11-03 10:00", type: "group", url: "", group: true,
             pages: [page(1), page(2)]}]);
         svc.ReorderInbox.mockResolvedValue(undefined);
         svc.SplitInbox.mockResolvedValue(undefined);
@@ -216,7 +217,7 @@ describe("Inbox", () => {
         await waitFor(() => expect(svc.SplitInbox).toHaveBeenCalledWith(page(1).name));
         await user.click(screen.getByRole("button", {name: "Alle Seiten trennen"}));
         await waitFor(() => expect(svc.SplitInbox).toHaveBeenCalledWith("Scan"));
-        expect(screen.getByRole("button", {name: "Seite 1 nach vorne"})).toBeDisabled();
+        expect(screen.getByRole("button", {name: "Seite 1 nach vorne"})).toHaveAttribute("aria-disabled", "true");
     });
 
     it("suggests documents that belong together and remembers a no", async () => {
@@ -243,4 +244,27 @@ describe("Inbox", () => {
         await new Promise(r => setTimeout(r, 400));
         expect(screen.queryByText(/Gehören wohl zusammen/)).not.toBeInTheDocument();
     });
+
+    it("selects the merged document", async () => {
+        const user = userEvent.setup();
+        const before = [
+            {name: "Brief.pdf", size: 10, modified: "2026-11-03 10:01", type: "pdf", url: "/datafile/inbox/Brief.pdf"},
+            {name: "Scan 1.jpg", size: 10, modified: "2026-11-03 10:02", type: "image", url: "/datafile/inbox/Scan%201.jpg"},
+            {name: "Scan 2.jpg", size: 10, modified: "2026-11-03 10:03", type: "image", url: "/datafile/inbox/Scan%202.jpg"},
+        ];
+        const after = [before[0], {name: "Scan 1", size: 20, modified: "2026-11-03 10:03", type: "group", url: "", group: true,
+            pages: [{name: "Scan 1/01 Scan 1.jpg", size: 10, modified: "x", type: "image", url: "/datafile/inbox/Scan%201/01%20Scan%201.jpg"},
+                {name: "Scan 1/02 Scan 2.jpg", size: 10, modified: "x", type: "image", url: "/datafile/inbox/Scan%201/02%20Scan%202.jpg"}]}];
+        svc.ListInbox.mockResolvedValue(before);
+        svc.MergeInbox.mockImplementation(async () => {
+            svc.ListInbox.mockResolvedValue(after);
+            return "Scan 1";
+        });
+        renderAt("/", "/", <Inbox/>);
+        await user.click(await screen.findByLabelText("„Scan 1.jpg“ zum Zusammenfassen auswählen"));
+        await user.click(screen.getByLabelText("„Scan 2.jpg“ zum Zusammenfassen auswählen"));
+        await user.click(screen.getByRole("button", {name: "Zu einem Beleg zusammenfassen (2)"}));
+        expect(await screen.findByRole("region", {name: "Scan 1"})).toBeInTheDocument();
+    });
 });
+

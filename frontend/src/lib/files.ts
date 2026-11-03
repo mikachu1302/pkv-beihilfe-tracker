@@ -39,15 +39,24 @@ export function tooBigText(tooBig: File[]): string {
     return `${names} ${one ? "ist" : "sind"} größer als ${MAX_FILE_MB} MB und ${one ? "wurde" : "wurden"} nicht hinzugefügt.`;
 }
 
+// Drags that started inside the window (a page tile, an image) are no file
+// drops, even where the webview reports them with the type "Files".
+let internalDrag = false;
+if (typeof window !== "undefined") {
+    window.addEventListener("dragstart", () => (internalDrag = true));
+    window.addEventListener("dragend", () => (internalDrag = false));
+    window.addEventListener("drop", () => (internalDrag = false));
+}
+
 /**
  * Drag & drop of files onto an element: spread the handlers onto it and show
- * a hint while `dragging`. Other drags (text, elements) are ignored.
+ * a hint while `dragging`. Other drags (text, elements, pages) are ignored.
  */
 export function useFileDrop(onFiles: (files: File[]) => void) {
     const [dragging, setDragging] = useState(false);
     // dragenter/dragleave also fire when moving between child elements: count them.
     const depth = useRef(0);
-    const isFiles = (e: DragEvent) => e.dataTransfer.types.includes("Files");
+    const isFiles = (e: DragEvent) => !internalDrag && e.dataTransfer.types.includes("Files");
     const handlers = {
         onDragEnter(e: DragEvent) {
             if (!isFiles(e)) return;

@@ -226,8 +226,9 @@ func TestRemovedAttachmentGoesBackToInbox(t *testing.T) {
 	if saved.MovedToInbox != 1 {
 		t.Errorf("moved %d, want 1", saved.MovedToInbox)
 	}
-	if p, _ := s.st.DocumentPath(a); exists(p) {
-		t.Error("page a still in belege")
+	// The file stays in belege/ too: another device may still refer to it.
+	if p, _ := s.st.DocumentPath(a); !exists(p) {
+		t.Error("page a removed from belege")
 	}
 	if p, _ := s.st.DocumentPath(c); !exists(p) {
 		t.Error("page c (used by the Bescheid) removed")

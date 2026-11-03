@@ -53,6 +53,10 @@ function emptyClaim(payerId: string): ClaimDTO {
 
 const STATUS_KIND: Record<string, "good" | "warn" | undefined> = {refunded: "good", submitted: "warn"};
 
+/** Natural order of file names: "Seite 2" before "Seite 10". */
+const byName = new Intl.Collator("de", {numeric: true, sensitivity: "base"});
+const baseName = (path: string) => path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1);
+
 /** State of reading the documents added to a new invoice. */
 interface Recognition {
     status: string;
@@ -87,8 +91,17 @@ export default function InvoiceForm() {
     const [staged, setStaged] = useState<StagedDocDTO[]>([]);
     const stagedRef = useRef(staged);
     stagedRef.current = staged;
-    // Fields filled from a document → where the value came from (badge until edited).
+    // Fields filled from a document → where the value came from (badge until
+    // edited). Such fields may be filled again when more pages are added.
     const [filled, setFilled] = useState<Record<string, string>>({});
+    const filledRef = useRef(filled);
+    filledRef.current = filled;
+    // Counts the forms shown by this component (another invoice, "Speichern &
+    // nächste", leaving): late results of an earlier form are dropped.
+    const formGen = useRef(0);
+    // Documents still being copied into the session folder: saving waits for them.
+    const [staging, setStaging] = useState(0);
+    const savingRef = useRef(false);
     const [recog, setRecog] = useState<Recognition>(NO_RECOGNITION);
     const recogRun = useRef<AbortController | null>(null);
     const invRef = useRef(inv);
@@ -114,6 +127,7 @@ export default function InvoiceForm() {
 
     // Documents of a form that is left without saving are discarded.
     const dropStaged = () => {
+        formGen.current++;
         recogRun.current?.abort();
         const ids = stagedRef.current.map(d => d.id);
         if (ids.length) Svc.DiscardStaged(ids).catch(() => {});
@@ -175,39 +189,67 @@ export default function InvoiceForm() {
         }, 250);
     }
 
-    async function addStaged(docs: StagedDocDTO[]) {
+    /** Adds staged documents to the form they were added in (gen); a form left meanwhile discards them. */
+    async function addStaged(docs: StagedDocDTO[], gen: number) {
         if (!docs.length) return;
+        if (gen !== formGen.current) {
+            Svc.DiscardStaged(docs.map(d => d.id)).catch(() => {});
+            return;
+        }
         const all = [...stagedRef.current, ...docs];
+        stagedRef.current = all;
         setStaged(all);
         if (!id) await recognizeStaged(all);
     }
 
+    /** Copies documents into the session folder; saving waits until it is done. */
+    async function stage<T>(work: () => Promise<T>): Promise<T> {
+        setStaging(n => n + 1);
+        try {
+            return await work();
+        } finally {
+            setStaging(n => n - 1);
+        }
+    }
+
     async function chooseFiles() {
+        if (savingRef.current) return;
+        const gen = formGen.current;
         try {
             const paths = await Desktop.ChooseFiles("Beleg hinzufügen", "PDF und Bilder", "*.pdf;*.jpg;*.jpeg;*.png;*.webp;*.heic");
-            if (paths?.length) await addStaged((await Svc.StageFiles(paths)) ?? []);
+            if (!paths?.length) return;
+            // Pages in name order ("Seite 2" before "Seite 10"), whatever order the dialog returns.
+            const sorted = [...paths].sort((a, b) => byName.compare(baseName(a), baseName(b)));
+            await addStaged((await stage(() => Svc.StageFiles(sorted))) ?? [], gen);
         } catch (e) {
             toast.error(e);
         }
     }
 
     async function addDropped(files: File[]) {
+        if (savingRef.current) return;
+        const gen = formGen.current;
         const {fitting, tooBig} = bySize(files);
         if (tooBig.length) toast.show(tooBigText(tooBig), true);
         const docs: StagedDocDTO[] = [];
-        try {
-            for (const f of fitting) docs.push(await Svc.StageFile(f.name, await readAsDataURL(f)));
-        } catch (e) {
-            toast.error(e);
-        }
-        await addStaged(docs);
+        await stage(async () => {
+            try {
+                for (const f of [...fitting].sort((a, b) => byName.compare(a.name, b.name))) {
+                    docs.push(await Svc.StageFile(f.name, await readAsDataURL(f)));
+                }
+            } catch (e) {
+                toast.error(e);
+            }
+        });
+        await addStaged(docs, gen);
     }
 
     /** Reads the added documents (as pages of one) and fills the empty fields of a new invoice. */
     async function recognizeStaged(docs: StagedDocDTO[]) {
-        recogRun.current?.abort();
         const run = new AbortController();
+        const previous = recogRun.current;
         recogRun.current = run;
+        previous?.abort(); // after the new run joined: shared pages are not read again
         const {signal} = run;
         setRecog({...NO_RECOGNITION, status: "Beleg wird gelesen …"});
         try {
@@ -220,7 +262,7 @@ export default function InvoiceForm() {
                 setRecog({...NO_RECOGNITION, refund: true});
                 return;
             }
-            const {next, filled: got} = fillEmpty(invRef.current, a.draft.invoice, blankRef.current ?? undefined);
+            const {next, filled: got} = fillEmpty(invRef.current, a.draft.invoice, blankRef.current ?? undefined, Object.keys(filledRef.current));
             if (got.length) {
                 setFilled(f => Object.fromEntries([...Object.entries(f), ...got.map(k => [k, a.sources?.[k] ?? "label"])]));
                 update(next);
@@ -237,12 +279,18 @@ export default function InvoiceForm() {
     }
 
     async function stagedToInbox() {
+        const ids = stagedRef.current.map(d => d.id);
+        if (ids.length === 0) {
+            setRecog(NO_RECOGNITION);
+            return;
+        }
         try {
-            await Svc.StagedToInbox(staged.map(d => d.id));
+            const name = await Svc.StagedToInbox(ids);
+            stagedRef.current = [];
             setStaged([]);
             setRecog(NO_RECOGNITION);
             toast.show("Der Bescheid liegt jetzt im Posteingang");
-            navigate("/posteingang");
+            navigate("/posteingang", {state: {select: name}});
         } catch (e) {
             toast.error(e);
         }
@@ -250,9 +298,13 @@ export default function InvoiceForm() {
 
     function removeStaged(doc: StagedDocDTO) {
         Svc.DiscardStaged([doc.id]).catch(() => {});
-        const rest = staged.filter(d => d.id !== doc.id);
+        recogRun.current?.abort();
+        const rest = stagedRef.current.filter(d => d.id !== doc.id);
+        stagedRef.current = rest;
         setStaged(rest);
-        if (rest.length === 0) setRecog(NO_RECOGNITION);
+        setRecog(NO_RECOGNITION);
+        // The remaining pages are read again (the removed one must not fill fields).
+        if (!id && rest.length > 0) void recognizeStaged(rest);
     }
 
     const open = (p: Promise<string>) => p.then(path => Desktop.OpenPath(path)).catch(toast.error);
@@ -275,14 +327,25 @@ export default function InvoiceForm() {
 
     async function save(next: "list" | "new") {
         if (!inv || saving) return;
+        if (staging > 0) {
+            toast.show("Einen Moment – ein Beleg wird noch übernommen.");
+            return;
+        }
         cancelPreview();
         setSaving(true);
+        savingRef.current = true;
         setSaveError("");
         try {
-            const d = await Svc.SaveInvoice(inv, original, staged.map(s => s.id));
-            setStaged([]);
+            const sent = stagedRef.current.map(s => s.id);
+            const d = await Svc.SaveInvoice(inv, original, sent);
+            // The saved form is done: a recognition still running must not fill the next one.
+            recogRun.current?.abort();
+            formGen.current++;
+            stagedRef.current = stagedRef.current.filter(s => !sent.includes(s.id));
+            setStaged(stagedRef.current);
             setFilled({});
             setRecog(NO_RECOGNITION);
+            if (d.warning) toast.show(d.warning, true);
             toast.show(d.movedToInbox > 0
                 ? `Rechnung gespeichert – ${d.movedToInbox === 1 ? "der entfernte Beleg liegt" : `${d.movedToInbox} entfernte Belege liegen`} wieder im Posteingang`
                 : "Rechnung gespeichert");
@@ -304,6 +367,7 @@ export default function InvoiceForm() {
             setSaveError(errMsg(e));
         } finally {
             setSaving(false);
+            savingRef.current = false;
         }
     }
 
@@ -393,7 +457,9 @@ export default function InvoiceForm() {
                                 <DocTile key={d.id} url={d.url} type={d.type} label={`Seite ${attachments.length + i + 1}`} isNew title={d.name}
                                          onOpen={() => open(Promise.resolve(d.path))} onRemove={() => removeStaged(d)}/>
                             ))}
-                            <button type="button" className="doc-add" onClick={chooseFiles}>+ Beleg hinzufügen …</button>
+                            <button type="button" className="doc-add" onClick={chooseFiles} disabled={saving}>
+                                {staging > 0 ? "wird übernommen …" : "+ Beleg hinzufügen …"}
+                            </button>
                         </div>
                         {attachments.length > 1 && (
                             <button type="button" className="link" onClick={() => open(Svc.DocumentsPDF(attachments))}>Alle Seiten zusammen öffnen</button>

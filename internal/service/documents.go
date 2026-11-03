@@ -361,10 +361,12 @@ func documentInUse(data *store.Data, doc, except string) bool {
 
 var unsafeNameChars = strings.NewReplacer("/", "-", `\`, "-", ":", "-", "*", "", "?", "", `"`, "", "<", "", ">", "", "|", "-")
 
-// backToInbox moves documents an invoice no longer uses into the inbox, so
-// that nothing is lost: from there they can be attached elsewhere or
-// discarded. It returns how many were moved (caller holds the lock).
-func backToInbox(st *store.Store, data *store.Data, inv *model.Invoice, removed []string) int {
+// backToInbox puts a copy of documents an invoice no longer uses into the
+// inbox, so that nothing is lost: from there they can be attached elsewhere
+// or discarded. The file stays in belege/ – another device may still refer
+// to it (its change and this one are merged later). It returns how many
+// were copied and a warning for those that could not be (caller holds the lock).
+func backToInbox(st *store.Store, data *store.Data, inv *model.Invoice, removed []string) (int, string) {
 	var free []string
 	for _, doc := range removed {
 		if !documentInUse(data, doc, inv.ID) {
@@ -378,7 +380,7 @@ func backToInbox(st *store.Store, data *store.Data, inv *model.Invoice, removed 
 	if !inv.InvoiceDate.IsZero() {
 		base += " " + inv.InvoiceDate.String()
 	}
-	moved := 0
+	moved, failed := 0, 0
 	for i, doc := range free {
 		path, err := st.DocumentPath(doc)
 		if err != nil {
@@ -393,10 +395,13 @@ func backToInbox(st *store.Store, data *store.Data, inv *model.Invoice, removed 
 			name += fmt.Sprintf(" Seite %d", i+1)
 		}
 		if _, err := st.AddToInbox(name+filepath.Ext(doc), b); err != nil {
+			failed++
 			continue
 		}
-		_ = st.RemoveDocument(doc)
 		moved++
 	}
-	return moved
+	if failed > 0 {
+		return moved, fmt.Sprintf("%d entfernte Seite(n) konnten nicht in den Posteingang gelegt werden – die Dateien bleiben im Ordner „belege“", failed)
+	}
+	return moved, ""
 }

@@ -486,7 +486,7 @@ func TestInboxToInvoice(t *testing.T) {
 	}
 
 	other, _ := s.AddToInbox("foto.jpg", base64.StdEncoding.EncodeToString([]byte("jpg")))
-	if err := s.DiscardInbox(other); err != nil {
+	if err := s.DiscardInbox(other, nil); err != nil {
 		t.Fatal(err)
 	}
 	if items, _ := s.ListInbox(); len(items) != 0 {

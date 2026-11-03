@@ -39,8 +39,8 @@
   <h1>Beleg an den Computer senden</h1>
   <p>Rechnungen oder Erstattungsbescheide fotografieren oder als PDF wählen. Sie landen sofort im Posteingang der App.</p>
   <div class="mode" role="radiogroup" aria-label="Art der Belege">
-    <label><input type="radio" name="mode" value="single" checked> Einzelne Belege</label>
-    <label><input type="radio" name="mode" value="multi"> Mehrseitiger Beleg</label>
+    <label><input type="radio" name="mode" value="single" checked autocomplete="off"> Einzelne Belege</label>
+    <label><input type="radio" name="mode" value="multi" autocomplete="off"> Mehrseitiger Beleg</label>
   </div>
   <p id="hint">Jedes Foto und jede Datei wird ein eigener Beleg.</p>
   <label class="btn primary"><span id="camera-label">Foto aufnehmen</span><input id="camera" type="file" accept="image/*" capture="environment"></label>
@@ -90,7 +90,9 @@
     });
   }
   $("done").addEventListener("click", newDocument);
-  show();
+  // A browser restoring the page may bring back "Mehrseitiger Beleg" checked.
+  multi = document.querySelector("input[value=multi]").checked;
+  if (multi) newDocument(); else show();
 
   // One card per file: preview, name (shortened with … if long), size or error, status.
   async function send(file, groupID, label) {

@@ -31,7 +31,7 @@ const page: StagedDocDTO = {id: "0123456789abcdef.png", name: "rechnung.png", ty
     path: "/tmp/sitzung/staged/0123456789abcdef.png", size: 1000};
 
 function analysis(kind: string, found: Partial<InvoiceDTO>): AnalysisDTO {
-    return {kind, draft: {invoice: {...blank, invoiceDate: "", ...found}, view: invoiceRow("", ""), movedToInbox: 0},
+    return {kind, draft: {invoice: {...blank, invoiceDate: "", ...found}, view: invoiceRow("", ""), movedToInbox: 0, warning: ""},
         sources: {amount: "qr", reference: "label"}, notes: []};
 }
 
@@ -146,7 +146,7 @@ describe("InvoiceForm", () => {
     it("fills the empty fields from an added document and keeps typed ones", async () => {
         const user = userEvent.setup();
         svc.AnalyzeDocument.mockResolvedValue(analysis("invoice", {provider: "Dr. Muster", amount: "286.40", reference: "R-1"}));
-        svc.SaveInvoice.mockResolvedValue({invoice: {...blank, id: "x"}, view: invoiceRow("x", "Praxis", {year: 2026}), movedToInbox: 0});
+        svc.SaveInvoice.mockResolvedValue({invoice: {...blank, id: "x"}, view: invoiceRow("x", "Praxis", {year: 2026}), movedToInbox: 0, warning: ""});
         renderAt("/rechnung/neu", "/rechnung/neu", <InvoiceForm/>);
         await user.type(await screen.findByLabelText("Behandler *"), "Praxis Beispiel");
         await user.click(screen.getByRole("button", {name: "+ Beleg hinzufügen …"}));
@@ -220,4 +220,37 @@ describe("InvoiceForm", () => {
         unmount();
         expect(svc.DiscardStaged).toHaveBeenCalledWith([page.id]);
     });
+
+    it("does not let a pending recognition fill the next invoice after \"Speichern & nächste\"", async () => {
+        const user = userEvent.setup();
+        let finish!: (v: unknown) => void;
+        capture.recognizePages.mockImplementation(() => new Promise(res => (finish = res)));
+        svc.AnalyzeDocument.mockResolvedValue(analysis("invoice", {provider: "Dr. Alt", amount: "99.00"}));
+        svc.SaveInvoice.mockResolvedValue({invoice: {...blank, id: "x"}, view: invoiceRow("x", "Praxis", {year: 2026}), movedToInbox: 0, warning: ""});
+        renderAt("/rechnung/neu", "/rechnung/neu", <InvoiceForm/>);
+        await user.type(await screen.findByLabelText("Behandler *"), "Praxis");
+        await user.click(screen.getByRole("button", {name: "+ Beleg hinzufügen …"}));
+        await screen.findByText("neu");
+        await user.click(screen.getByRole("button", {name: /Speichern & nächste/}));
+        await waitFor(() => expect(svc.NewInvoice).toHaveBeenCalledTimes(2));
+        finish({lines: [], qr: [], ocr: false, pages: 1, truncated: false}); // the old run ends now
+        await new Promise(r => setTimeout(r, 50));
+        expect(screen.getByLabelText("Behandler *")).toHaveValue("");
+        expect(screen.queryByText("neu")).not.toBeInTheDocument();
+    });
+
+    it("reads the remaining pages again when a page is removed", async () => {
+        const user = userEvent.setup();
+        const second = {...page, id: "fedcba9876543210.png", name: "seite2.png", url: "/datafile/staged/fedcba9876543210.png"};
+        svc.StageFiles.mockResolvedValue([page, second]);
+        svc.AnalyzeDocument.mockResolvedValue(analysis("invoice", {provider: "Dr. Muster"}));
+        renderAt("/rechnung/neu", "/rechnung/neu", <InvoiceForm/>);
+        await user.click(await screen.findByRole("button", {name: "+ Beleg hinzufügen …"}));
+        await waitFor(() => expect(capture.recognizePages).toHaveBeenCalledTimes(1));
+        await user.click(screen.getByRole("button", {name: "Seite 1 entfernen"}));
+        await waitFor(() => expect(capture.recognizePages).toHaveBeenCalledTimes(2));
+        expect(capture.recognizePages.mock.calls[1][0].map((p: {url: string}) => p.url)).toEqual([second.url]);
+        expect(svc.DiscardStaged).toHaveBeenCalledWith([page.id]);
+    });
 });
+
