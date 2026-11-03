@@ -20,9 +20,9 @@ switch at any time.
 | Topic | Decision |
 |---|---|
 | Look | Direction A: one accent colour (lime `#C8F542` as fill; dark olive `#3F6212` for text on light), numbers in a monospace face, calm surfaces. Fonts bundled (no CDN): Space Grotesk (UI) and JetBrains Mono (numbers), both OFL. |
-| Design switch | "Design: Klassisch / Neu" per device; **Neu is the default**, also for existing installations after the update, with a one-time hint where to switch back (decided 2026-11-03). Both designs share the **same structure** (menu, pages, forms, views) and differ only in look (colours, fonts, spacing, radii, density). No second set of screens: every feature is built once and shows up in both designs. "Klassisch" is today's look, not a frozen copy of v0.2.0. |
-| Views | Detail, Kompakt, Tabelle – the same data in all three – plus today's list as "Klassische Liste". Views and design are independent: every view works in both designs. |
-| Default view | Configurable per device; out of the box it follows the design: **Neu → Detail**, **Klassisch → Klassische Liste** (today's list, decided 2026-11-03). The other views stay selectable in both designs. Switching in the list applies until the next start (or until changed in the settings). |
+| Design switch | "Design: Klassisch / Neu" per device; **Neu is the default**, also for existing installations after the update, with a one-time hint where to switch back (decided 2026-11-03). Both designs share the **same structure** (menu, pages, forms) and differ only in look (colours, fonts, spacing, radii, density). No second set of screens: every feature is built once and shows up in both designs. One exception: the new invoice views exist only in the new design (see Views). "Klassisch" is today's look, not a frozen copy of v0.2.0. |
+| Views | **New design**: Detail, Kompakt, Tabelle – the same data in all three – plus today's list as "Klassische Liste", with a view switch. **Classic design**: only today's list, no view switch (decided 2026-11-03: the classic design does not need the new views). So the new views are styled for the new design only. |
+| Default view | New design: configurable per device, out of the box **Detail**. Switching in the list applies until the next start (or until changed in the settings). Classic design: always today's list. |
 | Invoice page | No "Reise einer Rechnung" layout (direction D) – decided 2026-11-03. |
 | Table | **Read only**: sorting, choosing columns, sum row. Editing stays in the invoice form (double click / Enter opens it). |
 | Themes | Shipped with v0.3.0: switch "Dunkel" in the menu, Hell / Dunkel / Automatisch in the settings, per device. Both designs get a light and a dark variant. |
@@ -53,7 +53,7 @@ Compared: the mockups (A, Detail, Kompakt, Tabelle, Darstellung; light and dark)
 screenshots of today's pages (demo data) and the code.
 
 Result: the look can be done in CSS almost everywhere. New structure comes from the new invoice
-views (planned as a feature anyway, available in both designs); everything else keeps its markup.
+views (planned as a feature anyway, in the new design only); everything else keeps its markup.
 The top of the invoice list is already built like the Detail mockup (title, year, search, Excel,
 "Neue Rechnung", Ausstand cards per payer, filter chips) – it only changes its look.
 
@@ -65,7 +65,7 @@ The top of the invoice list is already built like the Detail mockup (title, year
 | Pages without a mockup (Dashboard, Posteingang, Rechnungsformular, Alle Jahre, Import, Einstellungen, Einrichtung) | New look through the same classes, layout unchanged. | CSS only |
 | Spacing in the code | About 60 spacing values are inline styles (`marginTop: 8`, `gap: 24` …) that a design cannot override. They become classes / spacing tokens – mechanical, for both designs. | small code change |
 | Amounts in the monospace face | Mostly marked with `num` already; some large figures (cards) and amounts inside text need a marker. | small code change |
-| View switch, Detail cards, Kompakt rows (expandable, status dots), Tabelle (sorting, column chooser, sum row, sticky header/column) | New components; today's table stays as "Klassische Liste". | new structure, in both designs |
+| View switch, Detail cards, Kompakt rows (expandable, status dots), Tabelle (sorting, column chooser, sum row, sticky header/column) | New components; today's table stays as "Klassische Liste". | new structure, new design only |
 | Settings · Darstellung | Design, default view, table options (the colour scheme is there since v0.3.0). | new structure, small |
 | Colour scheme control in the list header (mockup) | Dropped – the menu switch "Dunkel" does this. | – |
 
@@ -103,8 +103,8 @@ the same filters and search, the same sort order unless the table is sorted othe
 ## Settings · Darstellung
 
 - Design: Neu (default) / Klassisch.
-- Standardansicht: "wie das Design" (default: Detail with Neu, Klassische Liste with Klassisch) /
-  Detail / Kompakt / Tabelle / Klassische Liste.
+- Standardansicht (shown with the new design only): Detail (default) / Kompakt / Tabelle /
+  Klassische Liste.
 - Farbschema: Hell / Dunkel / Automatisch (exists since v0.3.0).
 - Tabelle: sum row, dense rows, visible columns (also from the column chooser).
 - Stored in the device config (`internal/config`), not in the data folder – two devices can
@@ -122,18 +122,22 @@ the same filters and search, the same sort order unless the table is sorted othe
    classes for `[data-design="new"]` – menu as icon rail with logo tile, header, buttons, chips,
    cards, tables, forms, dialogs, dashboard (layout unchanged); one-time hint after the update
    where to switch back to "Klassisch".
-3. **View switch + Detail view** (default); today's table stays as "Klassische Liste"; keep all
-   functions of the current list (ticks, popovers for refund amount and Klärung, bulk bar).
+3. **View switch + Detail view** (default) in the new design; today's table stays as "Klassische
+   Liste" (and is the only list in the classic design, without a switch); keep all functions of
+   the current list (ticks, popovers for refund amount and Klärung, bulk bar).
 4. **Tabelle**: read-only grid with sorting, column chooser, sum row, sticky header/column.
 5. **Kompakt** with expandable rows.
 6. **Settings · Darstellung** complete: design, default view, table options; remember the last
    quick choice for the session only.
 7. Tests: unit tests per view (same data, sorting, column chooser, keyboard), contrast check
-   for all four design/theme combinations, headless screenshots of the main pages in each;
+   for all four design/theme combinations, headless screenshots of the main pages in each (the
+   new views in the new design, light and dark);
    docs (README, PLAN).
 
 ## Open points
 
 - Later, own step: the dashboard of mockup A (decided 2026-11-03: not in v0.4.0's first version).
-- Status dots need a text alternative in every place (screen readers, colour blindness).
-- Performance with several hundred invoices in the table (virtualise only if needed).
+- Status dots need a text alternative in every place (screen readers, colour blindness): the
+  short text next to them ("eingereicht 20.09.") stays visible, the dots are decoration.
+- Performance with several hundred invoices in the table ("alle Jahre"): render all rows first,
+  measure, virtualise only if needed.
