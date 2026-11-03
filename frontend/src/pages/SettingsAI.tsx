@@ -129,7 +129,7 @@ export function AISettingsSection() {
                         </span>
                     ) : (
                         <span className="row nowrap">
-                            <span>gespeichert{loaded.keyEnd && <span className="mono"> (…{loaded.keyEnd})</span>}</span>
+                            <span className="key-stored">gespeichert{loaded.keyEnd && <span className="mono"> (…{loaded.keyEnd})</span>}</span>
                             <button className="link" onClick={() => setChangingKey(true)}>Ändern</button>
                             <button className="link" onClick={() => void saveKey("")}>Entfernen</button>
                         </span>
