@@ -37,7 +37,7 @@ describe("Fragen", () => {
         renderAt("/", "/", <Ask/>);
         await user.type(screen.getByLabelText("Frage"), "Wie viele Rechnungen aus 2026 hat die Beihilfe noch nicht?{Enter}");
         expect(svc.Ask).toHaveBeenCalledWith({question: "Wie viele Rechnungen aus 2026 hat die Beihilfe noch nicht?", history: []});
-        const entry = await screen.findByRole("region", {name: "Wie viele Rechnungen aus 2026 hat die Beihilfe noch nicht?"});
+        const entry = await screen.findByRole("article", {name: "Wie viele Rechnungen aus 2026 hat die Beihilfe noch nicht?"});
         expect(within(entry).getByText("2 Rechnungen")).toBeInTheDocument();
         const chips = within(entry).getByLabelText("So hat die App die Frage verstanden");
         expect(within(chips).getByText("Anzahl")).toBeInTheDocument();
@@ -50,7 +50,10 @@ describe("Fragen", () => {
         await user.type(screen.getByLabelText("Frage"), "Und 2025?{Enter}");
         expect(svc.Ask).toHaveBeenLastCalledWith({question: "Und 2025?",
             history: [{frage: "Wie viele Rechnungen aus 2026 hat die Beihilfe noch nicht?", abfrage: query}]});
-        expect(await screen.findByText("1 Rechnung")).toBeInTheDocument();
+        const followUp = await screen.findByRole("article", {name: "Und 2025?"});
+        expect(await within(followUp).findByText("1 Rechnung")).toBeInTheDocument();
+        // Screen readers hear the answer sentence (and not the chips and tables).
+        expect(document.querySelector("[aria-live=polite]")).toHaveTextContent("1 Rechnung");
     });
 
     it("changes and removes chips without the AI", async () => {
@@ -61,10 +64,13 @@ describe("Fragen", () => {
         await user.type(screen.getByLabelText("Frage"), "Wie viele?{Enter}");
         await user.click(await screen.findByRole("button", {name: "„nicht eingereicht“ entfernen"}));
         expect(svc.RunQuery).toHaveBeenCalledWith({...query, filter: [{feld: "kostentraeger", wert: "Beihilfe Bund"}]});
-        expect(await screen.findByText("5 Rechnungen")).toBeInTheDocument();
+        const entry = screen.getByRole("article", {name: "Wie viele?"});
+        expect(await within(entry).findByText("5 Rechnungen")).toBeInTheDocument();
+        // The chip with the focused button went away: the focus stays in the chips.
+        expect(within(entry).getByRole("group", {name: "So hat die App die Frage verstanden"})).toHaveFocus();
 
         // Changing a chip changes the query as it stands now (without the removed status).
-        await user.selectOptions(screen.getByRole("combobox", {name: "Beihilfe Bund ändern"}), "Muster PKV");
+        await user.selectOptions(screen.getByRole("combobox", {name: "Kostenträger ändern"}), "Muster PKV");
         expect(svc.RunQuery).toHaveBeenLastCalledWith(expect.objectContaining({filter: [{feld: "kostentraeger", wert: "Muster PKV"}]}));
         await user.click(screen.getByRole("button", {name: "„2026“ entfernen"}));
         expect(svc.RunQuery).toHaveBeenLastCalledWith(expect.objectContaining({jahre: []}));
@@ -77,8 +83,8 @@ describe("Fragen", () => {
         svc.Ask.mockReturnValue(cancellable(Promise.resolve(answer())));
         renderAt("/", "/", <Ask/>, {setYear});
         await user.type(screen.getByLabelText("Frage"), "Welche?{Enter}");
-        const open = await screen.findByRole("button", {name: "In der Rechnungsliste zeigen"});
-        expect(open).toHaveAttribute("title", "Die Liste filtert nicht nach: Kostenträger");
+        const open = await screen.findByRole("link", {name: "In der Rechnungsliste zeigen"});
+        expect(screen.getByText("(ohne Filter nach Kostenträger)")).toBeInTheDocument();
         await user.click(open);
         expect(setYear).toHaveBeenCalledWith(2026);
         expect(screen.getByText("andere Seite")).toBeInTheDocument();
@@ -91,9 +97,10 @@ describe("Fragen", () => {
             figures: [{label: "Beihilfe Bund: eingereicht, Erstattung offen", value: "700,00 €"}]}))));
         renderAt("/", "/", <Ask/>);
         await user.type(screen.getByLabelText("Frage"), "Was steht noch aus?{Enter}");
-        expect(await screen.findByText("Noch ausstehend: 1.165,40 €")).toBeInTheDocument();
-        expect(screen.getByText("Beihilfe Bund: eingereicht, Erstattung offen")).toBeInTheDocument();
-        expect(screen.queryByRole("button", {name: "In der Rechnungsliste zeigen"})).not.toBeInTheDocument();
+        const entry = await screen.findByRole("article", {name: "Was steht noch aus?"});
+        expect(await within(entry).findByText("Noch ausstehend: 1.165,40 €")).toBeInTheDocument();
+        expect(within(entry).getByText("Beihilfe Bund: eingereicht, Erstattung offen")).toBeInTheDocument();
+        expect(within(entry).queryByRole("link", {name: "In der Rechnungsliste zeigen"})).not.toBeInTheDocument();
     });
 
     it("cancels a question and says when the server is away", async () => {
@@ -112,6 +119,40 @@ describe("Fragen", () => {
         svc.Ask.mockImplementation(() => cancellable(Promise.reject(new Error("KI-Server nicht erreichbar: 192.168.178.38:8080 antwortet nicht"))));
         await user.type(screen.getByLabelText("Frage"), "Und jetzt?{Enter}");
         expect(await screen.findByText(/nicht erreichbar.*Ohne KI helfen die Filter der Rechnungsliste\./)).toBeInTheDocument();
+    });
+
+    it("stops a running question when the history is cleared", async () => {
+        const user = userEvent.setup();
+        let reject: (e: Error) => void = () => {};
+        const running = Object.assign(new Promise<AnswerDTO>((_, r) => (reject = r)), {cancel: vi.fn(() => reject(new Error("cancelled")))});
+        svc.Ask.mockReturnValue(running);
+        renderAt("/", "/", <Ask/>);
+        await user.type(screen.getByLabelText("Frage"), "Wie viele?{Enter}");
+        await user.click(screen.getByRole("button", {name: "Verlauf leeren"}));
+        expect(running.cancel).toHaveBeenCalled();
+        expect(screen.queryByRole("article")).not.toBeInTheDocument();
+        await user.type(screen.getByLabelText("Frage"), "Neu");
+        expect(screen.getByRole("button", {name: "Fragen"})).toBeEnabled();
+    });
+
+    it("offers the year asked about even without invoices, and takes only the latest chip change", async () => {
+        const user = userEvent.setup();
+        svc.Ask.mockReturnValue(cancellable(Promise.resolve(answer({query: {...query, jahre: [2019]},
+            chips: [{key: "typ", text: "Anzahl"}, {key: "jahre", text: "2019"}]}))));
+        let first: (a: AnswerDTO) => void = () => {};
+        svc.RunQuery.mockImplementationOnce(() => new Promise(r => (first = r)))
+            .mockImplementationOnce(async (q: QueryDTO) => answer({query: q, answer: "später"}));
+        renderAt("/", "/", <Ask/>);
+        await user.type(screen.getByLabelText("Frage"), "Wie viele 2019?{Enter}");
+        const year = await screen.findByRole("combobox", {name: "Jahr ändern"});
+        expect(year).toHaveValue("2019");
+        await user.selectOptions(year, "2026");
+        await user.selectOptions(year, "2025");
+        const entry = screen.getByRole("article", {name: "Wie viele 2019?"});
+        expect(await within(entry).findByText("später")).toBeInTheDocument();
+        first(answer({answer: "früher"})); // the answer to the first change comes last
+        await new Promise(r => setTimeout(r, 0));
+        expect(within(entry).queryByText("früher")).not.toBeInTheDocument();
     });
 
     it("points to the settings while the AI is off", () => {
@@ -133,8 +174,8 @@ describe("Fragen", () => {
 describe("listState", () => {
     it("maps a query to the list's year, filter and search", () => {
         expect(listState({...query, filter: [{feld: "status", wert: "eingereicht"}, {feld: "behandler", wert: "Dr. Muster"}]}))
-            .toEqual({year: 2026, state: {filter: "submitted", search: "Dr. Muster"}, missing: []});
+            .toEqual({year: 2026, state: {filter: "submitted", search: "Muster"}, missing: []}); // the list searches plain text
         expect(listState({...query, jahre: [2025, 2026], filter: [{feld: "kategorie", wert: "zahnarzt"}, {feld: "bezahlt", wert: "nein"}]}))
-            .toEqual({year: 0, state: {filter: "unpaid", search: undefined}, missing: ["Kategorie", "mehrere Jahre"]});
+            .toEqual({year: 0, state: {filter: "unpaid", search: undefined}, missing: ["Kategorie", "mehreren Jahren"]});
     });
 });

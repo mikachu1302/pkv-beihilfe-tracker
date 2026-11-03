@@ -4,16 +4,16 @@ import {Desktop, Svc} from "../api";
 import type {AIReadDTO, AnalysisDTO, AnalyzeInputDTO, InboxItemDTO, InboxPageDTO, InboxSuggestionDTO, InvoiceDTO, LineDTO, PayerDTO, PhoneUploadDTO,
     RefundReviewDTO} from "../api";
 import {useApp, useInboxChanged} from "../App";
-import {AIReadBar, AlternativeHint} from "../components/AIRead";
+import {AIReadBar, fieldHint} from "../components/AIRead";
 import {DocThumb} from "../components/DocThumb";
 import {useConfirm, useToast} from "../components/feedback";
-import {Badge, Empty, ErrorNotice, Field, Notice, SourceBadge} from "../components/ui";
+import {Badge, Empty, ErrorNotice, Field, Notice} from "../components/ui";
 import {useAIOn} from "../lib/ai";
-import {readingSummary, useAIRead} from "../lib/aiRead";
+import {readingError, readingSummary, useAIRead} from "../lib/aiRead";
 import {recognizePages, renderPdfPreview} from "../lib/capture";
 import {bySize, readAsDataURL, tooBigText, useFileDrop} from "../lib/files";
-import {CATEGORY_LABELS, errMsg, eur, plural, sentence, toInput, today} from "../lib/format";
-import {alternativeInput, applyReading} from "../lib/prefill";
+import {CATEGORY_LABELS, errMsg, eur, plural, toInput, today} from "../lib/format";
+import {applyReading, omit} from "../lib/prefill";
 import type {Alternative} from "../lib/prefill";
 import {hasUnsavedChanges, key, useSaveShortcut, useUnsavedChanges} from "../lib/shortcuts";
 import {useBackend} from "../lib/useBackend";
@@ -378,12 +378,15 @@ function InboxItem({item, payers, onDone, onChanged, onDiscard}: {
     const [stale, setStale] = useState(false);
     const [reread, setReread] = useState(0);
     const reads = useRef(0);
+    const [recognizing, setRecognizing] = useState(true);
     useUnsavedChanges(edited && !saving);
     // Recognition runs again when the pages change (not when the list is reloaded).
     const pages = pageFiles(item);
     const pagesKey = pages.map(p => p.key).join("\n");
     const pagesRef = useRef(pages);
     pagesRef.current = pages;
+    const pagesKeyRef = useRef(pagesKey);
+    pagesKeyRef.current = pagesKey;
     useSaveShortcut(() => void save(), draft !== null && review === null);
 
     async function asRefund(inp: AnalyzeInputDTO) {
@@ -406,9 +409,14 @@ function InboxItem({item, payers, onDone, onChanged, onDiscard}: {
     useEffect(() => {
         const run = new AbortController();
         const {signal} = run;
+        // A reading of the AI is about the pages as they were.
+        reading.cancel();
+        setAIDone("");
+        setAIError("");
         (async () => {
             let done = "";
             setError("");
+            setRecognizing(true);
             try {
                 const rec = await recognizePages(pagesRef.current, msg => !signal.aborted && setStatus(msg), signal);
                 if (signal.aborted) return;
@@ -441,10 +449,15 @@ function InboxItem({item, payers, onDone, onChanged, onDiscard}: {
                 setError(errMsg(e));
                 if (!touched.current) setDraft(d => d ?? emptyDraft());
             } finally {
-                if (!signal.aborted) setStatus(done);
+                if (!signal.aborted) {
+                    setStatus(done);
+                    setRecognizing(false);
+                }
             }
         })();
         return () => run.abort();
+        // reading.cancel is stable (useCallback in useAIRead).
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pagesKey, reread]);
 
     function readAgain() {
@@ -465,10 +478,12 @@ function InboxItem({item, payers, onDone, onChanged, onDiscard}: {
     async function readWithAI() {
         setAIError("");
         setAIDone("");
+        const pagesAt = pagesKey;
         try {
             const r = await reading.read(pagesRef.current, {lines: input?.lines ?? [], qr: input?.qr ?? []});
             const cur = draftRef.current;
             if (!r || !cur) return;
+            if (pagesKeyRef.current !== pagesAt) return; // the pages changed meanwhile (then the reading was cancelled)
             const free = Object.keys(cur).filter(f => !typed.current.has(f));
             const {next, filled, others: alt} = applyReading(cur, r, undefined, free);
             setDraft(next);
@@ -479,7 +494,7 @@ function InboxItem({item, payers, onDone, onChanged, onDiscard}: {
             touched.current = true;
             if (filled.length) setEdited(true);
         } catch (e) {
-            setAIError(`${sentence(errMsg(e))} Die Werte der Texterkennung bleiben.`);
+            setAIError(readingError(e));
         }
     }
 
@@ -502,21 +517,17 @@ function InboxItem({item, payers, onDone, onChanged, onDiscard}: {
         touched.current = true;
         setEdited(true);
         Object.keys(patch).forEach(f => typed.current.add(f));
-        if (Object.keys(patch).some(f => f in others)) setOthers(o => Object.fromEntries(Object.entries(o).filter(([f]) => !(f in patch))));
+        if (Object.keys(patch).some(f => f in others)) setOthers(o => omit(o, Object.keys(patch)));
         setDraft(d => d && {...d, ...patch});
     };
-    /** Where the value of a field came from (not once the user changed it), and another reading of it. */
-    const src = (field: keyof InvoiceDTO) => {
-        const s = typed.current.has(field) ? undefined : (aiResult?.sources ?? analysis?.sources)?.[field];
-        const alt = others[field];
-        if (!s && !alt) return undefined;
-        return (
-            <>
-                {s && <SourceBadge source={s}/>}
-                {alt && <AlternativeHint field={field} alt={alt} onTake={() => set({[field]: alternativeInput(field, alt)})}/>}
-            </>
-        );
-    };
+    /**
+     * Where the value of a field came from (not once the user changed it), and
+     * another reading of it. (typed is a ref: every change to it comes with a
+     * state change, so the render sees it.)
+     */
+    const src = (field: keyof InvoiceDTO) => fieldHint(field,
+        typed.current.has(field) ? undefined : (aiResult?.sources ?? analysis?.sources)?.[field] || undefined,
+        others[field], v => set({[field]: v}));
 
     return (
         <section className={`inbox-detail ${review ? "review" : ""}`} aria-label={item.name}>
@@ -549,7 +560,7 @@ function InboxItem({item, payers, onDone, onChanged, onDiscard}: {
                 {!review && (aiResult?.notes ?? analysis?.notes ?? []).map(n => <Notice key={n} kind={n.startsWith("Rezept erkannt –") ? undefined : "warn"}>{n}</Notice>)}
                 {!review && draft && (
                     <>
-                        {aiOn && <AIReadBar reading={reading} onRead={() => void readWithAI()} done={aiDone}/>}
+                        {aiOn && <AIReadBar reading={reading} onRead={() => void readWithAI()} disabled={recognizing} done={aiDone}/>}
                         {aiError && <Notice kind="warn">{aiError}</Notice>}
                         <div className="grid mt-2">
                             <Field label="Behandler *" htmlFor="ib-provider" hint={src("provider")}>

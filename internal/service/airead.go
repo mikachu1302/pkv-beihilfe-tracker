@@ -17,6 +17,9 @@ type AIReadInputDTO struct {
 	Pages []string  `json:"pages"` // data URLs (JPEG); the first airead.MaxPages are sent
 	Lines []LineDTO `json:"lines"`
 	QR    []string  `json:"qr"`
+	// TotalPages is how many pages the document has (the frontend sends at
+	// most airead.MaxPages); 0 = as many as sent.
+	TotalPages int `json:"totalPages"`
 }
 
 // AIOtherDTO is the value of a field that lost against the one taken.
@@ -67,7 +70,8 @@ func (s *Service) ReadWithAI(ctx context.Context, in AIReadInputDTO) (AIReadDTO,
 		return AIReadDTO{}, err
 	}
 	// Without the lock: the AI takes minutes, the app keeps working meanwhile.
-	r, err := airead.Read(ctx, c, airead.Input{Pages: in.Pages, Lines: in.Lines, QR: in.QR, Known: known, Now: s.now()})
+	r, err := airead.Read(ctx, c, airead.Input{Pages: in.Pages, TotalPages: in.TotalPages, Lines: in.Lines, QR: in.QR,
+		Known: known, Now: s.now()})
 	if err != nil {
 		return AIReadDTO{}, err
 	}

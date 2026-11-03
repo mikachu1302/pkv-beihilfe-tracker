@@ -388,7 +388,7 @@ into the repo.
 - The menu can be collapsed to icons (remembered per device), so wide tables fit.
 - Keyboard shortcuts (Cmd on macOS, Ctrl elsewhere; list with "?"): save (S) in the invoice
   form, inbox and settings, save & next (Enter), new invoice (N), search (F or /), menu entries
-  (1–7), back with Backspace outside fields or Alt+← (⌘[ on macOS), forward. Leaving a form with
+  (1–7; with the AI on, 8 for "Fragen"), back with Backspace outside fields or Alt+← (⌘[ on macOS), forward. Leaving a form with
   unsaved changes asks first.
 - Verified end to end: a made-up Beihilfebescheid photo for three demo invoices was recognised,
   all three lines matched "sicher", checksum correct, refunds booked with the notice linked.

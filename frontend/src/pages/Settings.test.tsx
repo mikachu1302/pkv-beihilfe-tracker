@@ -10,7 +10,7 @@ import Settings, {Backups} from "./Settings";
 
 const svc = vi.hoisted(() => ({
     BackupStatus: vi.fn(), SetBackupDir: vi.fn(), BackupNow: vi.fn(), GetSettings: vi.fn(), SaveSettings: vi.fn(), Reload: vi.fn(), SetDataDir: vi.fn(),
-    SetDesign: vi.fn(), SetTheme: vi.fn(), SetView: vi.fn(), SetTableOptions: vi.fn(),
+    SetDesign: vi.fn(), SetTheme: vi.fn(), SetView: vi.fn(), SetTableOptions: vi.fn(), AISettings: vi.fn(),
 }));
 const desktop = vi.hoisted(() => ({ChooseFolder: vi.fn(), OpenPath: vi.fn()}));
 vi.mock("../api", () => ({Svc: svc, Desktop: desktop}));
@@ -23,6 +23,7 @@ beforeEach(() => {
     svc.SetTheme.mockResolvedValue(undefined);
     svc.SetView.mockResolvedValue(undefined);
     svc.SetTableOptions.mockResolvedValue(undefined);
+    svc.AISettings.mockResolvedValue({on: false, url: "http://192.168.178.38:8080/v1", model: "qwen3-vl-8b", keySet: false, keyEnd: ""});
 });
 
 const tolerance = () => screen.getByLabelText("Toleranz für Klärungsbedarf (€)");

@@ -45,6 +45,16 @@ describe("fillEmpty", () => {
     });
 });
 
+describe("fillEmpty: unchanged values", () => {
+    it("does not count a value the document repeats, but names it (for its badge)", () => {
+        const cur = {...blank, provider: "Donau-Apotheke", amount: "27,21", paid: {done: true, date: "2026-01-02", note: ""}};
+        const {filled, same} = fillEmpty(cur, found, undefined, ["provider", "amount", "paid"]);
+        expect(filled).not.toContain("amount");
+        expect(filled).not.toContain("paid");
+        expect(same).toEqual(expect.arrayContaining(["provider", "amount", "paid"]));
+    });
+});
+
 describe("applyReading", () => {
     const read: InvoiceDTO = {...found, provider: "Donau-Apotheke Regensburg", amount: "27.21", iban: "DE89370400440532013000"};
 

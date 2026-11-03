@@ -26,28 +26,36 @@ const TEXT_FIELDS = ["provider", "payee", "iban", "reference", "category", "invo
  * `found` is the recognised draft as the backend sends it (amount "286.40").
  */
 export function fillEmpty(cur: InvoiceDTO, found: InvoiceDTO, defaults?: InvoiceDTO, replaceable: string[] = []):
-    {next: InvoiceDTO; filled: string[]} {
+    {next: InvoiceDTO; filled: string[]; same: string[]} {
     const next: InvoiceDTO = {...cur};
     const filled: string[] = [];
+    // Fields the document says the same about (their badge may change, e.g. to "aus GiroCode").
+    const same: string[] = [];
     const free = (f: (typeof TEXT_FIELDS)[number]) =>
         !cur[f].trim() || replaceable.includes(f) || (defaults !== undefined && cur[f] === defaults[f]);
     for (const f of TEXT_FIELDS) {
-        if (found[f] && found[f] !== cur[f] && free(f)) {
+        if (found[f] && found[f] === cur[f]) same.push(f);
+        else if (found[f] && free(f)) {
             next[f] = found[f];
             filled.push(f);
         }
     }
-    if (found.amount && found.amount !== "0.00" && toInput(found.amount) !== cur.amount &&
-        (!cur.amount.trim() || replaceable.includes("amount"))) {
-        next.amount = toInput(found.amount);
-        filled.push("amount");
+    if (found.amount && found.amount !== "0.00") {
+        if (toInput(found.amount) === cur.amount) same.push("amount");
+        else if (!cur.amount.trim() || replaceable.includes("amount")) {
+            next.amount = toInput(found.amount);
+            filled.push("amount");
+        }
     }
-    const samePaid = cur.paid.done && cur.paid.date === found.paid.date;
-    if (found.paid.done && !samePaid && (!cur.paid.done || replaceable.includes("paid"))) {
-        next.paid = {...found.paid};
-        filled.push("paid");
+    if (found.paid.done) {
+        const samePaid = cur.paid.done && cur.paid.date === found.paid.date && cur.paid.note === found.paid.note;
+        if (samePaid) same.push("paid");
+        else if (!cur.paid.done || replaceable.includes("paid")) {
+            next.paid = {...found.paid};
+            filled.push("paid");
+        }
     }
-    return {next, filled};
+    return {next, filled, same};
 }
 
 /** Another reading of a field: a value that lost, or the AI's where the user typed something else. */
@@ -84,4 +92,9 @@ export function applyReading(cur: InvoiceDTO, r: AIReadDTO, defaults?: InvoiceDT
         if (alternativeInput(f, {source: "", value: found[f]}) !== next[f]) others[f] = {source: r.sources?.[f] ?? "ai", value: found[f]};
     }
     return {next, filled, others};
+}
+
+/** The record without these keys (the badges and other readings of fields the user changed). */
+export function omit<T>(o: Record<string, T>, keys: string[]): Record<string, T> {
+    return Object.fromEntries(Object.entries(o).filter(([k]) => !keys.includes(k)));
 }

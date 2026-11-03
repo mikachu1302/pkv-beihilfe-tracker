@@ -330,3 +330,11 @@ Nasenspray 4,98`
 		t.Errorf("IBAN %q", r.Draft.IBAN)
 	}
 }
+
+func TestReadTellsAboutPagesLeftOut(t *testing.T) {
+	c := client(t, &aitest.Server{Key: "key", Answer: func(aitest.Request) string { return "{}" }})
+	r, err := Read(t.Context(), c, Input{Pages: []string{"data:image/jpeg;base64,AA"}, TotalPages: 6, Now: now})
+	if err != nil || !strings.Contains(strings.Join(r.Draft.Notes, " "), "ersten 1 von 6 Seiten") {
+		t.Errorf("%v %v", r.Draft.Notes, err)
+	}
+}

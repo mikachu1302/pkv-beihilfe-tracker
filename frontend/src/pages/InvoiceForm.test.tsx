@@ -175,7 +175,7 @@ describe("InvoiceForm", () => {
         setAI({on: true, url: "http://192.168.178.38:8080/v1", model: "qwen3-vl-8b", keySet: true, keyEnd: ""});
         svc.AnalyzeDocument.mockResolvedValue(analysis("invoice", {amount: "286.40", reference: "R-1"}));
         capture.recognizePages.mockResolvedValue({lines: [{text: "R-1", page: 1, x: 0, y: 0, w: 0, h: 0}], qr: [], ocr: true, pages: 1, truncated: false});
-        capture.pageImages.mockResolvedValue(["data:image/jpeg;base64,AA"]);
+        capture.pageImages.mockResolvedValue({images: ["data:image/jpeg;base64,AA"], total: 1});
         const read = {...blank, provider: "Dr. Muster", amount: "286.40", reference: "R-1", invoiceDate: "2026-10-20"};
         svc.ReadWithAI.mockReturnValue(cancellable(Promise.resolve(aiReading(read, {
             sources: {provider: "ai", amount: "qr", reference: "ai-confirmed", invoiceDate: "ai"}, confirmed: 1}))));
@@ -187,7 +187,7 @@ describe("InvoiceForm", () => {
 
         await user.click(screen.getByRole("button", {name: "Mit KI auslesen"}));
         expect(await screen.findByText("KI: 2 Felder gefüllt, 1 bestätigt (64 s).")).toBeInTheDocument();
-        expect(svc.ReadWithAI).toHaveBeenCalledWith({pages: ["data:image/jpeg;base64,AA"], lines: [{text: "R-1", page: 1, x: 0, y: 0, w: 0, h: 0}], qr: []});
+        expect(svc.ReadWithAI).toHaveBeenCalledWith({pages: ["data:image/jpeg;base64,AA"], totalPages: 1, lines: [{text: "R-1", page: 1, x: 0, y: 0, w: 0, h: 0}], qr: []});
         expect(screen.getByLabelText("Behandler *")).toHaveValue("Dr. Muster");
         expect(screen.getByLabelText("Rechnungsdatum *")).toHaveValue("2026-10-20"); // the new form's "today" counts as empty
         expect(screen.getByText("KI, bestätigt")).toBeInTheDocument(); // the number, found before and read the same
@@ -278,5 +278,43 @@ describe("InvoiceForm", () => {
         expect(capture.recognizePages.mock.calls[1][0].map((p: {url: string}) => p.url)).toEqual([second.url]);
         expect(svc.DiscardStaged).toHaveBeenCalledWith([page.id]);
     });
-});
 
+    it("lets the text recognition decide again when a page goes after an AI reading", async () => {
+        const user = userEvent.setup();
+        setAI({on: true, url: "http://192.168.178.38:8080/v1", model: "qwen3-vl-8b", keySet: true, keyEnd: ""});
+        const second = {...page, id: "fedcba9876543210.png", name: "seite2.png", url: "/datafile/staged/fedcba9876543210.png"};
+        svc.StageFiles.mockResolvedValue([page, second]);
+        svc.AnalyzeDocument.mockResolvedValue(analysis("invoice", {provider: "Dr. A", amount: "10.00"}));
+        capture.pageImages.mockResolvedValue({images: ["data:image/jpeg;base64,AA", "data:image/jpeg;base64,BB"], total: 2});
+        svc.ReadWithAI.mockReturnValue(cancellable(Promise.resolve(aiReading({...blank, provider: "Dr. Falsch", amount: "77.00"},
+            {sources: {provider: "ai", amount: "ai"}}))));
+        renderAt("/rechnung/neu", "/rechnung/neu", <InvoiceForm/>);
+        await user.click(await screen.findByRole("button", {name: "+ Beleg hinzufügen …"}));
+        await screen.findByDisplayValue("Dr. A");
+        await user.click(screen.getByRole("button", {name: "Mit KI auslesen"}));
+        expect(await screen.findByDisplayValue("Dr. Falsch")).toBeInTheDocument();
+
+        // Page 2 goes: the values of the AI were about both pages – the remaining page decides.
+        await user.click(screen.getByRole("button", {name: "Seite 2 entfernen"}));
+        await waitFor(() => expect(screen.getByLabelText("Behandler *")).toHaveValue("Dr. A"));
+        expect(screen.getByLabelText("Betrag (€) *")).toHaveValue("10,00");
+        expect(screen.queryByText(/^KI: /)).not.toBeInTheDocument();
+    });
+
+    it("cancels an AI reading with \"Speichern & nächste\"", async () => {
+        const user = userEvent.setup();
+        setAI({on: true, url: "http://192.168.178.38:8080/v1", model: "qwen3-vl-8b", keySet: true, keyEnd: ""});
+        svc.AnalyzeDocument.mockResolvedValue(analysis("invoice", {provider: "Dr. A", amount: "10.00"}));
+        capture.pageImages.mockResolvedValue({images: ["data:image/jpeg;base64,AA"], total: 1});
+        const running = cancellable(new Promise(() => {}));
+        svc.ReadWithAI.mockReturnValue(running);
+        svc.SaveInvoice.mockResolvedValue({invoice: {...blank, id: "x"}, view: invoiceRow("x", "Dr. A", {year: 2026}), movedToInbox: 0, warning: ""});
+        renderAt("/rechnung/neu", "/rechnung/neu", <InvoiceForm/>);
+        await user.click(await screen.findByRole("button", {name: "+ Beleg hinzufügen …"}));
+        await screen.findByDisplayValue("Dr. A");
+        await user.click(screen.getByRole("button", {name: "Mit KI auslesen"}));
+        await waitFor(() => expect(svc.ReadWithAI).toHaveBeenCalled());
+        await user.click(screen.getByRole("button", {name: /Speichern & nächste/}));
+        await waitFor(() => expect(running.cancel).toHaveBeenCalled());
+    });
+});

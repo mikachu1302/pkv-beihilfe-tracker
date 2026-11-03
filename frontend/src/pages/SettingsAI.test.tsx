@@ -71,9 +71,12 @@ describe("Settings · KI", () => {
         svc.TestAI.mockReturnValue(p);
         renderAt("/", "/", <AISettingsSection/>);
         await user.click(within(section()).getByRole("button", {name: "Verbindung testen"}));
-        expect(within(section()).getByRole("button", {name: "Verbindung wird getestet …"})).toBeDisabled();
-        await user.click(within(section()).getByRole("button", {name: "Abbrechen"}));
+        expect(within(section()).getByText("Verbindung wird getestet …")).toBeInTheDocument();
+        // The same button cancels: the focus stays on it.
+        const cancel = within(section()).getByRole("button", {name: "Verbindungstest abbrechen"});
+        expect(cancel).toHaveFocus();
+        await user.click(cancel);
         expect(p.cancel).toHaveBeenCalled();
-        expect(within(section()).getByRole("button", {name: "Verbindung testen"})).toBeEnabled();
+        expect(within(section()).getByRole("button", {name: "Verbindung testen"})).toHaveFocus();
     });
 });

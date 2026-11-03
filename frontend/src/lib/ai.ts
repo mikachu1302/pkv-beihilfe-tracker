@@ -20,3 +20,6 @@ export function useAI(): AISettingsDTO | null {
 export function useAIOn(): boolean {
     return useAI()?.on ?? false;
 }
+
+/** How the backend's message starts when the server cannot be reached (internal/ai.ErrUnreachable). */
+export const AI_UNREACHABLE = "KI-Server nicht erreichbar";

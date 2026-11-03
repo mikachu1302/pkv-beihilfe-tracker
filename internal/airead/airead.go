@@ -35,11 +35,12 @@ const PageTimeout = 300 * time.Second
 
 // Input is a document to read.
 type Input struct {
-	Pages []string       // the pages as data URLs (JPEG), in order
-	Lines []extract.Line // the recognised text of the same pages (for the checks)
-	QR    []string       // GiroCode payloads found
-	Known []string       // providers of earlier invoices
-	Now   time.Time
+	Pages      []string       // the pages as data URLs (JPEG), in order
+	TotalPages int            // pages of the document (more than sent); 0 = len(Pages)
+	Lines      []extract.Line // the recognised text of the same pages (for the checks)
+	QR         []string       // GiroCode payloads found
+	Known      []string       // providers of earlier invoices
+	Now        time.Time
 }
 
 // Other is the value of a field that lost against the one taken.
@@ -80,8 +81,8 @@ func Read(ctx context.Context, c *ai.Client, in Input) (Result, error) {
 	}
 	r := Merge(a, in)
 	r.Pages, r.Took = len(pages), ans.Took
-	if len(in.Pages) > len(pages) {
-		r.Draft.Notes = append(r.Draft.Notes, fmt.Sprintf("Die KI hat nur die ersten %d von %d Seiten gelesen.", len(pages), len(in.Pages)))
+	if total := max(in.TotalPages, len(in.Pages)); total > len(pages) {
+		r.Draft.Notes = append(r.Draft.Notes, fmt.Sprintf("Die KI hat nur die ersten %d von %d Seiten gelesen.", len(pages), total))
 	}
 	return r, nil
 }

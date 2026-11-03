@@ -469,4 +469,12 @@ describe("Invoices, compact view", () => {
         expect(items[0]).toHaveAttribute("aria-posinset", "1");
         expect(screen.getByText("300 Rechnungen")).toBeInTheDocument();
     });
+
+    it("opens with the filter and search another page hands over (\"In der Rechnungsliste zeigen\")", async () => {
+        renderAt({pathname: "/", state: {filter: "submitted", search: "Apotheke"}}, "/", <Invoices/>);
+        expect(await screen.findByText("Apotheke am Markt")).toBeInTheDocument();
+        expect(screen.queryByText("Dr. Muster")).not.toBeInTheDocument();
+        expect(screen.getByRole("button", {name: "Erstattung offen"})).toHaveAttribute("aria-pressed", "true");
+        expect(screen.getByLabelText("Suchen")).toHaveValue("Apotheke");
+    });
 });

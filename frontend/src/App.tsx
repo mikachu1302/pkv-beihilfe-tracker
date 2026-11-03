@@ -56,12 +56,12 @@ const NAV = [
     ["/rechnungen", "Rechnungen", "list"],
     ["/rechnung/neu", "Neue Rechnung", "plus"],
     ["/jahre", "Alle Jahre", "chart"],
-    ["/fragen", "Fragen", "ask"],
     ["/import", "Import", "import"],
     ["/einstellungen", "Einstellungen", "settings"],
+    ["/fragen", "Fragen", "ask"],
 ] as const;
 
-/** The menu entries: "Fragen" only while the AI is on. */
+/** The menu entries: "Fragen" (last, so the shortcuts of the others stay) only while the AI is on. */
 function useNav() {
     const aiOn = useAIOn();
     return NAV.filter(([to]) => to !== "/fragen" || aiOn);

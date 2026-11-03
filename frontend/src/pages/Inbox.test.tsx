@@ -1,7 +1,7 @@
 import {fireEvent, screen, waitFor} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {beforeEach, describe, expect, it, vi} from "vitest";
-import type {AnalysisDTO, InvoiceDTO} from "../api";
+import type {AIReadDTO, AnalysisDTO, InvoiceDTO} from "../api";
 import {setAI} from "../lib/ai";
 import {aiReading, cancellable, invoiceRow, noMark, settings} from "../test/fixtures";
 import {renderAt} from "../test/render";
@@ -38,7 +38,7 @@ beforeEach(() => {
     svc.AnalyzeDocument.mockResolvedValue(analysis());
     svc.StopPhoneUpload.mockResolvedValue(undefined);
     svc.GetSettings.mockResolvedValue(settings);
-    capture.pageImages.mockResolvedValue(["data:image/jpeg;base64,AA"]);
+    capture.pageImages.mockResolvedValue({images: ["data:image/jpeg;base64,AA"], total: 1});
 });
 
 const aiOn = () => setAI({on: true, url: "http://192.168.178.38:8080/v1", model: "qwen3-vl-8b", keySet: true, keyEnd: ""});
@@ -292,7 +292,7 @@ describe("Inbox", () => {
         await user.click(screen.getByRole("button", {name: "Mit KI auslesen"}));
 
         expect(capture.pageImages).toHaveBeenCalledWith([expect.objectContaining({url: "/datafile/inbox/scan.pdf"})], expect.any(AbortSignal));
-        expect(svc.ReadWithAI).toHaveBeenCalledWith({pages: ["data:image/jpeg;base64,AA"],
+        expect(svc.ReadWithAI).toHaveBeenCalledWith({pages: ["data:image/jpeg;base64,AA"], totalPages: 1,
             lines: [{text: "Rechnung", page: 1, x: 0, y: 0, w: 0, h: 0}], qr: ["BCD"]});
         expect(await screen.findByText("KI: 2 Felder gefüllt, 1 bestätigt, 2 Abweichungen (64 s).")).toBeInTheDocument();
         expect(screen.getByLabelText("Betrag (€) *")).toHaveValue("296,40");
@@ -316,14 +316,40 @@ describe("Inbox", () => {
         svc.ReadWithAI.mockReturnValue(running);
         renderAt("/", "/", <Inbox/>);
         await user.click(await screen.findByRole("button", {name: "Mit KI auslesen"}));
-        expect(await screen.findByText(/KI liest den Beleg … 0:0\d \(etwa 1 Minute\)/)).toBeInTheDocument();
-        await user.click(screen.getByRole("button", {name: "Abbrechen"}));
+        expect(screen.getByText("KI liest den Beleg … (etwa 1 Minute)")).toBeInTheDocument();
+        // The same button cancels (the focus stays on it); the elapsed time is not read out.
+        const cancel = screen.getByRole("button", {name: "KI-Auslesen abbrechen"});
+        expect(cancel).toHaveFocus();
+        expect(cancel.parentElement?.querySelector("[aria-hidden=true]")?.textContent).toMatch(/^0:0\d$/);
+        await user.click(cancel);
         expect(running.cancel).toHaveBeenCalled();
         expect(screen.getByRole("button", {name: "Mit KI auslesen"})).toBeEnabled();
 
         svc.ReadWithAI.mockImplementation(() => cancellable(Promise.reject(new Error("KI-Server nicht erreichbar: 192.168.178.38:8080 antwortet nicht"))));
         await user.click(screen.getByRole("button", {name: "Mit KI auslesen"}));
         expect(await screen.findByText(/nicht erreichbar.*Die Werte der Texterkennung bleiben\./)).toBeInTheDocument();
+        expect(screen.getByLabelText("Betrag (€) *")).toHaveValue("286,40");
+    });
+
+    it("drops an AI reading of pages that changed meanwhile", async () => {
+        const user = userEvent.setup();
+        aiOn();
+        let deliver: (r: AIReadDTO) => void = () => {};
+        const running = Object.assign(new Promise<AIReadDTO>(r => (deliver = r)), {cancel: vi.fn()});
+        svc.ReadWithAI.mockReturnValue(running);
+        const view = renderAt("/", "/", <Inbox/>);
+        await user.click(await screen.findByRole("button", {name: "Mit KI auslesen"}));
+        await waitFor(() => expect(svc.ReadWithAI).toHaveBeenCalled());
+
+        // The file changes (a live update): the reading is cancelled, the new pages are read.
+        svc.ListInbox.mockResolvedValue([{name: "scan.pdf", size: 1200, modified: "2026-11-02 10:20", type: "pdf", url: "/datafile/inbox/scan.pdf"}]);
+        svc.AnalyzeDocument.mockResolvedValue({...analysis(), draft: {invoice: {...draft, provider: "Dr. Neu"}, view: invoiceRow("", "Dr. Neu")}});
+        view.setApp({dataVersion: 1});
+        await waitFor(() => expect(running.cancel).toHaveBeenCalled());
+        expect(await screen.findByDisplayValue("Dr. Neu")).toBeInTheDocument();
+        deliver(aiReading({...draft, provider: "Dr. Alt", amount: "999.00"})); // comes late
+        await new Promise(r => setTimeout(r, 20));
+        expect(screen.getByLabelText("Behandler *")).toHaveValue("Dr. Neu");
         expect(screen.getByLabelText("Betrag (€) *")).toHaveValue("286,40");
     });
 });

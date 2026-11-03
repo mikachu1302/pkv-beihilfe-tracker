@@ -1,26 +1,32 @@
 // Einstellungen · KI: the connection to the local AI server (this device only).
-import {useEffect, useRef, useState} from "react";
+import {useEffect, useState} from "react";
 import {Svc} from "../api";
 import type {AISettingsDTO, AITestDTO} from "../api";
 import {useToast} from "../components/feedback";
-import {Field} from "../components/ui";
+import {ErrorNotice, Field} from "../components/ui";
 import {setAI, useAI} from "../lib/ai";
 import {errMsg} from "../lib/format";
 import {useUnsavedChanges} from "../lib/shortcuts";
+import {useBackend} from "../lib/useBackend";
+import {Cancelled, useCancellable} from "../lib/useCancellable";
 
 export function AISettingsSection() {
     const toast = useToast();
-    const loaded = useAI();
-    // Address and model as typed; saved with "Übernehmen" (or before a test).
+    const stored = useAI();
+    // Normally loaded at start (App); if that failed, here again – with a message if it fails once more.
+    const load = useBackend(() => (stored ? Promise.resolve(stored) : Svc.AISettings()), []);
+    useEffect(() => {
+        if (!stored && load.data) setAI(load.data);
+    }, [stored, load.data]);
+    const loaded = stored ?? load.data ?? null;
+    // Address and model as typed; saved when leaving the field, with Enter or "Übernehmen" (and before a test).
     const [url, setUrl] = useState("");
     const [model, setModel] = useState("");
     const [key, setKey] = useState("");
     const [changingKey, setChangingKey] = useState(false);
-    const [busy, setBusy] = useState(false);
     const [result, setResult] = useState<AITestDTO | null>(null);
     const [testError, setTestError] = useState("");
-    const test = useRef<{cancel: () => void} | null>(null);
-    useEffect(() => () => test.current?.cancel(), []);
+    const test = useCancellable();
     useEffect(() => {
         if (!loaded) return;
         setUrl(loaded.url);
@@ -30,7 +36,16 @@ export function AISettingsSection() {
 
     const edited = loaded !== null && (url.trim() !== loaded.url || model.trim() !== loaded.model);
     useUnsavedChanges(edited || key.trim() !== "");
-    if (!loaded) return null;
+    if (!loaded) {
+        if (!load.error) return null;
+        return (
+            <section className="panel" aria-label="KI">
+                <h2>KI</h2>
+                <ErrorNotice error={`Die KI-Einstellungen konnten nicht geladen werden: ${load.error}`}/>
+                <button onClick={load.reload}>Erneut laden</button>
+            </section>
+        );
+    }
     const keyForm = !loaded.keySet || changingKey;
 
     /** Saves the settings; null (and a message) when that failed. */
@@ -54,6 +69,9 @@ export function AISettingsSection() {
         }
         return a !== null;
     }
+    const saveEdited = () => {
+        if (edited) void saveServer();
+    };
 
     async function saveKey(value: string) {
         try {
@@ -71,28 +89,11 @@ export function AISettingsSection() {
         setResult(null);
         setTestError("");
         if (edited && !await saveServer()) return;
-        const p = Svc.TestAI();
-        const run = {cancel: () => p.cancel()};
-        test.current = run;
-        setBusy(true);
         try {
-            const r = await p;
-            if (test.current === run) setResult(r);
+            setResult(await test.run(() => Svc.TestAI()));
         } catch (e) {
-            if (test.current === run) setTestError(errMsg(e));
-        } finally {
-            if (test.current === run) {
-                test.current = null;
-                setBusy(false);
-            }
+            if (!(e instanceof Cancelled)) setTestError(errMsg(e));
         }
-    }
-
-    function cancelTest() {
-        const t = test.current;
-        test.current = null;
-        t?.cancel();
-        setBusy(false);
     }
 
     return (
@@ -109,20 +110,22 @@ export function AISettingsSection() {
             </label>
             <div className="grid mt-2">
                 <Field label="Serveradresse" htmlFor="ai-url" hint="OpenAI-kompatibel (z. B. llama.cpp), endet auf /v1">
-                    <input id="ai-url" value={url} spellCheck={false} onChange={e => setUrl(e.target.value)}/>
+                    <input id="ai-url" value={url} spellCheck={false} onChange={e => setUrl(e.target.value)} onBlur={saveEdited}
+                           onKeyDown={e => e.key === "Enter" && saveEdited()}/>
                 </Field>
                 <Field label="Modell" htmlFor="ai-model" hint="Ein Modell, das auch Bilder liest">
-                    <input id="ai-model" value={model} spellCheck={false} onChange={e => setModel(e.target.value)}/>
+                    <input id="ai-model" value={model} spellCheck={false} onChange={e => setModel(e.target.value)} onBlur={saveEdited}
+                           onKeyDown={e => e.key === "Enter" && saveEdited()}/>
                 </Field>
                 <Field label="API-Schlüssel" htmlFor={keyForm ? "ai-key" : undefined}
                        hint={keyForm ? "Wird nur auf diesem Gerät gespeichert und nicht wieder angezeigt" : undefined}>
                     {keyForm ? (
                         <span className="row nowrap">
-                            <input id="ai-key" type="password" autoComplete="off" spellCheck={false} value={key}
+                            <input id="ai-key" type="password" autoComplete="off" spellCheck={false} value={key} autoFocus={changingKey}
                                    onChange={e => setKey(e.target.value)}
                                    onKeyDown={e => e.key === "Enter" && key.trim() && void saveKey(key)}/>
-                            <button disabled={!key.trim()} onClick={() => void saveKey(key)}>Speichern</button>
-                            {loaded.keySet && <button className="link" onClick={() => {
+                            <button disabled={!key.trim()} onClick={() => void saveKey(key)}>Schlüssel speichern</button>
+                            {loaded.keySet && <button className="link" aria-label="Schlüssel ändern abbrechen" onClick={() => {
                                 setKey("");
                                 setChangingKey(false);
                             }}>Abbrechen</button>}
@@ -138,10 +141,13 @@ export function AISettingsSection() {
             </div>
             <div className="actions">
                 {edited && <button className="primary" onClick={() => void saveServer().then(ok => ok && toast.show("KI-Server übernommen"))}>Übernehmen</button>}
-                <button disabled={busy} onClick={() => void runTest()}>{busy ? "Verbindung wird getestet …" : "Verbindung testen"}</button>
-                {busy && <button className="link" onClick={cancelTest}>Abbrechen</button>}
+                {/* One button that cancels while the test runs, so the focus stays on it. */}
+                <button onClick={test.running ? test.cancel : () => void runTest()} aria-label={test.running ? "Verbindungstest abbrechen" : undefined}>
+                    {test.running ? "Abbrechen" : "Verbindung testen"}
+                </button>
             </div>
             <div role="status">
+                {test.running && <p className="muted small">Verbindung wird getestet …</p>}
                 {testError && <p className="neg small">{testError}</p>}
                 {result && (
                     <ul className="ai-checks">

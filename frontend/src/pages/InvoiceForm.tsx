@@ -4,16 +4,16 @@ import {useNavigate, useParams} from "react-router";
 import {Desktop, Svc} from "../api";
 import type {ClaimDTO, ClaimViewDTO, InvoiceDTO, InvoiceRowDTO, LineDTO, MarkDTO, RefundDTO, StagedDocDTO} from "../api";
 import {useApp} from "../App";
-import {AIReadBar, AlternativeHint} from "../components/AIRead";
+import {AIReadBar, fieldHint} from "../components/AIRead";
 import {DocThumb} from "../components/DocThumb";
 import {useConfirm, useToast} from "../components/feedback";
-import {Badge, ErrorNotice, Field, Loading, Notice, SourceBadge} from "../components/ui";
+import {Badge, ErrorNotice, Field, Loading, Notice} from "../components/ui";
 import {useAIOn} from "../lib/ai";
-import {readingSummary, useAIRead} from "../lib/aiRead";
+import {readingError, readingSummary, useAIRead} from "../lib/aiRead";
 import {recognizePages} from "../lib/capture";
 import {bySize, docType, docUrl, readAsDataURL, tooBigText, useFileDrop} from "../lib/files";
-import {CATEGORY_LABELS, STATUS_LABELS, date, errMsg, eur, num, pct, plural, sentence, toInput, today} from "../lib/format";
-import {alternativeInput, applyReading, fillEmpty} from "../lib/prefill";
+import {CATEGORY_LABELS, STATUS_LABELS, date, errMsg, eur, num, pct, plural, toInput, today} from "../lib/format";
+import {applyReading, fillEmpty, omit} from "../lib/prefill";
 import type {Alternative} from "../lib/prefill";
 import {dialogOpen, key, mod, useKeydown, useSaveShortcut, useUnsavedChanges} from "../lib/shortcuts";
 
@@ -74,8 +74,6 @@ const NO_RECOGNITION: Recognition = {running: false, status: "", error: "", note
 
 /** The added documents as the recognition takes them (pages in order). */
 const stagedPages = (docs: StagedDocDTO[]) => docs.map(d => ({url: d.url, type: d.type, modified: d.id, size: d.size}));
-
-const fromAI = (source: string) => source === "ai" || source === "ai-confirmed";
 
 /** Reading with the AI in the form: other readings of fields, what it did, what went wrong. */
 interface AIState {
@@ -228,7 +226,9 @@ export default function InvoiceForm() {
         const all = [...stagedRef.current, ...docs];
         stagedRef.current = all;
         setStaged(all);
-        reading.cancel(); // it reads the pages as they were
+        // A reading of the AI was about the pages as they were: the text recognition of all pages decides again.
+        reading.cancel();
+        setAIState(NO_AI);
         if (!id) await recognizeStaged(all);
     }
 
@@ -293,18 +293,20 @@ export default function InvoiceForm() {
                 setRecog({...NO_RECOGNITION, refund: true});
                 return;
             }
-            // Values from the AI stay: the text recognition of more pages does not know better.
-            const replaceable = Object.entries(filledRef.current).filter(([, src]) => !fromAI(src)).map(([f]) => f);
-            const {next, filled: got} = fillEmpty(invRef.current, a.draft.invoice, blankRef.current ?? undefined, replaceable);
-            if (got.length) {
-                setFilled(f => Object.fromEntries([...Object.entries(f), ...got.map(k => [k, a.sources?.[k] ?? "label"])]));
-                update(next);
+            // Fields filled from documents before may be filled again (the pages changed).
+            const {next, filled: got, same} = fillEmpty(invRef.current, a.draft.invoice, blankRef.current ?? undefined,
+                Object.keys(filledRef.current));
+            // Badges: the fields filled now, and those filled before that the pages confirm (e.g. "aus GiroCode").
+            const confirmed = same.filter(k => k in filledRef.current);
+            if (got.length || confirmed.length) {
+                setFilled(f => ({...f, ...Object.fromEntries([...got, ...confirmed].map(k => [k, a.sources?.[k] ?? "label"]))}));
             }
+            if (got.length) update(next);
             const notes = [...(a.notes ?? [])];
             if (rec.truncated) notes.push(`Nur die ersten ${rec.pages} Seiten wurden gelesen.`);
             const status = got.length
                 ? `${plural(got.length, "Feld", "Felder")} aus dem Beleg übernommen${rec.ocr ? " (per Texterkennung – bitte prüfen)" : ""}.`
-                : "Im Beleg wurde nichts für die leeren Felder gefunden.";
+                : "Keine neuen Werte im Beleg.";
             setRecog({...NO_RECOGNITION, status, notes});
         } catch (e) {
             if (!signal.aborted) setRecog({...NO_RECOGNITION, error: errMsg(e)});
@@ -351,7 +353,7 @@ export default function InvoiceForm() {
             if (got.length) update(next);
             setAIState({...NO_AI, others, done: readingSummary(r, got.length, Object.keys(others).length)});
         } catch (e) {
-            if (gen === formGen.current) setAIState({...NO_AI, error: `${sentence(errMsg(e))} Die Werte der Texterkennung bleiben.`});
+            if (gen === formGen.current) setAIState({...NO_AI, error: readingError(e)});
         }
     }
 
@@ -374,21 +376,14 @@ export default function InvoiceForm() {
     if (!inv || !view) return <Loading/>;
 
     const set = (patch: Partial<InvoiceDTO>) => {
-        if (Object.keys(patch).some(k => k in filled)) {
-            setFilled(f => Object.fromEntries(Object.entries(f).filter(([k]) => !(k in patch))));
-        }
-        if (Object.keys(patch).some(k => k in aiState.others)) {
-            setAIState(a => ({...a, others: Object.fromEntries(Object.entries(a.others).filter(([k]) => !(k in patch)))}));
-        }
+        const keys = Object.keys(patch);
+        if (keys.some(k => k in filled)) setFilled(f => omit(f, keys));
+        if (keys.some(k => k in aiState.others)) setAIState(a => ({...a, others: omit(a.others, keys)}));
         update({...inv, ...patch});
     };
     /** The source badge of a prefilled field (else the usual hint) and another reading of it. */
-    const hint = (field: keyof InvoiceDTO, normal?: ReactNode) => {
-        const alt = aiState.others[field];
-        const badge = filled[field] ? <SourceBadge source={filled[field]}/> : normal;
-        if (!alt) return badge;
-        return <>{badge}<AlternativeHint field={field} alt={alt} onTake={() => set({[field]: alternativeInput(field, alt)})}/></>;
-    };
+    const hint = (field: keyof InvoiceDTO, normal?: ReactNode) =>
+        fieldHint(field, filled[field], aiState.others[field], v => set({[field]: v}), normal);
     const attachments = inv.attachments ?? [];
     const removed = (original?.attachments ?? []).filter(a => !attachments.includes(a));
     const setClaim = (payerId: string, patch: Partial<ClaimDTO>) =>
@@ -409,6 +404,7 @@ export default function InvoiceForm() {
             const d = await Svc.SaveInvoice(inv, original, sent);
             // The saved form is done: a recognition still running must not fill the next one.
             recogRun.current?.abort();
+            reading.cancel();
             formGen.current++;
             stagedRef.current = stagedRef.current.filter(s => !sent.includes(s.id));
             setStaged(stagedRef.current);

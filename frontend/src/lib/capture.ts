@@ -292,16 +292,22 @@ function jpeg(src: CanvasImageSource & {width: number; height: number}): string 
 
 /**
  * The pages of a document as JPEG data URLs for the AI (in order, at most
- * AI_MAX_PAGES). PDFs are rendered page by page, photos scaled down.
+ * AI_MAX_PAGES; total counts all pages). PDFs are rendered page by page,
+ * photos scaled down.
  */
-export async function pageImages(files: PageFile[], signal?: AbortSignal): Promise<string[]> {
+export async function pageImages(files: PageFile[], signal?: AbortSignal): Promise<{images: string[]; total: number}> {
     const out: string[] = [];
+    let total = 0;
     for (const f of files) {
-        if (out.length >= AI_MAX_PAGES) break;
         signal?.throwIfAborted();
+        if (out.length >= AI_MAX_PAGES && f.type !== "pdf") {
+            total++;
+            continue;
+        }
         if (f.type === "pdf") {
             await withPdf(f.url, signal, async task => {
                 const doc = await task.promise;
+                total += doc.numPages;
                 for (let n = 1; n <= doc.numPages && out.length < AI_MAX_PAGES; n++) {
                     signal?.throwIfAborted();
                     const page = await doc.getPage(n);
@@ -312,6 +318,7 @@ export async function pageImages(files: PageFile[], signal?: AbortSignal): Promi
                 }
             });
         } else if (f.type === "image") {
+            total++;
             const bitmap = await loadBitmap(f.url, signal);
             out.push(jpeg(bitmap));
             bitmap.close();
@@ -319,7 +326,7 @@ export async function pageImages(files: PageFile[], signal?: AbortSignal): Promi
             throw new Error(UNREADABLE);
         }
     }
-    return out;
+    return {images: out, total};
 }
 
 // pdf.js refuses two renders into one canvas at the same time: a new preview
