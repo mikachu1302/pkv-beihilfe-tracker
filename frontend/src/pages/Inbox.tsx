@@ -1,6 +1,7 @@
 import {useEffect, useId, useRef, useState} from "react";
 import {Desktop, Svc} from "../api";
-import type {AnalysisDTO, AnalyzeInputDTO, InboxItemDTO, InboxPageDTO, InvoiceDTO, PayerDTO, PhoneUploadDTO, RefundReviewDTO} from "../api";
+import type {AnalysisDTO, AnalyzeInputDTO, InboxItemDTO, InboxPageDTO, InboxSuggestionDTO, InvoiceDTO, LineDTO, PayerDTO, PhoneUploadDTO,
+    RefundReviewDTO} from "../api";
 import {useApp, useInboxChanged} from "../App";
 import {DocThumb} from "../components/DocThumb";
 import {useConfirm, useToast} from "../components/feedback";
@@ -27,8 +28,63 @@ export default function Inbox() {
     // Entries ticked to be merged into one document.
     const [ticked, setTicked] = useState<string[]>([]);
     const [merging, setMerging] = useState(false);
+    // Recognised text per entry (from the background recognition) and the
+    // suggestions which entries belong together.
+    const [texts, setTexts] = useState<Record<string, EntryText>>({});
+    const textsRef = useRef(texts);
+    textsRef.current = texts;
+    const [suggestions, setSuggestions] = useState<InboxSuggestionDTO[]>([]);
+    const [notTogether, setNotTogether] = useState<string[]>(loadNotTogether);
     const items = list.data ?? [];
     const current = items.find(i => i.name === selected) ?? items[0];
+    const listKey = items.map(i => `${i.name}\t${entryKey(i)}`).join("\n");
+
+    // Recognise the entries one after another in the background (the selected
+    // one first – the detail reads it anyway, the results are shared) so that
+    // pages which belong together can be suggested.
+    useEffect(() => {
+        if (items.length < 2) return;
+        const run = new AbortController();
+        (async () => {
+            const order = [...items.filter(i => i.name === current?.name), ...items.filter(i => i.name !== current?.name)];
+            for (const it of order.slice(0, MAX_BACKGROUND)) {
+                const k = entryKey(it);
+                if (run.signal.aborted) return;
+                if (textsRef.current[it.name]?.key === k) continue;
+                try {
+                    const rec = await recognizePages(pageFiles(it), undefined, run.signal);
+                    if (run.signal.aborted) return;
+                    setTexts(t => ({...t, [it.name]: {key: k, lines: rec.lines, qr: rec.qr}}));
+                } catch {
+                    if (run.signal.aborted) return; // unreadable: no suggestion for it
+                }
+            }
+        })();
+        return () => run.abort();
+        // Selecting another entry does not restart the background run.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [listKey]);
+
+    useEffect(() => {
+        const known = items.filter(i => texts[i.name]?.key === entryKey(i));
+        if (known.length < 2) {
+            setSuggestions([]);
+            return;
+        }
+        let alive = true;
+        const t = window.setTimeout(() => {
+            Svc.SuggestInboxGroups(known.map(i => ({name: i.name, lines: texts[i.name].lines, qr: texts[i.name].qr})))
+                .then(s => alive && setSuggestions(s ?? []), () => {});
+        }, 300);
+        return () => {
+            alive = false;
+            window.clearTimeout(t);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [texts, listKey]);
+
+    const visibleSuggestions = suggestions.filter(s => !notTogether.includes(togetherKey(s.names ?? [])) &&
+        (s.names ?? []).every(n => items.some(i => i.name === n)));
 
     useEffect(() => {
         const all = list.data ?? [];
@@ -68,9 +124,7 @@ export default function Inbox() {
         }
     }
 
-    async function merge() {
-        // Pages in the order of the list.
-        const names = items.filter(i => ticked.includes(i.name)).map(i => i.name);
+    async function merge(names: string[]) {
         setMerging(true);
         try {
             const name = await Svc.MergeInbox(names);
@@ -82,6 +136,16 @@ export default function Inbox() {
             toast.error(e);
         } finally {
             setMerging(false);
+        }
+    }
+
+    function dismiss(names: string[]) {
+        const next = [...notTogether, togetherKey(names)].slice(-200);
+        setNotTogether(next);
+        try {
+            localStorage.setItem(NOT_TOGETHER_KEY, JSON.stringify(next));
+        } catch {
+            // only remembered for this session
         }
     }
 
@@ -109,6 +173,14 @@ export default function Inbox() {
             </div>
             {list.error && <ErrorNotice error={list.error}/>}
             {dragging && <div className="dropzone">Dateien hier ablegen</div>}
+            {visibleSuggestions.map(sg => (
+                <Notice key={(sg.names ?? []).join("\n")}>
+                    <strong>Gehören wohl zusammen:</strong> {quoted(sg.names ?? [])} ({sg.reason}).{" "}
+                    <button className="link" disabled={merging} onClick={() => merge(sg.names ?? [])}>Zusammenfassen</button>
+                    {" · "}
+                    <button className="link" onClick={() => dismiss(sg.names ?? [])}>Gehören nicht zusammen</button>
+                </Notice>
+            ))}
             {items.length === 0 ? (
                 <Empty>
                     Der Posteingang ist leer. Belege mit dem Handy fotografieren, Dateien hierher ziehen oder in den Ordner
@@ -121,7 +193,8 @@ export default function Inbox() {
                             <div className="merge-bar" role="group" aria-label="Zusammenfassen">
                                 {ticked.length >= 2 ? (
                                     <>
-                                        <button className="primary" disabled={merging} onClick={merge}>
+                                        <button className="primary" disabled={merging}
+                                                onClick={() => merge(items.filter(i => ticked.includes(i.name)).map(i => i.name))}>
                                             Zu einem Beleg zusammenfassen ({ticked.length})
                                         </button>
                                         <button className="link" onClick={() => setTicked([])}>Auswahl aufheben</button>
@@ -160,6 +233,35 @@ export default function Inbox() {
     );
 }
 
+/** Entries recognised in the background, at most. */
+const MAX_BACKGROUND = 30;
+
+interface EntryText {
+    key: string; // entryKey when it was read
+    lines: LineDTO[];
+    qr: string[];
+}
+
+const NOT_TOGETHER_KEY = "pkv.inboxNotTogether";
+
+/** Suggestions answered with "Gehören nicht zusammen" (on this device). */
+function loadNotTogether(): string[] {
+    try {
+        const v = JSON.parse(localStorage.getItem(NOT_TOGETHER_KEY) ?? "[]");
+        return Array.isArray(v) ? v.filter(x => typeof x === "string") : [];
+    } catch {
+        return [];
+    }
+}
+
+const togetherKey = (names: string[]) => [...names].sort().join("\n");
+
+/** „a“, „b“ und „c“ */
+function quoted(names: string[]): string {
+    const q = names.map(n => `„${n}“`);
+    return q.length > 1 ? `${q.slice(0, -1).join(", ")} und ${q.at(-1)}` : q.join("");
+}
+
 /** The pages of an inbox document; a single file is its only page. */
 const pagesOf = (i: InboxItemDTO): InboxPageDTO[] =>
     i.pages?.length ? i.pages : [{name: i.name, size: i.size, modified: i.modified, type: i.type, url: i.url}];
@@ -171,6 +273,12 @@ function kindLabel(i: InboxItemDTO): string {
 
 /** The page names without the number the app puts before them ("01 "): stable across renumbering. */
 const pageKey = (p: InboxPageDTO) => `${p.name.slice(p.name.lastIndexOf("/") + 1).replace(/^\d{2,3} /, "")}|${p.size}|${p.modified}`;
+
+/** The pages as the recognition takes them. */
+const pageFiles = (i: InboxItemDTO) => pagesOf(i).map(p => ({url: p.url, type: p.type, modified: p.modified, size: p.size, key: pageKey(p)}));
+
+/** Identifies the version of an entry's pages. */
+const entryKey = (i: InboxItemDTO) => pagesOf(i).map(pageKey).join("\n");
 
 /** All pages of a document, one below the other. */
 function Pages({item}: {item: InboxItemDTO}) {
@@ -233,7 +341,7 @@ function InboxItem({item, payers, onDone, onChanged, onDiscard}: {
     const [edited, setEdited] = useState(false); // the user typed into the draft: leaving asks first
     useUnsavedChanges(edited && !saving);
     // Recognition runs again when the pages change (not when the list is reloaded).
-    const pages = pagesOf(item).map(p => ({url: p.url, type: p.type, modified: p.modified, size: p.size, key: pageKey(p)}));
+    const pages = pageFiles(item);
     const pagesKey = pages.map(p => p.key).join("\n");
     const pagesRef = useRef(pages);
     pagesRef.current = pages;

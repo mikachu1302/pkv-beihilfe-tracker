@@ -424,3 +424,31 @@ func (s *Service) StopPhoneUpload() {
 		s.upload = nil
 	}
 }
+
+// InboxTextDTO is the recognised text of an inbox document.
+type InboxTextDTO struct {
+	Name  string    `json:"name"`
+	Lines []LineDTO `json:"lines"`
+	QR    []string  `json:"qr"`
+}
+
+// InboxSuggestionDTO proposes to merge inbox documents (names in page order).
+type InboxSuggestionDTO struct {
+	Names  []string `json:"names"`
+	Reason string   `json:"reason"` // "Seite 1 und 2 von 2", "gleiche Rechnungsnummer", …
+}
+
+// SuggestInboxGroups proposes which inbox documents are pages of one
+// document – from their content only (page numbers, invoice numbers,
+// continuation pages). texts are in inbox order.
+func (s *Service) SuggestInboxGroups(texts []InboxTextDTO) []InboxSuggestionDTO {
+	docs := make([]extract.DocText, len(texts))
+	for i, t := range texts {
+		docs[i] = extract.DocText{Name: t.Name, Lines: t.Lines, QR: t.QR}
+	}
+	out := []InboxSuggestionDTO{}
+	for _, g := range extract.SuggestGroups(docs, s.now()) {
+		out = append(out, InboxSuggestionDTO{Names: g.Names, Reason: g.Reason})
+	}
+	return out
+}

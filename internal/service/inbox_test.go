@@ -170,3 +170,19 @@ func httptestGet(t *testing.T, s *Service, url string) int {
 type emitterFunc func(name string, data ...any) bool
 
 func (f emitterFunc) Emit(name string, data ...any) bool { return f(name, data...) }
+
+func TestSuggestInboxGroups(t *testing.T) {
+	s := newTestService(t)
+	page := func(text string) []LineDTO { return linesOf(text) }
+	got := s.SuggestInboxGroups([]InboxTextDTO{
+		{Name: "b.jpg", Lines: page("Praxis Dr. Muster\nSeite 2 von 2\nRechnungsbetrag 120,00")},
+		{Name: "x.pdf", Lines: page("Apotheke am Markt\nSumme 9,99")},
+		{Name: "a.jpg", Lines: page("Praxis Dr. Muster\nSeite 1 von 2\nRechnung")},
+	})
+	if len(got) != 1 || strings.Join(got[0].Names, ",") != "a.jpg,b.jpg" || got[0].Reason != "Seite 1 und 2 von 2" {
+		t.Errorf("suggestions %+v", got)
+	}
+	if got := s.SuggestInboxGroups(nil); got == nil || len(got) != 0 {
+		t.Errorf("empty: %+v", got)
+	}
+}

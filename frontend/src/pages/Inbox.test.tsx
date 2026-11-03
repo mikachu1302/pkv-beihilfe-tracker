@@ -10,7 +10,7 @@ const svc = vi.hoisted(() => ({
     ListInbox: vi.fn(), AnalyzeDocument: vi.fn(), CreateInvoiceFromInbox: vi.fn(), DiscardInbox: vi.fn(),
     AddFilesToInbox: vi.fn(), AddToInbox: vi.fn(), StartPhoneUpload: vi.fn(), StopPhoneUpload: vi.fn(),
     GetSettings: vi.fn(), AnalyzeRefund: vi.fn(), ReviewRefund: vi.fn(), ConfirmRefund: vi.fn(),
-    MergeInbox: vi.fn(), ReorderInbox: vi.fn(), SplitInbox: vi.fn(),
+    MergeInbox: vi.fn(), ReorderInbox: vi.fn(), SplitInbox: vi.fn(), SuggestInboxGroups: vi.fn(),
 }));
 const desktop = vi.hoisted(() => ({ChooseFiles: vi.fn()}));
 const capture = vi.hoisted(() => ({recognizePages: vi.fn(), renderPdfPreview: vi.fn()}));
@@ -29,6 +29,8 @@ function analysis(kind = "invoice"): AnalysisDTO {
 
 beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
+    svc.SuggestInboxGroups.mockResolvedValue([]);
     svc.ListInbox.mockResolvedValue([{name: "scan.pdf", size: 1000, modified: "2026-11-02 10:15", type: "pdf", url: "/datafile/inbox/scan.pdf"}]);
     capture.recognizePages.mockResolvedValue({lines: [{text: "Rechnung", page: 1, x: 0, y: 0, w: 0, h: 0}], qr: ["BCD"], ocr: false, pages: 1, truncated: false});
     capture.renderPdfPreview.mockResolvedValue(undefined);
@@ -121,7 +123,9 @@ describe("Inbox", () => {
         view.setApp({dataVersion: 1});
         expect(await screen.findByText("foto.jpg")).toBeInTheDocument();
         expect(screen.getByLabelText("Behandler *")).toHaveValue("Praxis Beispiel");
-        expect(capture.recognizePages).toHaveBeenCalledTimes(1);
+        // The detail (with progress) read scan.pdf once; the background reads the rest.
+        const detailRuns = capture.recognizePages.mock.calls.filter(c => typeof c[1] === "function");
+        expect(detailRuns).toHaveLength(1);
         expect(capture.renderPdfPreview).toHaveBeenCalledTimes(1);
     });
 
@@ -213,5 +217,30 @@ describe("Inbox", () => {
         await user.click(screen.getByRole("button", {name: "Alle Seiten trennen"}));
         await waitFor(() => expect(svc.SplitInbox).toHaveBeenCalledWith("Scan"));
         expect(screen.getByRole("button", {name: "Seite 1 nach vorne"})).toBeDisabled();
+    });
+
+    it("suggests documents that belong together and remembers a no", async () => {
+        const user = userEvent.setup();
+        const items = [
+            {name: "b.jpg", size: 10, modified: "2026-11-03 10:01", type: "image", url: "/datafile/inbox/b.jpg"},
+            {name: "a.jpg", size: 11, modified: "2026-11-03 10:02", type: "image", url: "/datafile/inbox/a.jpg"},
+        ];
+        svc.ListInbox.mockResolvedValue(items);
+        svc.SuggestInboxGroups.mockResolvedValue([{names: ["a.jpg", "b.jpg"], reason: "Seite 1 und 2 von 2"}]);
+        svc.MergeInbox.mockResolvedValue("a");
+        const view = renderAt("/", "/", <Inbox/>);
+        expect(await screen.findByText(/„a.jpg“ und „b.jpg“ \(Seite 1 und 2 von 2\)/, {}, {timeout: 2000})).toBeInTheDocument();
+        // Both were read in the background, in the order of the list.
+        expect(svc.SuggestInboxGroups.mock.calls.at(-1)?.[0].map((t: {name: string}) => t.name)).toEqual(["b.jpg", "a.jpg"]);
+        await user.click(screen.getByRole("button", {name: "Zusammenfassen"}));
+        await waitFor(() => expect(svc.MergeInbox).toHaveBeenCalledWith(["a.jpg", "b.jpg"]));
+
+        await user.click(screen.getByRole("button", {name: "Gehören nicht zusammen"}));
+        expect(screen.queryByText(/gehören wohl zusammen/i)).not.toBeInTheDocument();
+        view.unmount();
+        renderAt("/", "/", <Inbox/>);
+        await waitFor(() => expect(svc.SuggestInboxGroups.mock.calls.length).toBeGreaterThan(1));
+        await new Promise(r => setTimeout(r, 400));
+        expect(screen.queryByText(/Gehören wohl zusammen/)).not.toBeInTheDocument();
     });
 });
