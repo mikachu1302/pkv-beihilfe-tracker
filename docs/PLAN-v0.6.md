@@ -69,7 +69,9 @@ checksum against the payout stay deterministic.
 
 **Invoice vs. Heil- und Kostenplan / Kostenvoranschlag**
 - positions in the invoice that the plan does not have, and the other way round;
-- amounts per position and the total vs. the plan (tolerance, e.g. 10 % or the lab costs);
+- amounts per position and the total vs. the plan, beyond a **tolerance the user sets** (Einstellungen,
+  explained there: "Abweichung vom Kostenvoranschlag melden ab … %"; default 15 % – the margin above
+  which a dentist must inform the patient before going on, § 9 Abs. 2 GOZ);
 - expected own share vs. what the payers refunded.
 
 **Invoice vs. Verordnung (therapy)**
@@ -82,12 +84,11 @@ checksum against the payout stay deterministic.
   Positionen 312,40 € = Rechnungsbetrag"), the source (page, line) and, where relevant, the AI
   summary.
 - Actions: **"Klärungsbedarf markieren"** with the finding as the note (prefilled, editable);
-  "In die Notiz übernehmen"; **"Nachfrage entwerfen"** – the AI writes a letter/e-mail draft to the
-  payer or the provider from the findings and the invoice data (text only, a few seconds), the
-  user edits and copies it; nothing is sent by the app.
+  "In die Notiz übernehmen". (Draft letters to the payer or provider are not part of v0.6 –
+  decided 2026-11-03; maybe later.)
 - The last check is kept with the invoice (date, documents, findings) so it does not have to be
   repeated; a new check replaces it. Stored in the invoice's record (schema extension, merged like
-  other fields) – decided in this plan's review (open point 1).
+  other fields) – decided 2026-11-03.
 
 ## Smaller AI helpers (same release, all manual)
 
@@ -105,15 +106,20 @@ checksum against the payout stay deterministic.
 2. Research and test the GOÄ/GOZ rule table (sections, thresholds, maxima, point values).
 3. `internal/check` with unit tests (made-up invoices, Bescheide, plans, prescriptions).
 4. Schemas per document type, the job with progress events, cancel.
-5. UI: the panel in the invoice form, the result list, the actions; the draft letter.
+5. UI: the panel in the invoice form, the result list, the actions; the tolerance setting.
 6. Type recognition and reminders in the inbox.
 7. Docs (README privacy section: what is sent for a check).
 
 ## Open points
 
-1. Keep the last check in the invoice record (schema extension) or only show it until the form is
-   closed? Recommendation: keep it – a check of several pages takes minutes.
+1. ~~Keep the last check?~~ Yes, in the invoice record (decided 2026-11-03).
 2. How far the GOÄ/GOZ rules go: thresholds and maxima are clear; the section of each number needs a
    table (maintained in the app, from the official lists). Start with GOÄ, GOZ afterwards?
-3. Tolerances for plan vs. invoice (fixed or a setting).
-4. Draft letters: one standard style, or templates per payer?
+   (Explained to the user 2026-11-03; decision open.)
+3. ~~Tolerances?~~ A setting, explained in the settings, default 15 % (§ 9 Abs. 2 GOZ) – decided
+   2026-11-03.
+4. ~~Draft letters?~~ Not now (decided 2026-11-03).
+5. Test documents: no real documents (the user's wish). Public filled-in examples are scarce
+   (insurers' and consumer centres' sample pages move or are blank forms; no sample Bescheid
+   found). Proposal: made-up but realistic documents with real GOÄ/GOZ numbers, points and
+   factors, as in v0.5's test – decision open.
