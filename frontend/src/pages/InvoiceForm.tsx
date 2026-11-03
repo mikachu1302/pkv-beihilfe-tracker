@@ -397,7 +397,7 @@ export default function InvoiceForm() {
                     geänderten Felder übernommen, die übrigen Änderungen bleiben erhalten.
                 </Notice>
             )}
-            {inputError && <Notice kind="warn"><span style={{whiteSpace: "pre-line"}}>{inputError}</span></Notice>}
+            {inputError && <Notice kind="warn"><span className="pre-line">{inputError}</span></Notice>}
 
             <fieldset className="panel">
                 <legend>Rechnung</legend>
@@ -548,18 +548,18 @@ function MarkField({label, mark, onChange, withNote}: {
     withNote?: boolean;
 }) {
     return (
-        <div className="row" style={{gap: 8}}>
+        <div className="row gap-2">
             <label className="inline">
                 <input type="checkbox" checked={mark.done}
                        onChange={e => onChange({...mark, done: e.target.checked, date: e.target.checked ? (mark.date || today()) : mark.date})}/>
                 {label}
             </label>
             {mark.done && (
-                <input type="date" aria-label={`${label}: Datum`} style={{width: 150}} value={mark.date}
+                <input type="date" aria-label={`${label}: Datum`} className="w-date" value={mark.date}
                        onChange={e => onChange({...mark, date: e.target.value})}/>
             )}
             {withNote && mark.done && (
-                <input aria-label={`${label}: Grund`} placeholder="Grund" style={{flex: 1, minWidth: 140}} value={mark.note}
+                <input aria-label={`${label}: Grund`} placeholder="Grund" className="grow-input" value={mark.note}
                        onChange={e => onChange({...mark, note: e.target.value})}/>
             )}
         </div>
@@ -628,7 +628,7 @@ function ClaimCard({claim: c, view: v, onChange}: {claim: ClaimDTO; view: ClaimV
                     </button>?
                 </Notice>
             )}
-            {v.deadline && <div className={`small ${v.deadlineDays < 0 ? "neg" : "muted"}`} style={{marginTop: 6}}>
+            {v.deadline && <div className={`small mt-2 ${v.deadlineDays < 0 ? "neg" : "muted"}`}>
                 Antragsfrist {v.deadlineDays < 0 ? "abgelaufen am" : "bis"} {date(v.deadline)}
             </div>}
 
@@ -676,9 +676,9 @@ function ClaimCard({claim: c, view: v, onChange}: {claim: ClaimDTO; view: ClaimV
             )}
             <button className="link" onClick={() => addRefund()}>+ Erstattung erfassen</button>
 
-            <details style={{marginTop: 10}}>
+            <details className="mt-3">
                 <summary>Abweichende Werte</summary>
-                <div className="grid" style={{marginTop: 8}}>
+                <div className="grid mt-2">
                     <Field label="Satz (%)" htmlFor={`${id}-rate`} hint="Leer = aus dem Versicherungsschutz">
                         <input id={`${id}-rate`} value={c.rate} placeholder={v.rate} onChange={e => onChange({rate: e.target.value})}/>
                     </Field>

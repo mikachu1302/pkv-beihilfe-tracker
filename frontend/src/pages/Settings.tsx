@@ -1,12 +1,13 @@
 import {useEffect, useRef, useState} from "react";
 import {Desktop, Svc} from "../api";
 import type {BackupStatusDTO, CoverageDTO, PayerDTO, ProblemDTO, SettingsDTO, YearSettingDTO} from "../api";
-import {useApp, useSetTheme} from "../App";
+import {useApp, useSetDesign, useSetTheme} from "../App";
 import {useToast} from "../components/feedback";
 import {ErrorNotice, Field, Loading, Notice} from "../components/ui";
 import {errMsg, toInput} from "../lib/format";
 import {key, useSaveShortcut, useUnsavedChanges} from "../lib/shortcuts";
 import {useBackend} from "../lib/useBackend";
+import {DESIGN_LABELS, DESIGN_ORDER, useDesign} from "../lib/design";
 import {THEME_LABELS, THEME_ORDER, useTheme} from "../lib/theme";
 import type {Theme} from "../lib/theme";
 
@@ -135,7 +136,7 @@ export default function Settings() {
             {warnings.length > 0 && <Notice kind="warn"><ul>{warnings.map(w => <li key={w.text}>{w.text}</li>)}</ul></Notice>}
 
             <section className="panel">
-                <h2 style={{marginTop: 0}}>Kostenträger</h2>
+                <h2>Kostenträger</h2>
                 <p className="muted small">Beihilfestellen und private Krankenversicherungen. Frist und Mindestbetrag unterscheiden sich je nach Land – Bund (BBhV): 3 Jahre nach Rechnungsdatum, mehr als 200 € pro Antrag.</p>
                 <table>
                     <thead><tr><th>Name</th><th>Art</th><th>Antragsfrist (Jahre)</th><th>Mindestbetrag (€)</th><th>Notiz</th><th/></tr></thead>
@@ -154,7 +155,7 @@ export default function Settings() {
                             <td><input aria-label="Mindestbetrag" value={p.minClaimAmount} placeholder="keiner" onChange={e => setPayer(i, {minClaimAmount: e.target.value})}/></td>
                             <td><input aria-label="Notiz" value={p.note} onChange={e => setPayer(i, {note: e.target.value})}/></td>
                             <td>
-                                <span className="row" style={{flexWrap: "nowrap"}}>
+                                <span className="row nowrap">
                                     {p.kind === "beihilfe" && <button className="link" onClick={() => setPayer(i, {claimDeadlineYears: 3, minClaimAmount: "200,00"})}>BBhV</button>}
                                     <button className="link" aria-label={`${p.name || "Kostenträger"} entfernen`} onClick={() => removePayer(i)}>✕</button>
                                 </span>
@@ -170,7 +171,7 @@ export default function Settings() {
             </section>
 
             <section className="panel">
-                <h2 style={{marginTop: 0}}>Versicherungsschutz</h2>
+                <h2>Versicherungsschutz</h2>
                 <p className="muted small">Welcher Kostenträger ab wann welchen Anteil trägt. Es gilt der Zeitraum, in dem die Behandlung stattfand (z. B. 50/50, nach der Pensionierung 70/30). Leeres Feld = kein Anteil.</p>
                 <table>
                     <thead><tr><th>Gültig ab</th>{payers.map(p => <th key={p.id}>{p.name || "(neu)"} (%)</th>)}<th/></tr></thead>
@@ -190,7 +191,7 @@ export default function Settings() {
             </section>
 
             <section className="panel">
-                <h2 style={{marginTop: 0}}>Werte pro Jahr</h2>
+                <h2>Werte pro Jahr</h2>
                 <p className="muted small">Lassen sich auch direkt im Dashboard eintragen.</p>
                 {years.length > 0 && (
                     <table>
@@ -217,7 +218,7 @@ export default function Settings() {
             </section>
 
             <section className="panel">
-                <h2 style={{marginTop: 0}}>Sonstiges</h2>
+                <h2>Sonstiges</h2>
                 <div className="grid">
                     <Field label="Toleranz für Klärungsbedarf (€)" htmlFor="tol" hint="Weicht IST um mehr vom SOLL ab, schlägt die App Klärungsbedarf vor">
                         <input id="tol" value={s.clarifyTolerance} onChange={e => setS({...s, clarifyTolerance: e.target.value})}/>
@@ -240,9 +241,20 @@ export default function Settings() {
 function Appearance() {
     const theme = useTheme();
     const setTheme = useSetTheme();
+    const design = useDesign();
+    const setDesign = useSetDesign();
     return (
         <section className="panel" aria-label="Darstellung">
-            <h2 style={{marginTop: 0}}>Darstellung</h2>
+            <h2>Darstellung</h2>
+            <fieldset className="choice">
+                <legend>Design</legend>
+                {DESIGN_ORDER.map(d => (
+                    <label key={d} className="inline">
+                        <input type="radio" name="design" checked={design === d} onChange={() => setDesign(d)}/>
+                        {DESIGN_LABELS[d]}
+                    </label>
+                ))}
+            </fieldset>
             <fieldset className="choice">
                 <legend>Farbschema</legend>
                 {THEME_ORDER.map((t: Theme) => (
@@ -253,8 +265,9 @@ function Appearance() {
                 ))}
             </fieldset>
             <p className="muted small">
-                „Automatisch“ richtet sich nach der Einstellung von Windows, macOS oder Linux. Gilt nur für dieses Gerät;
-                schnell umschalten lässt es sich auch unten im Menü mit dem Schalter „Dunkel“.
+                „Klassisch“ ist das Aussehen bis Version 0.3. „Automatisch“ richtet sich nach der Einstellung von Windows,
+                macOS oder Linux; schnell umschalten lässt es sich auch unten im Menü mit dem Schalter „Dunkel“.
+                Gilt nur für dieses Gerät.
             </p>
         </section>
     );
@@ -291,7 +304,7 @@ export function Backups({onChanged}: {onChanged: () => void}) {
     const mb = (bytes: number) => `${(bytes / 1024 / 1024).toLocaleString("de-DE", {maximumFractionDigits: 1})} MB`;
     return (
         <section className="panel" aria-label="Sicherung">
-            <h2 style={{marginTop: 0}}>Sicherung</h2>
+            <h2>Sicherung</h2>
             <p className="muted small">
                 Einmal täglich beim Start legt die App eine Zip-Kopie des Datenordners in einem zweiten Ordner ab
                 (z. B. USB-Stick, NAS oder ein anderer Cloud-Ordner); die letzten 20 werden behalten. Wichtig, wenn der
@@ -301,7 +314,7 @@ export function Backups({onChanged}: {onChanged: () => void}) {
             {st?.error && <Notice kind="bad">{st.error}</Notice>}
             {st && (st.dir ? (
                 <div className="row">
-                    <code className="mono" style={{flex: 1, wordBreak: "break-all"}}>{st.dir}</code>
+                    <code className="mono grow break">{st.dir}</code>
                     <span className="muted small">
                         {st.last ? `Letzte Sicherung ${st.last.split(" ")[0].split("-").reverse().join(".")} ${st.last.split(" ")[1]} (${mb(st.lastSize)}), ${st.count} vorhanden` : "Noch keine Sicherung"}
                     </span>
@@ -347,14 +360,14 @@ function DataFolder({dir, onChanged}: {dir: string; onChanged: () => void}) {
 
     return (
         <section className="panel">
-            <h2 style={{marginTop: 0}}>Datenordner</h2>
+            <h2>Datenordner</h2>
             <div className="row">
-                <code className="mono" style={{flex: 1, wordBreak: "break-all"}}>{dir}</code>
+                <code className="mono grow break">{dir}</code>
                 <button onClick={() => Desktop.OpenPath(dir).catch(toast.error)}>Öffnen</button>
                 <button onClick={reload}>Neu einlesen</button>
                 <button onClick={change}>Wechseln …</button>
             </div>
-            <p className="muted small" style={{marginTop: 8}}>
+            <p className="muted small mt-2">
                 Der Ordner kann mit jedem Sync-Programm geteilt werden. Am besten auf „immer auf diesem Gerät behalten“ stellen.
                 Konfliktkopien werden beim Einlesen automatisch zusammengeführt.
             </p>

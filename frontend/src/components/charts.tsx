@@ -75,13 +75,13 @@ export function StackedBars({rows, legend, label}: {rows: StackRow[]; legend: {l
     const {node, handlers} = useTooltip();
     const max = Math.max(1, ...rows.map(r => r.parts.reduce((s, p) => s + Math.max(p.value, 0), 0)));
     return (
-        <figure style={{margin: 0}} aria-label={label}>
+        <figure className="chart" aria-label={label}>
             <div className="legend">
                 {legend.map(l => <span key={l.label}><span className={`swatch s${l.slot}`}/>{l.label}</span>)}
             </div>
             <div className="hbars">
                 {rows.map(r => (
-                    <div key={r.key} style={{display: "contents"}}>
+                    <div key={r.key} className="contents">
                         <div className="ylabel">{r.label}</div>
                         <div className="track">
                             {r.parts.filter(p => p.value > 0).map(p => (

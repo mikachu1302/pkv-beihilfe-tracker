@@ -148,13 +148,13 @@ export default function Invoices() {
                 <YearSelect years={yearList.includes(year) ? yearList : [year, ...yearList]} value={year}
                             onChange={setYear} allLabel="alle Jahre"/>
                 <span className="spacer"/>
-                <input ref={search} aria-label="Suchen" placeholder={`Suchen … (${key("F")})`} style={{width: 200}} value={query}
+                <input ref={search} aria-label="Suchen" placeholder={`Suchen … (${key("F")})`} className="search" value={query}
                        onChange={e => setQuery(e.target.value)}/>
                 <button onClick={() => exportExcel(toast, year)}>Excel</button>
                 <button className="primary" onClick={() => navigate("/rechnung/neu")}>Neue Rechnung</button>
             </div>
             <OutstandingForYear year={year} version={figures}/>
-            <div className="chips" style={{marginBottom: 12}}>
+            <div className="chips mb-3">
                 {FILTERS.map(([f, label]) => {
                     const count = f === "warnings" ? rows.filter(r => matchesFilter(r, f)).length : 0;
                     return (
@@ -317,7 +317,7 @@ function RefundPopover({claim, onSave, onCancel}: {claim: ClaimViewDTO; onSave: 
     const ref = useDialog<HTMLDivElement>(onCancel);
     return (
         <div ref={ref} className="popover" role="dialog" aria-label={`Erstattung ${claim.payerName}`} tabIndex={-1}>
-            <div className="grid" style={{gridTemplateColumns: "1fr 1fr"}}>
+            <div className="grid two">
                 <div className="field">
                     <label htmlFor="refund-amount">Erstattet (€)</label>
                     <input id="refund-amount" value={amount} onChange={e => setAmount(e.target.value)}
@@ -328,8 +328,8 @@ function RefundPopover({claim, onSave, onCancel}: {claim: ClaimViewDTO; onSave: 
                     <input id="refund-date" type="date" value={d} onChange={e => setD(e.target.value)}/>
                 </div>
             </div>
-            <div className="hint small muted" style={{marginTop: 4}}>SOLL {eur(claim.expected)}</div>
-            <div className="actions" style={{marginTop: 10}}>
+            <div className="hint small muted mt-1">SOLL {eur(claim.expected)}</div>
+            <div className="actions mt-3">
                 <span className="spacer"/>
                 <button onClick={onCancel}>Abbrechen</button>
                 <button className="primary" onClick={() => onSave(amount, d)}>Übernehmen</button>
@@ -348,7 +348,7 @@ function ClarifyPopover({onSave, onCancel}: {onSave: (note: string) => void; onC
                 <input id="clarify-note" value={note} placeholder="z. B. Steigerungssatz gekürzt"
                        onChange={e => setNote(e.target.value)} onKeyDown={e => e.key === "Enter" && onSave(note)}/>
             </div>
-            <div className="actions" style={{marginTop: 10}}>
+            <div className="actions mt-3">
                 <span className="spacer"/>
                 <button onClick={onCancel}>Abbrechen</button>
                 <button className="primary" onClick={() => onSave(note)}>Markieren</button>

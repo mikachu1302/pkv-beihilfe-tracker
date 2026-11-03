@@ -310,6 +310,10 @@ func (s *Service) SetDataDir(dir string) (StatusDTO, error) {
 	if err := s.open(dir); err != nil {
 		return s.status(), err
 	}
+	if s.cfg.DataDir == "" {
+		// A device set up now starts with the new design: no hint about the old one.
+		s.cfg.DesignHintSeen = true
+	}
 	s.cfg.DataDir = dir
 	if err := s.cfg.Save(s.cfgDir); err != nil {
 		return s.status(), fmt.Errorf("Einstellung konnte nicht gespeichert werden: %w", err)

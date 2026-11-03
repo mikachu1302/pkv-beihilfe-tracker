@@ -121,14 +121,14 @@ export default function Import() {
                         <strong>{preview.file}</strong> · {sheets ? "Blätter" : "Blatt"} „{preview.sheet}“ · {plural(allRows.length, "Rechnung", "Rechnungen")}
                         {" "}({(preview.years ?? []).map(y => `${y.year || "ohne Datum"}: ${y.count}`).join(", ")})
                         {preview.allowances > 0 && <> · {plural(preview.allowances, "Leistung", "Leistungen")} ohne Rechnung</>}
-                        <div className="chips" style={{marginTop: 8}}>
+                        <div className="chips mt-2">
                             <Badge kind="good">{preview.new} neu</Badge>
                             <Badge kind="warn">{preview.changed} geändert</Badge>
                             <Badge>{preview.unchanged} unverändert</Badge>
                             {preview.deletedInApp > 0 && <Badge>{preview.deletedInApp} in der App gelöscht</Badge>}
                             {removed.length > 0 && <Badge kind="bad">{removed.length} nicht mehr in der Excel</Badge>}
                         </div>
-                        {preview.changed > 0 && <p className="muted small" style={{marginBottom: 0}}>
+                        {preview.changed > 0 && <p className="muted small mb-0">
                             Geänderte Zeilen aktualisieren die vorhandene Rechnung – nur die aufgeführten Felder. Erstattungen aus der App
                             und aus Bescheiden, Belege und Klärungsbedarf bleiben erhalten. Zeilen, die einen Wert aus der App
                             überschreiben würden („in der App geändert“), sind nicht vorausgewählt.
@@ -136,7 +136,7 @@ export default function Import() {
                         {preview.warnings > 0 && <Notice kind="warn">{plural(preview.warnings, "Hinweis", "Hinweise")} zu einzelnen Zeilen – bitte prüfen (Tippfehler bei Daten, Erstattungen über dem Rechnungsbetrag). Korrigieren lässt sich alles auch nach dem Import.</Notice>}
                     </div>
                     {preview.unchanged + preview.deletedInApp > 0 && (
-                        <label className="inline" style={{margin: "0 0 8px"}}>
+                        <label className="inline mb-2">
                             <input type="checkbox" checked={showUnchanged} onChange={e => setShowUnchanged(e.target.checked)}/>
                             Unveränderte Zeilen zeigen ({preview.unchanged + preview.deletedInApp})
                         </label>
@@ -190,11 +190,11 @@ export default function Import() {
                         </div>
                     )}
                     {removed.length > 0 && (
-                        <div className="panel" style={{marginTop: 12}}>
+                        <div className="panel mt-3">
                             <strong>Nicht mehr in der Excel</strong>
                             <p className="muted small">Früher aus dieser Datei importiert, dort aber nicht mehr vorhanden. Nur ausgewählte werden gelöscht.</p>
                             {removed.map(r => (
-                                <label key={r.key} className="inline" style={{display: "flex"}}>
+                                <label key={r.key} className="inline flex">
                                     <input type="checkbox" checked={include.has(r.key)} onChange={() => toggle(r.key)}/>
                                     löschen: {r.label} <span className="muted small">({sheets ? `${r.sheet}, ` : ""}früher Zeile {r.row})</span>
                                 </label>

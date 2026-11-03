@@ -127,7 +127,7 @@ export default function RefundReview({inboxName, initial, payers, onDone, onDisc
     const paidOut = amount(r.paidOut);
     return (
         <div className="refund-review">
-            {error && <Notice kind="bad"><span style={{whiteSpace: "pre-line"}}>{error}</span></Notice>}
+            {error && <Notice kind="bad"><span className="pre-line">{error}</span></Notice>}
             {(r.notes ?? []).map(n => <Notice key={n} kind="warn">{n}</Notice>)}
             <div className="grid">
                 <Field label="Kostenträger" htmlFor="rr-payer">
@@ -150,12 +150,12 @@ export default function RefundReview({inboxName, initial, payers, onDone, onDisc
             </div>
 
             <h3>Positionen</h3>
-            <div className="row small" style={{marginBottom: 8}}>
+            <div className="row small mb-2">
                 <span className="muted">Spalten:</span>
                 {COLUMNS.map(([k, label]) => (
                     <label key={k} className="inline">
                         {label} =
-                        <select aria-label={`Spalte ${label}`} style={{width: "auto"}} value={r.layout[k]}
+                        <select aria-label={`Spalte ${label}`} className="w-auto" value={r.layout[k]}
                                 onChange={e => update({...r, layout: {...r.layout, [k]: Number(e.target.value)},
                                     lines: lines.map(l => ({...l, edited: l.amounts?.length ? false : l.edited}))}, true)}>
                             {POSITIONS.filter(([v]) => k !== "refund" || v !== 0).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
@@ -183,7 +183,7 @@ export default function RefundReview({inboxName, initial, payers, onDone, onDisc
                                 <td><input aria-label={`Zeile ${i + 1}: Erstattung`} className="num" value={l.refund}
                                            onChange={e => setLine(i, {refund: e.target.value, edited: true})}/></td>
                                 <td>
-                                    <div className="row" style={{flexWrap: "nowrap", gap: 6}}>
+                                    <div className="row nowrap gap-2">
                                         <select aria-label={`Zeile ${i + 1}: Rechnung`} value={(l.invoiceIds ?? []).length > 1 ? "__group" : chosen}
                                                 onChange={e => setLine(i, e.target.value
                                                     ? {invoiceIds: [e.target.value], match: "confirmed"}
@@ -211,7 +211,7 @@ export default function RefundReview({inboxName, initial, payers, onDone, onDisc
                     </tbody>
                 </table>
             </div>
-            <div className="row" style={{marginTop: 8}}>
+            <div className="row mt-2">
                 <button className="link" onClick={addLine}>+ Zeile</button>
                 {deductions.map((d, i) => (
                     <span key={i} className="small muted">{d.label}: {eur(Math.abs(amount(d.amount)))}
@@ -223,7 +223,7 @@ export default function RefundReview({inboxName, initial, payers, onDone, onDisc
                 Positionen {eur(r.linesTotal)}{dedTotal ? ` − Abzüge ${eur(dedTotal)}` : ""} = {eur(num(r.linesTotal) - dedTotal)}
                 {paidOut ? (r.checksumOk ? ` ✓ entspricht der Auszahlung` : ` – Auszahlung laut Beleg ${eur(paidOut)}, Differenz ${eur(r.checksumDiff)}: fehlt eine Zeile oder wurde ein Betrag falsch gelesen?`) : " (Auszahlungsbetrag nicht erkannt)"}
             </Notice>
-            <label className="inline" style={{marginTop: 8}}>
+            <label className="inline mt-2">
                 <input type="checkbox" checked={saveLayout} onChange={e => setSaveLayout(e.target.checked)}/>
                 Spaltenaufteilung für {payers.find(p => p.id === r.payerId)?.name ?? "diesen Kostenträger"} merken
             </label>

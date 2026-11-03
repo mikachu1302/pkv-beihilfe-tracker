@@ -6,7 +6,10 @@ import {Svc} from "./api";
 import type {StatusDTO} from "./api";
 import {FeedbackProvider, useConfirm, useToast} from "./components/feedback";
 import {ErrorNotice, Loading, Notice} from "./components/ui";
-import {applyTheme, useDarkActive, useTheme} from "./lib/theme";
+import {patchAppearance, setAppearance, useAppearance} from "./lib/appearance";
+import {applyDesign, useDesign} from "./lib/design";
+import type {Design} from "./lib/design";
+import {applyTheme, useDarkActive} from "./lib/theme";
 import type {Theme} from "./lib/theme";
 import {useBackend} from "./lib/useBackend";
 import {clearUnsavedChanges, dialogOpen, hasUnsavedChanges, isMac, isTyping, key, mod, useKeydown} from "./lib/shortcuts";
@@ -124,6 +127,7 @@ function Layout({status, children}: {status: StatusDTO; children: ReactNode}) {
             <GlobalShortcuts onHelp={() => setHelp(true)}/>
             {help && <ShortcutHelp onClose={() => setHelp(false)}/>}
             <main className="content">
+                <DesignHint/>
                 <StatusNotices status={status}/>
                 <InboxChangedContext.Provider value={inbox.reload}>{children}</InboxChangedContext.Provider>
             </main>
@@ -206,17 +210,58 @@ function ThemeToggle() {
     );
 }
 
-/** Takes the colour scheme from the device configuration (localStorage may be empty). */
-function ThemeSync() {
-    const theme = useTheme();
+/**
+ * Sets the design of this device and keeps it in the device configuration
+ * (which also closes the one-time hint about the new design).
+ */
+export function useSetDesign(): (d: Design) => void {
+    const toast = useToast();
+    return d => {
+        applyDesign(d);
+        patchAppearance({design: d, designHint: false});
+        Svc.SetDesign(d).catch(toast.error);
+    };
+}
+
+/**
+ * Takes colour scheme and design from the device configuration (localStorage,
+ * which painted the first frame, may be empty or from an older version).
+ */
+function AppearanceSync({dataDir}: {dataDir?: string}) {
+    // again after the data folder was set: a device set up now gets no hint about the old design
     useEffect(() => {
         Svc.Appearance().then(a => {
-            if (a && a.theme !== theme) applyTheme(a.theme as Theme);
+            if (!a) return;
+            setAppearance(a);
+            applyTheme(a.theme as Theme);
+            applyDesign(a.design as Design);
         }, () => {});
-        // once at start
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [dataDir]);
     return null;
+}
+
+/** Once after the update to v0.4.0: where to switch back to the classic design. */
+function DesignHint() {
+    const appearance = useAppearance();
+    const design = useDesign();
+    const setDesign = useSetDesign();
+    const toast = useToast();
+    if (!appearance?.designHint || design !== "new") return null;
+    const close = () => {
+        patchAppearance({designHint: false});
+        Svc.CloseDesignHint().catch(toast.error);
+    };
+    return (
+        <Notice kind="good">
+            <div className="row">
+                <span className="grow">
+                    <strong>Neues Aussehen.</strong> Das bisherige Design gibt es weiterhin: unter Einstellungen → Darstellung → „Klassisch“.
+                </span>
+                <button onClick={() => setDesign("classic")}>Klassisch verwenden</button>
+                <button className="primary" onClick={close}>Verstanden</button>
+            </div>
+        </Notice>
+    );
 }
 
 /** Listens for changes another device made to the data folder. */
@@ -254,7 +299,7 @@ export default function App() {
     return (
         <FeedbackProvider>
             <LiveUpdates onChange={onChange}/>
-            <ThemeSync/>
+            <AppearanceSync dataDir={status?.dataDir}/>
             <HashRouter>
                 {error && <main className="content"><ErrorNotice error={error}/></main>}
                 {!status && !error && <Loading/>}
@@ -353,8 +398,8 @@ function ShortcutHelp({onClose}: {onClose: () => void}) {
     ];
     return (
         <div className="modal-back" onClick={e => e.target === e.currentTarget && onClose()}>
-            <div ref={ref} className="modal" role="dialog" aria-modal="true" aria-labelledby="shortcut-title" tabIndex={-1} style={{maxWidth: 480}}>
-                <h2 id="shortcut-title" style={{marginTop: 0}}>Tastenkürzel</h2>
+            <div ref={ref} className="modal narrow" role="dialog" aria-modal="true" aria-labelledby="shortcut-title" tabIndex={-1}>
+                <h2 id="shortcut-title">Tastenkürzel</h2>
                 <table className="shortcuts">
                     <tbody>
                     {rows.map(([keys, what]) => (

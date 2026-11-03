@@ -25,6 +25,25 @@ type Config struct {
 	// Theme is the colour scheme of this device: "" follows the system,
 	// "light" or "dark".
 	Theme string `json:"theme,omitempty"`
+	// Design is the look of this device: "" (the default, the new design),
+	// "new" or "classic".
+	Design string `json:"design,omitempty"`
+	// DesignHintSeen: the one-time hint where to switch back to the classic
+	// design was closed (or the device was set up with v0.4.0 or later).
+	DesignHintSeen bool `json:"designHintSeen,omitempty"`
+	// View is the invoice view the list starts with in the new design: ""
+	// (Detail), "compact", "table" or "classic".
+	View string `json:"view,omitempty"`
+	// Table holds the options of the table view.
+	Table TableOptions `json:"table,omitzero"`
+}
+
+// TableOptions are the options of the table view. The zero value is the
+// default: normal rows, sum row shown, all columns.
+type TableOptions struct {
+	Dense  bool     `json:"dense,omitempty"`
+	NoSum  bool     `json:"noSum,omitempty"`
+	Hidden []string `json:"hidden,omitempty"` // column keys not shown
 }
 
 // Dir returns the folder for the device-local configuration.

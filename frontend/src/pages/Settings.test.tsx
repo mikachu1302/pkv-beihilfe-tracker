@@ -1,4 +1,4 @@
-import {screen, waitFor} from "@testing-library/react";
+import {screen, waitFor, within} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import type {SettingsDTO} from "../api";
@@ -8,6 +8,7 @@ import Settings, {Backups} from "./Settings";
 
 const svc = vi.hoisted(() => ({
     BackupStatus: vi.fn(), SetBackupDir: vi.fn(), BackupNow: vi.fn(), GetSettings: vi.fn(), SaveSettings: vi.fn(), Reload: vi.fn(), SetDataDir: vi.fn(),
+    SetDesign: vi.fn(), SetTheme: vi.fn(),
 }));
 const desktop = vi.hoisted(() => ({ChooseFolder: vi.fn(), OpenPath: vi.fn()}));
 vi.mock("../api", () => ({Svc: svc, Desktop: desktop}));
@@ -16,6 +17,8 @@ beforeEach(() => {
     vi.clearAllMocks();
     svc.BackupStatus.mockResolvedValue({dir: "", last: "", lastSize: 0, count: 0, error: ""});
     svc.GetSettings.mockResolvedValue(settings);
+    svc.SetDesign.mockResolvedValue(undefined);
+    svc.SetTheme.mockResolvedValue(undefined);
 });
 
 const tolerance = () => screen.getByLabelText("Toleranz für Klärungsbedarf (€)");
@@ -95,5 +98,18 @@ describe("Backups", () => {
         renderAt("/", "/", <Backups onChanged={() => {}}/>);
         await user.click(await screen.findByRole("button", {name: "Jetzt sichern"}));
         expect(await screen.findByText(/2 vorhanden/)).toBeInTheDocument();
+    });
+
+    it("switches the design on this device", async () => {
+        const user = userEvent.setup();
+        renderAt("/", "/", <Settings/>);
+        const darstellung = await screen.findByRole("region", {name: "Darstellung"});
+        expect(document.documentElement.dataset.design).toBe("new");
+        await user.click(within(darstellung).getByRole("radio", {name: "Klassisch"}));
+        expect(svc.SetDesign).toHaveBeenCalledWith("classic");
+        expect(document.documentElement.dataset.design).toBe("classic");
+        expect(localStorage.getItem("pkv.design")).toBe("classic");
+        await user.click(within(darstellung).getByRole("radio", {name: "Neu"}));
+        expect(document.documentElement.dataset.design).toBe("new");
     });
 });

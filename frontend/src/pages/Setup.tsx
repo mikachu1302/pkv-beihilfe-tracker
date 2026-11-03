@@ -9,7 +9,7 @@ import {errMsg} from "../lib/format";
 export default function Setup() {
     const {status, reloadStatus} = useApp();
     return (
-        <main className="content" style={{maxWidth: 760, margin: "0 auto"}}>
+        <main className="content narrow">
             <h1>PKV · Beihilfe einrichten</h1>
             {status.error && <ErrorNotice error={status.error}/>}
             {!status.configured ? <ChooseFolder onDone={reloadStatus}/> : <Coverage onDone={reloadStatus}/>}
@@ -43,7 +43,7 @@ function ChooseFolder({onDone}: {onDone: () => void}) {
 
     return (
         <div className="panel">
-            <h2 style={{marginTop: 0}}>1. Datenordner</h2>
+            <h2>1. Datenordner</h2>
             <p>
                 Alle Rechnungen und Einstellungen werden als einzelne Dateien in diesem Ordner gespeichert.
                 Er kann in einem Cloud-Ordner liegen (Nextcloud, iCloud Drive, Google Drive, OneDrive, Dropbox,
@@ -52,7 +52,7 @@ function ChooseFolder({onDone}: {onDone: () => void}) {
             </p>
             {error && <ErrorNotice error={error}/>}
             <div className="row">
-                <input aria-label="Datenordner" style={{flex: 1}} value={dir} onChange={e => setDir(e.target.value)}
+                <input aria-label="Datenordner" className="grow" value={dir} onChange={e => setDir(e.target.value)}
                        placeholder="Ordner wählen …"/>
                 <button onClick={pick}>Durchsuchen …</button>
                 <button className="primary" disabled={!dir} onClick={save}>Weiter</button>
@@ -83,7 +83,7 @@ function Coverage({onDone}: {onDone: () => void}) {
     const pkvRate = withBeihilfe ? 100 - Number(rate) : 100;
     return (
         <div className="panel">
-            <h2 style={{marginTop: 0}}>2. Versicherung</h2>
+            <h2>2. Versicherung</h2>
             {error && <ErrorNotice error={error}/>}
             <fieldset>
                 <legend>Wie sind Sie versichert?</legend>
@@ -112,7 +112,7 @@ function Coverage({onDone}: {onDone: () => void}) {
                             </select>
                         </Field>
                     </div>
-                    <label className="inline" style={{marginTop: 10}}>
+                    <label className="inline mt-3">
                         <input type="checkbox" checked={bundRules} onChange={e => setBundRules(e.target.checked)}/>
                         Regeln des Bundes (BBhV): Antrag innerhalb von 3 Jahren, Mindestbetrag 200 €
                     </label>

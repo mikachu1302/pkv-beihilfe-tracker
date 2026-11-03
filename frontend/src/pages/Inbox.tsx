@@ -496,7 +496,7 @@ function InboxItem({item, payers, onDone, onChanged, onDiscard}: {
                 {!review && (analysis?.notes ?? []).map(n => <Notice key={n} kind={n.startsWith("Rezept erkannt –") ? undefined : "warn"}>{n}</Notice>)}
                 {!review && draft && (
                     <>
-                        <div className="grid" style={{marginTop: 8}}>
+                        <div className="grid mt-2">
                             <Field label="Behandler *" htmlFor="ib-provider" hint={src("provider")}>
                                 <input id="ib-provider" value={draft.provider} onChange={e => set({provider: e.target.value})}/>
                             </Field>
@@ -543,7 +543,7 @@ function InboxItem({item, payers, onDone, onChanged, onDiscard}: {
                             <button className="primary" disabled={saving} onClick={save} title={`Als Rechnung speichern (${key("S")})`}>Als Rechnung speichern</button>
                             <button className="danger" onClick={onDiscard}>Verwerfen</button>
                         </div>
-                        <p className="muted small" style={{marginTop: 8}}>Der Beleg wird mit der Rechnung verknüpft und im Ordner „belege“ abgelegt. Status und Erstattungen lassen sich danach in der Rechnungsliste setzen.</p>
+                        <p className="muted small mt-2">Der Beleg wird mit der Rechnung verknüpft und im Ordner „belege“ abgelegt. Status und Erstattungen lassen sich danach in der Rechnungsliste setzen.</p>
                     </>
                 )}
             </div>
@@ -665,16 +665,16 @@ function PhoneDialog({onClose}: {onClose: () => void}) {
     }, []);
     return (
         <div className="modal-back" onClick={e => e.target === e.currentTarget && onClose()}>
-            <div ref={ref} className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} style={{maxWidth: 460}}>
-                <h2 id={titleId} style={{marginTop: 0}}>Mit Handy fotografieren</h2>
+            <div ref={ref} className="modal narrow" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
+                <h2 id={titleId}>Mit Handy fotografieren</h2>
                 {error && <ErrorNotice error={error}/>}
                 {info && (
                     <>
                         <p>QR-Code mit der Kamera des Handys scannen. Auf der Seite, die sich öffnet, Belege fotografieren oder PDFs wählen – sie erscheinen hier im Posteingang.
                             Für einen Beleg mit mehreren Seiten dort „Mehrseitiger Beleg“ wählen.</p>
                         {!info.lan && <Notice kind="warn">Kein Netzwerk gefunden – Handy und Computer müssen im selben WLAN sein.</Notice>}
-                        <div style={{textAlign: "center"}}><img src={info.qr} alt="QR-Code für das Handy" width={240} height={240}/></div>
-                        <p className="mono small" style={{wordBreak: "break-all", textAlign: "center"}}>{info.url}</p>
+                        <div className="center"><img src={info.qr} alt="QR-Code für das Handy" width={240} height={240}/></div>
+                        <p className="mono small break center">{info.url}</p>
                         <p className="muted small">
                             Nur im eigenen WLAN verwenden. Der Link gilt bis {info.expires} Uhr und endet, sobald dieses Fenster
                             geschlossen wird. {info.received > 0 && <strong>{plural(info.received, "Datei", "Dateien")} empfangen.</strong>}

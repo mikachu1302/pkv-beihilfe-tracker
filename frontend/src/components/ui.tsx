@@ -12,7 +12,7 @@ export function Loading() {
 }
 
 export function ErrorNotice({error}: {error: string}) {
-    return <Notice kind="bad"><span style={{whiteSpace: "pre-line"}}>{error}</span></Notice>;
+    return <Notice kind="bad"><span className="pre-line">{error}</span></Notice>;
 }
 
 export function Empty({children}: {children: ReactNode}) {
@@ -42,7 +42,7 @@ export function YearSelect({years, value, onChange, allLabel}: {
     allLabel?: string;
 }) {
     return (
-        <select aria-label="Jahr" style={{width: "auto"}} value={value} onChange={e => onChange(Number(e.target.value))}>
+        <select aria-label="Jahr" className="w-auto" value={value} onChange={e => onChange(Number(e.target.value))}>
             {allLabel && <option value={0}>{allLabel}</option>}
             {years.filter(y => !allLabel || y !== 0).map(y => <option key={y} value={y}>{y === 0 ? "ohne Datum" : y}</option>)}
         </select>

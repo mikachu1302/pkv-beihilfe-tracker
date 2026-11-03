@@ -35,7 +35,7 @@ export default function Dashboard() {
             <Reminders/>
             {dash.error && <ErrorNotice error={dash.error}/>}
             {!y ? <Loading/> : (
-                <div style={{opacity: dash.loading ? 0.6 : 1}}>
+                <div className={dash.loading ? "fading" : undefined}>
                     <div className="cards">
                         <Stat label="Rechnungen" value={y.invoices.toLocaleString("de-DE")}
                               note={<Link to="/rechnungen">anzeigen</Link>}/>
@@ -84,7 +84,7 @@ function Reminders() {
                 {shown.map((r, i) => (
                     <li key={i} className={r.urgent ? "urgent" : ""}>
                         <span>{r.urgent && <strong>Dringend: </strong>}{r.text}</span>
-                        <span className="row" style={{flexWrap: "nowrap", gap: 10}}>
+                        <span className="row nowrap gap-2">
                             {r.kind === "deviation" && <button className="link" title="SOLL = IST setzen, z. B. bei Höchstbeträgen" onClick={() => accept(r)}>akzeptieren</button>}
                             {link(r)}
                         </span>
@@ -107,7 +107,7 @@ function PayerSection({year, p, onSaved}: {year: number; p: PayerYearDTO; onSave
                 <h2>{p.payerName}</h2>
                 <span className="muted">{isPKV ? "Private Krankenversicherung" : "Beihilfe"} · {plural(p.claims, "Rechnung", "Rechnungen")}</span>
             </div>
-            <div className="cards" style={{marginTop: 12}}>
+            <div className="cards mt-3">
                 <Stat label={isPKV ? "Müsste zahlen (SOLL)" : "Müsste erstatten (SOLL)"} value={eur(p.expected)}/>
                 <Stat label="Erstattet (IST)" value={eur(p.actual)}/>
                 <Stat label="Abweichung erstatteter Rechnungen" value={eur(p.deviation)}
@@ -152,9 +152,9 @@ function PremiumRefund({year, p, onSaved}: {year: number; p: PayerYearDTO; onSav
     const pr = p.premiumRefund;
     const adv = num(pr?.advantage);
     return (
-        <div style={{marginTop: 16}}>
+        <div className="mt-4">
             <h3>Einreichen oder Beitragsrückerstattung?</h3>
-            <div className="row" style={{gap: 24, alignItems: "flex-start"}}>
+            <div className="row gap-5 top">
                 <YearValue label={`Erwartete Beitragsrückerstattung ${year}`} year={year} p={p} field="expectedPremiumRefund" onSaved={onSaved}
                            hint="Betrag laut Tarif, wenn für das Jahr nichts eingereicht wird"/>
                 <YearValue label={`Selbstbehalt ${year}`} year={year} p={p} field="deductible" onSaved={onSaved}/>
@@ -163,7 +163,7 @@ function PremiumRefund({year, p, onSaved}: {year: number; p: PayerYearDTO; onSav
                 <p className="muted small">Erwartete Beitragsrückerstattung eintragen, um Einreichen und Nichteinreichen zu vergleichen.</p>
             ) : (
                 <>
-                    <div className="cards" style={{marginTop: 12}}>
+                    <div className="cards mt-3">
                         <Stat label="Alles einreichen: PKV zahlt" value={eur(pr.claimAll)}
                               note={num(p.deductible) > 0 ? `nach Selbstbehalt von ${eur(p.deductible)}` : undefined}/>
                         <Stat label="Nicht einreichen: Rückerstattung" value={eur(pr.holdTotal)}
@@ -273,9 +273,9 @@ function Allowances({year, payers, onChanged}: {year: number; payers: PayerYearD
                 <span className="spacer"/>
                 {!draft && <button onClick={start}>+ Eintrag</button>}
             </div>
-            {items.length === 0 && !draft && <p className="muted small" style={{marginTop: 8}}>Keine Einträge für {year}.</p>}
+            {items.length === 0 && !draft && <p className="muted small mt-2">Keine Einträge für {year}.</p>}
             {(items.length > 0 || draft) && (
-                <table style={{marginTop: 8}}>
+                <table className="mt-2">
                     <thead><tr><th>Datum</th><th>Kostenträger</th><th>Notiz</th><th className="num">Betrag</th><th/></tr></thead>
                     <tbody>
                     {items.map(a => (
@@ -298,7 +298,7 @@ function Allowances({year, payers, onChanged}: {year: number; payers: PayerYearD
                             <td><input aria-label="Notiz" value={draft.note} placeholder="Krankenhaustagegeld" onChange={e => setDraft({...draft, note: e.target.value})}/></td>
                             <td><input aria-label="Betrag" inputMode="decimal" value={draft.amount} onChange={e => setDraft({...draft, amount: e.target.value})}/></td>
                             <td>
-                                <span className="row" style={{flexWrap: "nowrap"}}>
+                                <span className="row nowrap">
                                     <button className="primary" onClick={save}>OK</button>
                                     <button onClick={() => setDraft(null)}>✕</button>
                                 </span>

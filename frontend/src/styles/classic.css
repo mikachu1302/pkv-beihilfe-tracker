@@ -1,0 +1,88 @@
+/* Design "Klassisch": the look up to v0.3.0. Tokens only – the rules are in
+   base.css and apply to both designs; the new design overrides tokens and a
+   few rules in new.css. */
+/* Text contrast >= 4.5:1 (WCAG AA), checked for each text/background pair:
+   accent text on --bg/--panel and --accent-text on --accent, good/warn/bad on
+   their -bg and on --panel, white toast text on --bad-strong. */
+:root {
+  --bg: #f7f8fa;
+  --panel: #ffffff;
+  --border: #dfe3e8;
+  --text: #1c2430;
+  --muted: #5e6b7a;
+  --accent: #2b6ad8;
+  --accent-text: #ffffff;
+  --good: #187a42;
+  --warn: #966214;
+  --bad: #c53030;
+  --bad-strong: #c53030;
+  --good-bg: #e8f6ee;
+  --warn-bg: #fdf5e6;
+  --bad-bg: #fdecec;
+  --nav: #1f2733;
+  --nav-text: #cfd6df;
+  --nav-active: #ffffff;
+  --nav-hover: rgba(255,255,255,.05);
+  --nav-active-bg: rgba(255,255,255,.05);
+  --nav-track: rgba(255,255,255,.18);
+  --row-hover: rgba(127,127,127,.07);
+  --row-selected: rgba(43,106,216,.06);
+  color-scheme: light;
+
+  /* type, shape and spacing */
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+  --font-num: var(--font-ui); /* amounts and dates in tables and cards */
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --font-size: 14px;
+  --figure-size: 20px; /* large figures in cards */
+  --radius-sm: 6px; /* buttons, inputs */
+  --radius: 8px; /* panels, cards, tables */
+  --radius-lg: 10px; /* dialogs */
+  --radius-pill: 14px; /* chips, badges */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+}
+
+/* Dark: chosen on this device or, with "Automatisch", by the system (public/boot.js and lib/theme.ts set data-theme). */
+:root[data-theme="dark"] {
+  --bg: #14181e;
+  --panel: #1c222b;
+  --border: #2e3744;
+  --text: #e4e8ee;
+  --muted: #97a3b2;
+  --accent: #5b8ff0;
+  --accent-text: #0f1a2e;
+  --good: #4cc282;
+  --warn: #e0a84a;
+  --bad: #f07272;
+  --bad-strong: #b83434;
+  --good-bg: #183327;
+  --warn-bg: #3a2e17;
+  --bad-bg: #3d1e1e;
+  --nav: #10141a;
+  color-scheme: dark;
+}
+
+/* Chart colours: categorical slots 1–5 of the dataviz reference palette,
+   stepped separately for light and dark (validated against #ffffff / #1c222b). */
+:root {
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+}
+:root[data-theme="dark"] {
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --grid: #2c2c2a;
+  --axis: #383835;
+}
