@@ -76,7 +76,7 @@ function InvoiceCard({row: r, payers, v, nav}: {
     );
 }
 
-function PayerColumn({row: r, claim: c, index, v}: {row: InvoiceRowDTO; claim: ClaimViewDTO; index: number; v: ViewProps}) {
+export function PayerColumn({row: r, claim: c, index, v}: {row: InvoiceRowDTO; claim: ClaimViewDTO; index: number; v: ViewProps}) {
     const state = claimState(c);
     const refunded = c.status === "refunded";
     const diff = num(c.diff);
@@ -118,7 +118,7 @@ function PayerColumn({row: r, claim: c, index, v}: {row: InvoiceRowDTO; claim: C
 }
 
 /** What the footer of a card lists: note, Klärung, hints, waiting long, documents, Bescheid. */
-function footerItems(r: InvoiceRowDTO): {text: string; tone?: string}[] {
+export function footerItems(r: InvoiceRowDTO): {text: string; tone?: string}[] {
     const out: {text: string; tone?: string}[] = [];
     if (r.note.trim()) out.push({text: `Notiz: ${r.note.trim()}`});
     for (const c of r.claims ?? []) {

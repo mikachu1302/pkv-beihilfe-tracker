@@ -346,3 +346,69 @@ describe("Invoices, table view", () => {
         expect(within(table).getByText("300 Rechnungen")).toBeInTheDocument(); // the sum row counts all
     });
 });
+
+describe("Invoices, compact view", () => {
+    beforeEach(() => setSessionView("compact"));
+
+    it("shows one line per invoice with a short status per payer, open amount and flags", async () => {
+        svc.ListInvoices.mockResolvedValue([rows[0], {...rows[1], note: "Rezept liegt bei", paid: {done: true, date: "2026-04-01", note: ""}}]);
+        renderAt("/", "/", <Invoices/>);
+        const list = await screen.findByRole("list");
+        const items = within(list).getAllByRole("listitem");
+        expect(items).toHaveLength(2);
+        expect(items[1]).toHaveAttribute("aria-setsize", "2");
+        expect(items[1]).toHaveAttribute("aria-posinset", "2");
+        const first = within(list).getByRole("group", {name: "Dr. Muster, 03.03.2026, 286,40 €"});
+        expect(within(first).getAllByText("nicht eingereicht")).toHaveLength(2);
+        expect(within(first).getAllByText("286,40 €")).toHaveLength(2); // amount, and open as nothing is refunded
+        expect(within(first).getByText("nicht bezahlt")).toBeInTheDocument(); // flag text for screen readers
+        const second = within(list).getByRole("group", {name: /Apotheke am Markt/});
+        expect(within(second).getByText("eingereicht 02.04.")).toBeInTheDocument();
+        expect(within(second).getByText("zurückgehalten")).toBeInTheDocument();
+        expect(within(second).getByText("Notiz: Rezept liegt bei")).toBeInTheDocument();
+        expect(screen.getByText("2 Rechnungen")).toBeInTheDocument();
+    });
+
+    it("expands a line with the chevron or → and ticks inside", async () => {
+        const user = userEvent.setup();
+        svc.SetMark.mockResolvedValue(rows[0]);
+        renderAt("/", "/", <Invoices/>);
+        const line = await screen.findByRole("group", {name: /Dr. Muster/});
+        await user.click(within(line).getByRole("button", {name: "Details anzeigen"}));
+        const item = line.closest("[role=listitem]") as HTMLElement;
+        expect(within(item).getByRole("link", {name: "Rechnung öffnen →"})).toBeInTheDocument();
+        await user.click(within(item).getAllByLabelText("eingereicht")[0]);
+        expect(svc.SetMark).toHaveBeenCalledWith({invoiceId: "a", payerId: "bh", mark: "submitted", on: true, date: "", note: "", amount: ""});
+        line.focus();
+        await user.keyboard("{ArrowLeft}");
+        expect(within(item).queryByRole("link", {name: "Rechnung öffnen →"})).not.toBeInTheDocument();
+        await user.keyboard("{ArrowRight}");
+        expect(within(item).getByRole("link", {name: "Rechnung öffnen →"})).toBeInTheDocument();
+        await user.keyboard("{Enter}");
+        expect(await screen.findByText("andere Seite")).toBeInTheDocument();
+    });
+
+    it("renders only the visible lines when the page scrolls", async () => {
+        // jsdom has no layout: the page is 500 px high, every line 46 px (the virtualiser measures them).
+        const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
+        Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+            configurable: true, get() {
+                const el = this as HTMLElement;
+                return el.classList.contains("content") ? 500 : el.getAttribute("role") === "listitem" ? 46 : 0;
+            },
+        });
+        try {
+            svc.ListInvoices.mockResolvedValue(Array.from({length: 300}, (_, i) => invoiceRow(`r${i}`, `Praxis ${i + 1}`)));
+            renderAt("/", "/", <main className="content"><Invoices/></main>);
+            const list = await screen.findByRole("list");
+            await waitFor(() => expect(within(list).getAllByRole("listitem").length).toBeLessThan(40));
+            const items = within(list).getAllByRole("listitem");
+            expect(items.length).toBeGreaterThan(5);
+            expect(items[0]).toHaveAttribute("aria-setsize", "300");
+            expect(items[0]).toHaveAttribute("aria-posinset", "1");
+            expect(screen.getByText("300 Rechnungen")).toBeInTheDocument();
+        } finally {
+            if (height) Object.defineProperty(HTMLElement.prototype, "offsetHeight", height);
+        }
+    });
+});

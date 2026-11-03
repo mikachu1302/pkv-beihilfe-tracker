@@ -13,6 +13,7 @@ import {eur, num, plural, today} from "../lib/format";
 import {useBackend} from "../lib/useBackend";
 import {dialogOpen, isTyping, key, mod, useKeydown} from "../lib/shortcuts";
 import {ClassicList} from "./invoices/ClassicList";
+import {CompactView} from "./invoices/CompactView";
 import {DetailView} from "./invoices/DetailView";
 import {ColumnChooser, TableView} from "./invoices/TableView";
 import type {TableOptions} from "./invoices/TableView";
@@ -20,7 +21,7 @@ import type {Pop, ViewProps} from "./invoices/shared";
 import {exportExcel} from "./Overview";
 
 /** The views of the new design, in the order of the switch. */
-const VIEWS: InvoiceView[] = ["detail", "table", "classic"];
+const VIEWS: InvoiceView[] = ["detail", "compact", "table", "classic"];
 
 const DEFAULT_TABLE: TableOptions = {dense: false, sum: true, hidden: []};
 
@@ -213,6 +214,7 @@ export default function Invoices() {
                         : "Keine Rechnung passt zum Filter."}
                 </Empty>
             ) : view === "detail" ? <DetailView {...viewProps}/>
+                : view === "compact" ? <CompactView {...viewProps}/>
                 : view === "table" ? <TableView {...viewProps} options={tableOptions}/>
                     : <ClassicList {...viewProps}/>}
         </>
