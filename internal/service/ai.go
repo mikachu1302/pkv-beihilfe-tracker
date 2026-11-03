@@ -85,7 +85,7 @@ func (s *Service) SetAISettings(in AISettingsDTO) (AISettingsDTO, error) {
 func (s *Service) SetAIKey(key string) (AISettingsDTO, error) {
 	key = strings.TrimSpace(key)
 	if strings.ContainsAny(key, " \t\r\n") {
-		return AISettingsDTO{}, errors.New("Der Schlüssel enthält Leerzeichen – bitte genau so einfügen, wie er auf dem Server steht.")
+		return AISettingsDTO{}, errors.New("Der Schlüssel enthält Leerzeichen – bitte genau so einfügen, wie er auf dem Server steht")
 	}
 	if err := s.updateConfig("API-Schlüssel", func(c *config.Config) { c.AI.Key = key }); err != nil {
 		return AISettingsDTO{}, err
@@ -121,7 +121,7 @@ func (s *Service) aiClient(anyway bool) (*ai.Client, error) {
 		return nil, errors.New("Konfiguration nicht verfügbar")
 	}
 	if !s.cfg.AI.On && !anyway {
-		return nil, fmt.Errorf("%w – in den Einstellungen unter „KI“ einschalten.", ai.ErrNotSet)
+		return nil, fmt.Errorf("%w – in den Einstellungen unter „KI“ einschalten", ai.ErrNotSet)
 	}
 	d := aiSettingsOf(s.cfg.AI)
 	return &ai.Client{URL: d.URL, Model: d.Model, Key: s.cfg.AI.Key, Lock: s.aiLock}, nil

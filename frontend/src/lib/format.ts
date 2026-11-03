@@ -110,6 +110,12 @@ export function pct(rate: string | number | undefined | null): string {
     return `${String(rate).replace(".", ",")} %`;
 }
 
+/** A message as a sentence: ends with a full stop (backend messages have none). */
+export function sentence(s: string): string {
+    const t = s.trim();
+    return t === "" || /[.!?…]$/.test(t) ? t : `${t}.`;
+}
+
 export function errMsg(e: unknown): string {
     if (e instanceof Error) return e.message;
     if (typeof e === "string") return e;

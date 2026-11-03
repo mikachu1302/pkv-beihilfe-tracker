@@ -54,7 +54,7 @@ func checkQuery(q Query, want map[string]any) []string {
 			for _, y := range v.([]any) {
 				years = append(years, int(y.(float64)))
 			}
-			if !slices.Equal(years, q.Years) && !(len(years) == 0 && len(q.Years) == 0) {
+			if !slices.Equal(years, q.Years) {
 				wrong = append(wrong, fmt.Sprintf("jahre %v statt %v", q.Years, years))
 			}
 			continue

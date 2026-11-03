@@ -116,7 +116,7 @@ func (c *Client) Health(ctx context.Context) error {
 		return nil
 	case resp.StatusCode == http.StatusServiceUnavailable:
 		// llama.cpp answers 503 while it loads the model.
-		return fmt.Errorf("%w: Der KI-Server startet noch (Modell wird geladen) – bitte gleich noch einmal versuchen.", ErrUnreachable)
+		return fmt.Errorf("%w: Der KI-Server startet noch (Modell wird geladen) – bitte gleich noch einmal versuchen", ErrUnreachable)
 	case resp.StatusCode >= 300:
 		return fmt.Errorf("%w: %s antwortet mit HTTP %d", ErrUnreachable, health, resp.StatusCode)
 	}
@@ -293,7 +293,7 @@ func (c *Client) do(ctx context.Context, method, path string, in, out any, timeo
 		return c.netError(ctx, err, timeout)
 	}
 	if err := json.Unmarshal(b, out); err != nil {
-		return fmt.Errorf("%w (%s)", ErrAnswer, err)
+		return fmt.Errorf("%w (%w)", ErrAnswer, err)
 	}
 	return nil
 }
@@ -303,14 +303,14 @@ func (c *Client) statusError(resp *http.Response) error {
 	msg := serverMessage(resp)
 	switch resp.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return fmt.Errorf("%w (HTTP %d) – in den Einstellungen unter „KI“ den Schlüssel prüfen.", ErrKey, resp.StatusCode)
+		return fmt.Errorf("%w (HTTP %d) – in den Einstellungen unter „KI“ den Schlüssel prüfen", ErrKey, resp.StatusCode)
 	case http.StatusNotFound:
 		if strings.Contains(strings.ToLower(msg), "model") {
 			return fmt.Errorf("%w: „%s“", ErrModel, c.Model)
 		}
 		return fmt.Errorf("%w: %s gibt es nicht – ist die Adresse richtig (endet auf /v1)?", ErrUnreachable, resp.Request.URL)
 	case http.StatusServiceUnavailable:
-		return fmt.Errorf("%w: Der KI-Server ist beschäftigt oder startet noch – bitte gleich noch einmal versuchen.", ErrUnreachable)
+		return fmt.Errorf("%w: Der KI-Server ist beschäftigt oder startet noch – bitte gleich noch einmal versuchen", ErrUnreachable)
 	}
 	if strings.Contains(strings.ToLower(msg), "model") && strings.Contains(strings.ToLower(msg), "not found") {
 		return fmt.Errorf("%w: „%s“", ErrModel, c.Model)
@@ -347,7 +347,7 @@ func (c *Client) netError(ctx context.Context, err error, timeout time.Duration)
 	}
 	var ne net.Error
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.As(err, &ne) && ne.Timeout() {
-		return fmt.Errorf("%w (nach %s).", ErrTimeout, seconds(timeout))
+		return fmt.Errorf("%w (nach %s)", ErrTimeout, seconds(timeout))
 	}
 	return c.notThere()
 }

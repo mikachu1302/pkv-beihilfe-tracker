@@ -12,7 +12,7 @@ import {useAIOn} from "../lib/ai";
 import {readingSummary, useAIRead} from "../lib/aiRead";
 import {recognizePages} from "../lib/capture";
 import {bySize, docType, docUrl, readAsDataURL, tooBigText, useFileDrop} from "../lib/files";
-import {CATEGORY_LABELS, STATUS_LABELS, date, errMsg, eur, num, pct, plural, toInput, today} from "../lib/format";
+import {CATEGORY_LABELS, STATUS_LABELS, date, errMsg, eur, num, pct, plural, sentence, toInput, today} from "../lib/format";
 import {alternativeInput, applyReading, fillEmpty} from "../lib/prefill";
 import type {Alternative} from "../lib/prefill";
 import {dialogOpen, key, mod, useKeydown, useSaveShortcut, useUnsavedChanges} from "../lib/shortcuts";
@@ -351,7 +351,7 @@ export default function InvoiceForm() {
             if (got.length) update(next);
             setAIState({...NO_AI, others, done: readingSummary(r, got.length, Object.keys(others).length)});
         } catch (e) {
-            if (gen === formGen.current) setAIState({...NO_AI, error: `${errMsg(e)} Die Werte der Texterkennung bleiben.`});
+            if (gen === formGen.current) setAIState({...NO_AI, error: `${sentence(errMsg(e))} Die Werte der Texterkennung bleiben.`});
         }
     }
 

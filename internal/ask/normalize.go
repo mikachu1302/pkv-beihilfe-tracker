@@ -218,7 +218,7 @@ var (
 	generalRe = regexp.MustCompile(`^ (was (ist|sind|bedeutet|heißt)|wie (funktioniert|wird|geht)|warum|erklär|wer )`)
 	listRe    = regexp.MustCompile(`^ (bitte )?(welche|zeig|liste|wo |bei welche[nmr]? rechnung|gab es|gibt es)|welche[nmrs]? (rechnung|erstattung|beleg)`)
 	sumRe     = regexp.MustCompile(`^ was hat`)
-	openRe    = regexp.MustCompile(`^ (was|wie viel) (ist|steht)`) // "Was ist noch offen?": the Ausstand
+	openRe    = regexp.MustCompile(`^ (was|wie viel) (ist|steht)`)            // "Was ist noch offen?": the Ausstand
 	notSentRe = regexp.MustCompile(`nicht (\S+ ){0,4}(eingereicht|einreich)`) // "noch nicht bei der PKV eingereicht"
 	refundRe  = regexp.MustCompile(`(vollständig|komplett|ganz|schon|bereits)? erstattet`)
 	dateRe    = regexp.MustCompile(`\d{1,2}\.\d{1,2}\.`)

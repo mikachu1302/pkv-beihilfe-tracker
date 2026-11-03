@@ -81,7 +81,7 @@ func (s *Service) Ask(ctx context.Context, in AskInputDTO) (AnswerDTO, error) {
 	}
 	if c.Lock.Busy() {
 		// A document takes minutes; a question should not wait for it unnoticed.
-		return AnswerDTO{}, errors.New("Die KI liest gerade einen Beleg – die Frage bitte gleich noch einmal stellen.")
+		return AnswerDTO{}, errors.New("Die KI liest gerade einen Beleg – die Frage bitte gleich noch einmal stellen")
 	}
 	s.mu.Lock()
 	_, data, err := s.ready()
@@ -103,7 +103,7 @@ func (s *Service) Ask(ctx context.Context, in AskInputDTO) (AnswerDTO, error) {
 	}
 	var q ask.Query
 	if err := json.Unmarshal(a.JSON, &q); err != nil {
-		return AnswerDTO{}, fmt.Errorf("%w (%s)", ai.ErrAnswer, err)
+		return AnswerDTO{}, fmt.Errorf("%w (%w)", ai.ErrAnswer, err)
 	}
 	var prev *ask.Query
 	if n := len(in.History); n > 0 {

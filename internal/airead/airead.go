@@ -74,7 +74,7 @@ func Read(ctx context.Context, c *ai.Client, in Input) (Result, error) {
 	}
 	var a Answer
 	if err := json.Unmarshal(ans.JSON, &a); err != nil {
-		return Result{}, fmt.Errorf("%w (%s)", ai.ErrAnswer, err)
+		return Result{}, fmt.Errorf("%w (%w)", ai.ErrAnswer, err)
 	}
 	r := Merge(a, in)
 	r.Pages, r.Took = len(pages), ans.Took

@@ -10,7 +10,7 @@ import type {AnswerDTO, AskVocabularyDTO, ChoiceDTO, QueryDTO, TurnDTO} from "..
 import {useApp} from "../App";
 import {Notice} from "../components/ui";
 import {useAIOn} from "../lib/ai";
-import {date, errMsg, eur, STATUS_LABELS} from "../lib/format";
+import {date, errMsg, eur, sentence, STATUS_LABELS} from "../lib/format";
 import {invoicePath} from "../lib/paths";
 import {createStore, useStore} from "../lib/store";
 import {useBackend} from "../lib/useBackend";
@@ -121,7 +121,7 @@ export default function Ask() {
                     <section key={e.id} className="ask-entry" aria-label={e.question}>
                         <p className="ask-question">{e.question}</p>
                         {e.answer && <AnswerView answer={e.answer} vocabulary={vocabulary.data} onChange={q => void rerun(e.id, q)}/>}
-                        {e.error && <Notice kind="warn">{e.error}{/nicht erreichbar/.test(e.error) && " Ohne KI helfen die Filter der Rechnungsliste."}</Notice>}
+                        {e.error && <Notice kind="warn">{sentence(e.error)}{/nicht erreichbar/.test(e.error) && " Ohne KI helfen die Filter der Rechnungsliste."}</Notice>}
                         {!e.answer && !e.error && (
                             <p className="muted small" role="status">
                                 Frage wird verstanden … <button className="link" onClick={() => running?.cancel()}>Abbrechen</button>

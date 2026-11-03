@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -66,7 +67,8 @@ func TestAISettings(t *testing.T) {
 	if err != nil || !strings.Contains(string(b), `"key": "kurz"`) {
 		t.Errorf("config %s %v", b, err)
 	}
-	if fi, err := os.Stat(cfg); err != nil || fi.Mode().Perm() != 0o600 {
+	// Windows has no such file modes (Go reports 0666 there).
+	if fi, err := os.Stat(cfg); runtime.GOOS != "windows" && (err != nil || fi.Mode().Perm() != 0o600) {
 		t.Errorf("config mode %v %v", fi.Mode(), err)
 	}
 	again := NewWithConfigDir(s.cfgDir)

@@ -12,7 +12,7 @@ import {useAIOn} from "../lib/ai";
 import {readingSummary, useAIRead} from "../lib/aiRead";
 import {recognizePages, renderPdfPreview} from "../lib/capture";
 import {bySize, readAsDataURL, tooBigText, useFileDrop} from "../lib/files";
-import {CATEGORY_LABELS, errMsg, eur, plural, toInput, today} from "../lib/format";
+import {CATEGORY_LABELS, errMsg, eur, plural, sentence, toInput, today} from "../lib/format";
 import {alternativeInput, applyReading} from "../lib/prefill";
 import type {Alternative} from "../lib/prefill";
 import {hasUnsavedChanges, key, useSaveShortcut, useUnsavedChanges} from "../lib/shortcuts";
@@ -479,7 +479,7 @@ function InboxItem({item, payers, onDone, onChanged, onDiscard}: {
             touched.current = true;
             if (filled.length) setEdited(true);
         } catch (e) {
-            setAIError(`${errMsg(e)} Die Werte der Texterkennung bleiben.`);
+            setAIError(`${sentence(errMsg(e))} Die Werte der Texterkennung bleiben.`);
         }
     }
 
