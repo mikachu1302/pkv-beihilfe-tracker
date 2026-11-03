@@ -26,3 +26,4 @@ frontend/dist/
 frontend/bindings/
 frontend/public/ocr/
 frontend/public/pdfjs/
+frontend/public/licenses/

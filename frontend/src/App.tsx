@@ -60,24 +60,30 @@ const NAV = [
 
 const NAV_KEY = "pkv.navCollapsed";
 
-/** Whether the menu is collapsed to icons; remembered on this device. */
+/**
+ * Whether the menu is collapsed to icons; remembered on this device. Until
+ * it is chosen, the new design starts with the icon rail, the classic one
+ * with the full menu.
+ */
 function useNavCollapsed(): [boolean, (v: boolean) => void] {
-    const [collapsed, setCollapsed] = useState(() => {
+    const design = useDesign();
+    const [chosen, setChosen] = useState<boolean | null>(() => {
         try {
-            return localStorage.getItem(NAV_KEY) === "1";
+            const v = localStorage.getItem(NAV_KEY);
+            return v === null ? null : v === "1";
         } catch {
-            return false;
+            return null;
         }
     });
     const set = (v: boolean) => {
-        setCollapsed(v);
+        setChosen(v);
         try {
             localStorage.setItem(NAV_KEY, v ? "1" : "0");
         } catch {
             // not remembered – fine
         }
     };
-    return [collapsed, set];
+    return [chosen ?? design === "new", set];
 }
 
 function Layout({status, children}: {status: StatusDTO; children: ReactNode}) {
@@ -92,6 +98,7 @@ function Layout({status, children}: {status: StatusDTO; children: ReactNode}) {
         <div className={`layout ${collapsed ? "nav-collapsed" : ""}`}>
             <nav className="sidebar" aria-label="Hauptmenü">
                 <div className="brand">
+                    <span className="logo" aria-hidden="true">P·B</span>
                     <span className="brand-text">PKV · Beihilfe</span>
                     <button type="button" className="nav-toggle" aria-expanded={!collapsed}
                             aria-label={collapsed ? "Menü ausklappen" : "Menü einklappen"}

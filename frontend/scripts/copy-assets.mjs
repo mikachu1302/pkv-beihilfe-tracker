@@ -31,3 +31,12 @@ for (const dir of ["wasm", "standard_fonts", "cmaps", "iccs"]) {
     });
 }
 console.log(`pdf.js assets copied to ${pdfjs}`);
+
+// The fonts of the new design are bundled from these packages (styles/fonts.css);
+// the SIL Open Font License asks to ship its text with them.
+const licenses = join(root, "public", "licenses");
+mkdirSync(licenses, {recursive: true});
+for (const font of ["space-grotesk", "jetbrains-mono"]) {
+    copyFileSync(join(nm, "@fontsource-variable", font, "LICENSE"), join(licenses, `${font}-OFL.txt`));
+}
+console.log(`Font licences copied to ${licenses}`);

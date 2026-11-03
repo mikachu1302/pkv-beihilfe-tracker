@@ -27,6 +27,11 @@
   --nav-track: rgba(255,255,255,.18);
   --row-hover: rgba(127,127,127,.07);
   --row-selected: rgba(43,106,216,.06);
+  --accent-fg: var(--accent); /* the accent as text and lines (links, focus); --accent is the fill */
+  --panel-2: #f2f4f7; /* a second surface (footers, segmented controls) */
+  --info: #2b6ad8; /* "eingereicht" */
+  --toast-bg: var(--nav);
+  --toast-text: #fff;
   color-scheme: light;
 
   /* type, shape and spacing */
@@ -63,6 +68,8 @@
   --warn-bg: #3a2e17;
   --bad-bg: #3d1e1e;
   --nav: #10141a;
+  --panel-2: #232a34;
+  --info: #5b8ff0;
   color-scheme: dark;
 }
 

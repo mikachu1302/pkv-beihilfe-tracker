@@ -1,2 +1,167 @@
-/* Design "Neu" (v0.4.0): tokens and the rules that differ from the classic
-   look, all scoped to [data-design="new"]. Filled in step 2 of PLAN-v0.4. */
+/* Design "Neu" (v0.4.0, direction "A · Nachtschicht" of the mockups): one
+   accent colour – lime as fill, dark olive (light) or lime (dark) for text
+   and lines –, amounts in a monospace face, calm surfaces, an icon rail.
+   Tokens first, then the rules that differ from the classic look; everything
+   is scoped to [data-design="new"], the classic rules stay as they are.
+   Loaded after base.css. Rules for plain elements use :where() so they keep
+   the specificity of the element and never beat a component class.
+
+   Text contrast >= 4.5:1 (WCAG AA) for every text token on --bg, --panel,
+   --panel-2, --row-hover and --row-selected, status colours on their -bg,
+   --accent-text on --accent, nav text on nav surfaces, toast text, white on
+   --bad-strong (checked with a script, see PLAN-v0.4.md). */
+:root[data-design="new"] {
+  --bg: #f5f6f8;
+  --panel: #ffffff;
+  --panel-2: #f0f2f5;
+  --border: #e1e5ea;
+  --text: #14171c;
+  --muted: #5b6572;
+  --accent: #c8f542;
+  --accent-text: #14171c;
+  --accent-fg: #3f6212;
+  --good: #147a3a;
+  --warn: #a94f08;
+  --bad: #b91c1c;
+  --bad-strong: #b91c1c;
+  --good-bg: #e8f5ec;
+  --warn-bg: #fdf3e7;
+  --bad-bg: #fdecec;
+  --info: #0369a1;
+  --payer-1: #0369a1;
+  --payer-2: #6d28d9;
+  --nav: #ffffff;
+  --nav-text: #5b6572;
+  --nav-active: #3f6212;
+  --nav-hover: #f0f2f5;
+  --nav-active-bg: #eef1f4;
+  --nav-track: #e1e5ea;
+  --nav-border: #e1e5ea;
+  --row-hover: #f7f9fb;
+  --row-selected: #eef6d9;
+  --toast-bg: #14171c;
+  --toast-text: #f5f6f8;
+  color-scheme: light;
+
+  --font-ui: "Space Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-num: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --font-mono: var(--font-num);
+  --font-size: 14px;
+  --figure-size: 26px;
+  --radius-sm: 10px;
+  --radius: 16px;
+  --radius-lg: 18px;
+  --radius-pill: 999px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 18px;
+  --space-5: 24px;
+}
+:root[data-design="new"][data-theme="dark"] {
+  --bg: #0d0f12;
+  --panel: #14181d;
+  --panel-2: #1b2027;
+  --border: #262c34;
+  --text: #e9ecef;
+  --muted: #9aa4b0;
+  --accent-text: #0d0f12;
+  --accent-fg: #c8f542;
+  --good: #7ee2a8;
+  --warn: #ffa45c;
+  --bad: #ff7a7a;
+  --bad-strong: #b91c1c;
+  --good-bg: #13281d;
+  --warn-bg: #2d2013;
+  --bad-bg: #321819;
+  --info: #7dd3fc;
+  --payer-1: #7dd3fc;
+  --payer-2: #c4b5fd;
+  --nav: #08090b;
+  --nav-text: #9aa4b0;
+  --nav-active: #c8f542;
+  --nav-hover: #161a20;
+  --nav-active-bg: #1c2128;
+  --nav-track: #262c34;
+  --nav-border: #262c34;
+  --row-hover: #1a1f25;
+  --row-selected: #222a1a;
+  --toast-bg: #e9ecef;
+  --toast-text: #0d0f12;
+  color-scheme: dark;
+}
+
+[data-design="new"] input[type=checkbox], [data-design="new"] input[type=radio] { accent-color: var(--accent-fg); }
+
+/* ---------- menu: icon rail with a logo tile ---------- */
+[data-design="new"] .sidebar { width: 224px; padding: 22px 12px; gap: 4px; border-right: 1px solid var(--nav-border); }
+[data-design="new"] .sidebar .brand { padding: 0 0 16px 4px; gap: 10px; justify-content: flex-start; color: var(--text); font-size: 15px; }
+[data-design="new"] .sidebar .logo { display: flex; }
+[data-design="new"] .sidebar .brand-text { flex: 1; white-space: nowrap; }
+[data-design="new"] .sidebar a, [data-design="new"] .nav-button {
+  border-left: none; border-radius: 12px; padding: 0 12px; min-height: 44px; gap: 12px; color: var(--nav-text); }
+[data-design="new"] .sidebar a:hover, [data-design="new"] .nav-button:hover { color: var(--text); background: var(--nav-hover); }
+[data-design="new"] .sidebar a.active { color: var(--nav-active); background: var(--nav-active-bg); font-weight: 600; }
+[data-design="new"] .sidebar .icon { width: 20px; height: 20px; }
+[data-design="new"] .nav-toggle:hover, [data-design="new"] .nav-toggle:focus-visible { color: var(--text); }
+[data-design="new"] .nav-foot { padding: 12px 12px 0; }
+[data-design="new"] .theme-switch[aria-checked="true"] .switch::after { background: var(--accent-text); }
+[data-design="new"] .layout.nav-collapsed .sidebar { width: 72px; padding: 22px 14px; align-items: center; }
+[data-design="new"] .layout.nav-collapsed .brand { flex-direction: column; padding: 0 0 12px; gap: 8px; }
+[data-design="new"] .layout.nav-collapsed .sidebar a,
+[data-design="new"] .layout.nav-collapsed .nav-button { width: 44px; height: 44px; padding: 0; justify-content: center; }
+[data-design="new"] .layout.nav-collapsed .nav-count { top: 2px; left: auto; right: 0; }
+[data-design="new"] .layout.nav-collapsed .nav-button.theme-switch { margin-top: auto; }
+
+/* ---------- page ---------- */
+[data-design="new"] .content { padding: 28px 36px 40px; }
+:where([data-design="new"]) h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; }
+:where([data-design="new"]) h2 { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+:where([data-design="new"]) h3 { font-size: 15px; }
+[data-design="new"] .page-head { gap: 14px; margin-bottom: 18px; }
+[data-design="new"] .page-head button, [data-design="new"] .page-head input, [data-design="new"] .page-head select { min-height: 40px; }
+[data-design="new"] .sub { font-size: 12px; }
+[data-design="new"] .num, [data-design="new"] td.amounts, [data-design="new"] .kv dd { font-size: 12.5px; }
+[data-design="new"] th.num { font-size: 12px; }
+[data-design="new"] .card .value, [data-design="new"] .kv dd { letter-spacing: -0.01em; }
+
+/* ---------- surfaces ---------- */
+[data-design="new"] .panel { padding: 18px 20px; }
+[data-design="new"] .cards { gap: 14px; }
+[data-design="new"] .card { padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; }
+[data-design="new"] .card .label, [data-design="new"] .card .note { font-size: 13px; }
+[data-design="new"] .card .value { line-height: 1.2; }
+[data-design="new"] .card .value.due { color: var(--accent-fg); }
+[data-design="new"] .cards.outstanding { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+[data-design="new"] .notice { border-radius: 12px; padding: 12px 16px; }
+[data-design="new"] fieldset { border-radius: 14px; padding: 14px 16px 16px; }
+[data-design="new"] fieldset.choice { border: none; padding: 0; }
+[data-design="new"] .modal { border: 1px solid var(--border); padding: 24px; box-shadow: 0 18px 48px rgba(0,0,0,.25); }
+[data-design="new"] .popover { border-radius: 14px; padding: 14px; }
+[data-design="new"] .tooltip { border-radius: 10px; }
+[data-design="new"] .toast { border-radius: 12px; padding: 12px 16px; }
+[data-design="new"] .bulkbar { border-radius: 14px; padding: 10px 14px; }
+[data-design="new"] .doc-tile { border-radius: 12px; }
+[data-design="new"] .doc-add { border-radius: 12px; }
+[data-design="new"] .preview-wrap { border-radius: 14px; }
+[data-design="new"] .dropzone { border-radius: 14px; }
+
+/* ---------- controls ---------- */
+:where([data-design="new"]) button, :where([data-design="new"]) .btn { padding: 7px 14px; font-weight: 500; }
+[data-design="new"] button.primary { font-weight: 700; }
+[data-design="new"] button.primary:hover { border-color: var(--accent); filter: brightness(.95); }
+:where([data-design="new"]) input, :where([data-design="new"]) select, :where([data-design="new"]) textarea { padding: 8px 11px; }
+[data-design="new"] .chips { gap: 6px; }
+[data-design="new"] .chip { padding: 6px 13px; min-height: 32px; font-size: 13px; }
+[data-design="new"] .badge { padding: 1px 8px; font-weight: 600; background: transparent; border: 1.5px solid var(--border); color: var(--muted); }
+[data-design="new"] .badge.good, [data-design="new"] .badge.warn, [data-design="new"] .badge.bad { background: transparent; border-color: currentColor; }
+[data-design="new"] .nav-count { font-weight: 700; }
+[data-design="new"] kbd { font-family: var(--font-num); font-size: 11.5px; }
+
+/* ---------- tables ---------- */
+[data-design="new"] .table-wrap { border-radius: 14px; background: var(--panel); }
+:where([data-design="new"]) th, :where([data-design="new"]) td { padding: 8px 10px; }
+[data-design="new"] .table-wrap th { background: var(--panel-2); }
+[data-design="new"] .table-wrap table td:first-child, [data-design="new"] .table-wrap table th:first-child { padding-left: 14px; }
+[data-design="new"] table.invoices tfoot td { background: var(--panel-2); }
+[data-design="new"] .provider-link { font-weight: 600; }
