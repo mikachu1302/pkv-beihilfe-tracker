@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/ai"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/civil"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/config"
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/model"
@@ -65,6 +66,7 @@ type Service struct {
 	session       string               // temporary folder of this run (see sessionDir)
 	tmpRoot       string               // where session folders are made; "" = os.TempDir() (tests set it)
 	staged        map[string]stagedDoc // documents added in invoice forms, by ID
+	aiLock        *ai.Lock             // one request to the AI server at a time
 
 	now func() time.Time
 }
@@ -84,7 +86,8 @@ func New() *Service {
 func NewWithConfigDir(dir string) *Service { return newService(dir) }
 
 func newService(cfgDir string) *Service {
-	s := &Service{cfgDir: cfgDir, now: time.Now, pending: map[string]*pendingImport{}, watchDebounce: 800 * time.Millisecond}
+	s := &Service{cfgDir: cfgDir, now: time.Now, pending: map[string]*pendingImport{}, watchDebounce: 800 * time.Millisecond,
+		aiLock: ai.NewLock()}
 	if cfgDir == "" {
 		return s
 	}

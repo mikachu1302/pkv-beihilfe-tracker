@@ -14,6 +14,7 @@ import {DESIGN_LABELS, DESIGN_ORDER, useDesign} from "../lib/design";
 import type {Design} from "../lib/design";
 import {THEME_LABELS, THEME_ORDER, useTheme} from "../lib/theme";
 import type {Theme} from "../lib/theme";
+import {AISettingsSection} from "./SettingsAI";
 
 /** Amounts in the form use the German format. */
 function forForm(s: SettingsDTO): SettingsDTO {
@@ -125,6 +126,7 @@ export default function Settings() {
             }}/>
             <Appearance/>
             <Backups onChanged={reloadStatus}/>
+            <AISettingsSection/>
             {newer && (
                 <Notice kind="warn">
                     <div className="row">

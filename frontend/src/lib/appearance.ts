@@ -1,6 +1,6 @@
 // The appearance settings of this device as the backend keeps them (design,
 // default invoice view, table options, the one-time design hint). Loaded at
-// start and again when the data folder changes (App: AppearanceSync); pages
+// start and again when the data folder changes (App: DeviceSync); pages
 // read them with useAppearance. The lists and defaults here match
 // internal/service/appearance.go.
 import type {AppearanceDTO} from "../api";

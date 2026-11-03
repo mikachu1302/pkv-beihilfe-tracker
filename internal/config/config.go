@@ -1,6 +1,7 @@
-// Package config keeps the device-local settings: where the data folder is
-// and this device's ID. They live in the OS config folder, never in the data
-// folder (which may be shared by several devices).
+// Package config keeps the device-local settings: where the data folder is,
+// this device's ID, its appearance and the AI server. They live in the OS
+// config folder, never in the data folder (which may be shared by several
+// devices).
 package config
 
 import (
@@ -37,6 +38,18 @@ type Config struct {
 	View string `json:"view,omitempty"`
 	// Table holds the options of the table view.
 	Table TableOptions `json:"table,omitzero"`
+	// AI is the connection to the local AI server. Device-local on purpose:
+	// devices may differ, and the API key must not travel with the data folder.
+	AI AISettings `json:"ai,omitzero"`
+}
+
+// AISettings configure the local AI server. Empty URL and model mean the
+// defaults (internal/ai).
+type AISettings struct {
+	On    bool   `json:"on,omitempty"`
+	URL   string `json:"url,omitempty"`
+	Model string `json:"model,omitempty"`
+	Key   string `json:"key,omitempty"` // API key; this file is readable by the user only (0600)
 }
 
 // TableOptions are the options of the table view. The zero value is the

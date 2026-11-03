@@ -6,6 +6,7 @@ import {Svc} from "./api";
 import type {StatusDTO} from "./api";
 import {FeedbackProvider, useConfirm, useToast} from "./components/feedback";
 import {ErrorNotice, Loading, Notice} from "./components/ui";
+import {setAI} from "./lib/ai";
 import {setAppearance, useAppearance} from "./lib/appearance";
 import {useCloseDesignHint, useSetDesign, useSetTheme} from "./lib/appearanceActions";
 import {applyDesign, useDesign} from "./lib/design";
@@ -198,10 +199,11 @@ function ThemeToggle() {
 }
 
 /**
- * Takes colour scheme and design from the device configuration (localStorage,
- * which painted the first frame, may be empty or from an older version).
+ * Takes the settings of this device from the device configuration: colour
+ * scheme and design (localStorage, which painted the first frame, may be
+ * empty or from an older version) and the AI settings.
  */
-function AppearanceSync({dataDir}: {dataDir?: string}) {
+function DeviceSync({dataDir}: {dataDir?: string}) {
     // again after the data folder was set: a device set up now gets no hint about the old design
     useEffect(() => {
         let live = true; // a late answer of an earlier load must not undo a newer one
@@ -215,6 +217,9 @@ function AppearanceSync({dataDir}: {dataDir?: string}) {
             live = false;
         };
     }, [dataDir]);
+    useEffect(() => {
+        Svc.AISettings().then(a => a && setAI(a), () => {});
+    }, []);
     return null;
 }
 
@@ -273,7 +278,7 @@ export default function App() {
     return (
         <FeedbackProvider>
             <LiveUpdates onChange={onChange}/>
-            <AppearanceSync dataDir={status?.dataDir}/>
+            <DeviceSync dataDir={status?.dataDir}/>
             <HashRouter>
                 {error && <main className="content"><ErrorNotice error={error}/></main>}
                 {!status && !error && <Loading/>}
