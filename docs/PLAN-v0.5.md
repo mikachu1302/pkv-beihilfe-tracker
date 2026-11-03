@@ -32,6 +32,24 @@ grammar, so the answer is always valid JSON of that shape.
 Checked from the development machine on 2026-11-03: `/health` answers `ok`, `/v1/models` without
 a key answers 401 – as described.
 
+**First run of `scripts/ki-belegtest.py` (2026-11-03, made-up documents, pages scaled to 1,400 px):**
+
+| Document | Pages | Prompt tokens | Time | Fields right |
+|---|---|---|---|---|
+| pharmacy receipt (photo-like PNG) | 1 | 1,675 | 56 s | 3/3 |
+| invoice, 2 photos as one document | 2 | 3,041 | 149 s | 6/6 (total and IBAN from page 2) |
+| invoice, 2-page PDF | 2 | 3,041 | 152 s | 6/6 |
+| first page of that invoice alone | 1 | 1,675 | 16 s | 5/5 (prompt cache: same image as before) |
+
+- All fields right – but these are clean, made-up pages the OCR reads too; the real test with
+  difficult documents is still to come.
+- **Two pages fit one request** (~3,000 tokens) and the model combines them (header from page 1,
+  total from page 2). Three or more pages are untested (per-slot context may be ~4,000 tokens).
+- Slower than the owner's measurement: reading ~22 tokens/s with images (not ~40), writing ~6
+  tokens/s – the image prefill dominates: **~1 minute per page, ~2.5 minutes for two pages**.
+  The UI must show progress and offer "Abbrechen"; smaller pages (e.g. 1,100 px) are worth a try.
+- llama.cpp reuses the prompt cache: a document read again (or a page sent before) is much faster.
+
 ## What it means for the app
 
 - **Seconds, not milliseconds**: ~45 s per page (longer when the phones use the server). It must
