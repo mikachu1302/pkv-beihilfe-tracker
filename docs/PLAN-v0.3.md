@@ -1,55 +1,29 @@
-# v0.3.0 – Views and themes (plan)
+# v0.3.0 – Documents in the invoice form, multi-page documents (plan)
 
-Status: planned · 2026-11-02 · mockups: the design canvas "PKV Beihilfe – Designrichtungen"
-(private claude.ai artifact of the owner; section "v0.3.0 · Drei Ansichten, hell und dunkel").
+Status: planned · 2026-11-03
+
+The redesign (new look, views Detail/Kompakt/Tabelle, switch between classic and new design)
+follows in v0.4.0 – see [PLAN-v0.4.md](PLAN-v0.4.md).
 
 ## Goal
 
-The app looks plain. v0.3.0 gives it a distinct look (direction "A · Nachtschicht", adapted to
-light mode) and three ways to look at the invoices – without losing any data in any view.
+Two gaps in the daily work with documents:
 
-## Decisions (2026-11-02)
+- The invoice form can only open documents. Adding one, or prefilling a new invoice from a
+  photo, needs the detour through the inbox.
+- Every image is its own inbox entry: a three-page invoice photographed as three pictures
+  becomes three drafts (and three invoices if all are saved).
+
+## Decisions
 
 | Topic | Decision |
 |---|---|
-| Look | Direction A: one accent colour (lime `#C8F542` as fill; dark olive `#3F6212` for text on light), numbers in a monospace face, calm surfaces. Fonts bundled (no CDN): Space Grotesk (UI) and JetBrains Mono (numbers), both OFL. |
-| Views | Detail, Kompakt, Tabelle – the same data in all three. |
-| Default view | Configurable per device; out of the box: **Detail**. Switching in the list applies until the next start (or until changed in the settings). |
-| Table | **Read only**: sorting, choosing columns, sum row. Editing stays in the invoice form (double click / Enter opens it). |
-| Themes | System / Hell / Dunkel, per device, in the settings and as a quick toggle. |
 | Documents in the form | The invoice form gets "Beleg hinzufügen" (click or drop) for new and existing invoices; for a new invoice the document is recognised and fills **empty fields only**. The inbox stays for everything that arrives on its own (phone, `Eingang/` folder, Bescheide). |
 | Multi-page documents | Several photos can become one document (pages in order): merged by hand in the inbox, suggested by the app (never merged without confirmation), as a "mehrseitiger Beleg" from the phone page, and as several pages in "Beleg hinzufügen". Recognition reads all pages together; invoices and Bescheide alike. |
-| Version | All of this is v0.3.0; v0.2.0 (prescriptions, re-import, shortcuts …) ships first. |
-
-## Views
-
-**Detail (default)** – one card per invoice:
-- left: treatment and invoice date, provider, category, invoice number, amount, paid / due;
-- one column per payer: status pill (offen, eingereicht, erstattet, zurückgehalten,
-  Klärung), SOLL, IST, difference, dates of eingereicht/erstattet;
-- footer (only when there is something): note, documents, hints, linked Bescheid.
-- The checkboxes of today's list stay available in the card (tick eingereicht/erstattet
-  without opening the form).
-
-**Kompakt** – one row per invoice: date, provider + category, amount, per payer three status
-dots plus a short text ("eingereicht 20.09.", "erstattet −39,21 €"), open amount, flags (not
-paid, waiting long, Klärung, note). A row expands (click on the chevron or →) to show all
-details of the Detail card; Enter opens the invoice.
-
-**Tabelle** – all fields as columns: Behandlung, Rechnung, Behandler, Kategorie, Re.-Nr.,
-Betrag, Bezahlt, per payer SOLL / IST / Diff / eingereicht / erstattet, Notiz. Group headers per
-payer, sticky header and first column, sortable by any column (`aria-sort`), column chooser,
-dense/normal rows, sum row (amount, SOLL, IST, diff per payer), horizontal scrolling inside the
-table only. Double click / Enter opens the invoice.
-
-Common to all three: the toolbar (year, search, filters, Ausstand per payer), keyboard
-navigation (↑/↓ moves the selection, Enter opens), bulk selection (eingereicht for several),
-the same filters and search, the same sort order unless the table is sorted otherwise.
+| Look | Today's look stays. New UI parts (drop zone, page list, merge dialog) use only the existing CSS tokens and shared classes, so they work unchanged in both designs of v0.4.0. |
+| Version | Both topics are v0.3.0 (decided 2026-11-03); the redesign moves to v0.4.0. |
 
 ## Documents in the invoice form
-
-Today the form can only open documents; adding one, or prefilling a new invoice from a photo,
-needs the detour through the inbox. v0.3.0:
 
 - A drop zone / button "Beleg hinzufügen" at the top of the form (new and existing invoices);
   PDF and images, same size limit as the inbox (40 MB); several documents per invoice
@@ -70,9 +44,7 @@ needs the detour through the inbox. v0.3.0:
 
 ## Multi-page documents
 
-Today every image is its own inbox entry: a three-page invoice photographed as three pictures
-becomes three drafts (and three invoices if all are saved). A multi-page PDF already works as one
-document (up to 4 pages are read). v0.3.0:
+A multi-page PDF already works as one document (up to 4 pages are read). v0.3.0:
 
 - **Model**: a document consists of one or more files (pages, in order). An invoice already holds
   several attachments; a grouped inbox entry keeps its pages until it is saved, then all pages are
@@ -92,35 +64,26 @@ document (up to 4 pages are read). v0.3.0:
 - Storage: pages stay separate files in `belege/` (content-named as today); the grouping lives in
   the record (order of the attachments), so syncing stays per file and conflict-free.
 
-## Settings · Darstellung
-
-- Standardansicht: Detail (default) / Kompakt / Tabelle.
-- Farbschema: wie das System (default) / hell / dunkel.
-- Tabelle: sum row, dense rows, visible columns (also from the column chooser).
-- Stored in the device config (`internal/config`), not in the data folder – two devices can
-  look different.
-
 ## Implementation steps (each one shippable)
 
-1. **Tokens and themes**: CSS custom properties for both themes (surfaces, text, muted,
-   border, accent fill/text, payer colours, status colours) validated for contrast ≥ 4.5:1;
-   theme switch (system/light/dark) in config + settings + quick toggle; bundle the two fonts.
-   Restyle the shell (menu, header, buttons, chips, cards) to the new look.
-2. **View switch + Detail view** (default) replacing today's table; keep all functions of the
-   current list (ticks, popovers for refund amount and Klärung, bulk bar).
-3. **Tabelle**: read-only grid with sorting, column chooser, sum row, sticky header/column.
-4. **Kompakt** with expandable rows.
-5. **Settings · Darstellung** with the default view and table options; remember the last
-   quick choice for the session only.
-6. **Documents in the invoice form**: "Beleg hinzufügen" with recognition for new invoices
-   (fills empty fields only), attaching to existing invoices, removing attachments.
-7. **Multi-page documents**: grouping in the inbox (by hand, then suggestions), the phone
-   page's multi-page mode, several pages in the form, Bescheide over several pages.
-8. Tests: unit tests per view (same data, sorting, column chooser, keyboard), theme contrast
-   check, headless screenshots in both themes; docs (README, PLAN).
+1. **Attachments backend**: `AddDocument` / attach to an invoice with duplicate and type checks,
+   removing an attachment, keeping files that other records still use.
+2. **"Beleg hinzufügen" in the form**: attach to existing invoices; for new invoices recognition
+   that fills empty fields only, with source markers; Bescheide redirected to the inbox.
+3. **Multi-page model**: inbox entries with ordered pages, recognition over all pages, page
+   limit for PDFs raised; pages attached in order and in the submission PDF.
+4. **Merge by hand in the inbox**: select → merge, reorder pages, split again.
+5. **Suggestions** for pages that belong together (page numbers, invoice number, provider
+   without total, arrival time from the phone).
+6. **Phone page**: "Mehrseitiger Beleg" mode; several pages in "Beleg hinzufügen".
+7. **Bescheide over several pages** in the refund review.
+8. *Optional, small*: theme switch System/Hell/Dunkel (today the app follows the system only)
+   for the current look; otherwise it comes with v0.4.0.
+9. Tests (Go: attachments, grouping, recognition over pages with synthetic layouts; frontend:
+   form prefill keeps typed fields, merge/split/reorder), docs (README, PLAN, INSTALLATION if
+   the phone page changes).
 
 ## Open points
 
-- Should the invoice detail page also get the "Reise einer Rechnung" layout (direction D)?
-- Status dots need a text alternative in every place (screen readers, colour blindness).
-- Performance with several hundred invoices in the table (virtualise only if needed).
+- How long may the gap between phone uploads be to suggest a group (e.g. 2 minutes)?
+- Should a merged inbox entry be splittable again after saving (i.e. on the invoice)?
