@@ -1,5 +1,5 @@
 import {afterEach, describe, expect, it, vi} from "vitest";
-import {applyTheme, initTheme, nextTheme} from "./theme";
+import {applyTheme, initTheme} from "./theme";
 
 function fakeSystem(dark: boolean) {
     const listeners: (() => void)[] = [];
@@ -36,9 +36,5 @@ describe("theme", () => {
 
         applyTheme("");
         expect(localStorage.getItem("pkv.theme")).toBeNull();
-    });
-
-    it("cycles System → Hell → Dunkel", () => {
-        expect([nextTheme(""), nextTheme("light"), nextTheme("dark")]).toEqual(["light", "dark", ""]);
     });
 });

@@ -6,7 +6,7 @@ import {Svc} from "./api";
 import type {StatusDTO} from "./api";
 import {FeedbackProvider, useConfirm, useToast} from "./components/feedback";
 import {ErrorNotice, Loading, Notice} from "./components/ui";
-import {THEME_LABELS, applyTheme, nextTheme, useTheme} from "./lib/theme";
+import {applyTheme, useDarkActive, useTheme} from "./lib/theme";
 import type {Theme} from "./lib/theme";
 import {useBackend} from "./lib/useBackend";
 import {clearUnsavedChanges, dialogOpen, hasUnsavedChanges, isMac, isTyping, key, mod, useKeydown} from "./lib/shortcuts";
@@ -189,16 +189,19 @@ export function useSetTheme(): (t: Theme) => void {
     };
 }
 
-/** Quick toggle in the menu: System → Hell → Dunkel. */
+/**
+ * Switch in the menu: dark mode on or off. It shows the scheme in effect
+ * (also with "Automatisch"); switching chooses light or dark for this device.
+ */
 function ThemeToggle() {
-    const theme = useTheme();
+    const dark = useDarkActive();
     const setTheme = useSetTheme();
-    const next = nextTheme(theme);
-    const label = `Farbschema: ${THEME_LABELS[theme]} – umschalten auf ${THEME_LABELS[next]}`;
     return (
-        <button type="button" className="nav-button" title={label} aria-label={label} onClick={() => setTheme(next)}>
-            <Icon name={theme === "" ? "theme-system" : theme === "light" ? "theme-light" : "theme-dark"}/>
-            <span className="nav-label">{THEME_LABELS[theme]}</span>
+        <button type="button" role="switch" aria-checked={dark} aria-label="Dunkler Modus" title="Dunkler Modus"
+                className="nav-button theme-switch" onClick={() => setTheme(dark ? "light" : "dark")}>
+            <Icon name={dark ? "theme-dark" : "theme-light"}/>
+            <span className="nav-label">Dunkler Modus</span>
+            <span className="switch" aria-hidden="true"/>
         </button>
     );
 }
@@ -275,7 +278,6 @@ const ICONS: Record<string, ReactNode> = {
     settings: <><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></>,
     collapse: <path d="M15 6l-6 6 6 6"/>,
     expand: <path d="M9 6l6 6-6 6"/>,
-    "theme-system": <><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></>,
     "theme-light": <><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></>,
     "theme-dark": <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>,
 };

@@ -5,7 +5,9 @@ import {useSyncExternalStore} from "react";
 
 export type Theme = "" | "light" | "dark";
 
-export const THEME_LABELS: Record<Theme, string> = {"": "Wie das System", light: "Hell", dark: "Dunkel"};
+/** In the order shown in the settings. */
+export const THEME_LABELS: Record<Theme, string> = {light: "Hell", dark: "Dunkel", "": "Automatisch"};
+export const THEME_ORDER: Theme[] = ["light", "dark", ""];
 
 const KEY = "pkv.theme";
 const listeners = new Set<() => void>();
@@ -28,6 +30,7 @@ function systemDark(): boolean {
 function paint() {
     const dark = current === "dark" || (current === "" && systemDark());
     document.documentElement.dataset.theme = dark ? "dark" : "light";
+    listeners.forEach(l => l());
 }
 
 /** Applies a theme on this device (without saving it in the backend). */
@@ -40,7 +43,6 @@ export function applyTheme(t: Theme) {
         // the backend keeps it
     }
     paint();
-    listeners.forEach(l => l());
 }
 
 /** Called once at start: the stored choice now, and following the system when it changes. */
@@ -51,15 +53,19 @@ export function initTheme() {
     }
 }
 
-/** The theme chosen on this device. */
+const subscribe = (l: () => void) => {
+    listeners.add(l);
+    return () => {
+        listeners.delete(l);
+    };
+};
+
+/** The theme chosen on this device ("" = automatic). */
 export function useTheme(): Theme {
-    return useSyncExternalStore(l => {
-        listeners.add(l);
-        return () => listeners.delete(l);
-    }, () => current);
+    return useSyncExternalStore(subscribe, () => current);
 }
 
-/** System → Hell → Dunkel → System … (the quick toggle). */
-export function nextTheme(t: Theme): Theme {
-    return t === "" ? "light" : t === "light" ? "dark" : "";
+/** Whether the dark scheme is in effect right now (chosen, or automatic and the system is dark). */
+export function useDarkActive(): boolean {
+    return useSyncExternalStore(subscribe, () => document.documentElement.dataset.theme === "dark");
 }

@@ -7,7 +7,7 @@ import {ErrorNotice, Field, Loading, Notice} from "../components/ui";
 import {errMsg, toInput} from "../lib/format";
 import {key, useSaveShortcut, useUnsavedChanges} from "../lib/shortcuts";
 import {useBackend} from "../lib/useBackend";
-import {THEME_LABELS, useTheme} from "../lib/theme";
+import {THEME_LABELS, THEME_ORDER, useTheme} from "../lib/theme";
 import type {Theme} from "../lib/theme";
 
 /** Amounts in the form use the German format. */
@@ -245,14 +245,17 @@ function Appearance() {
             <h2 style={{marginTop: 0}}>Darstellung</h2>
             <fieldset className="choice">
                 <legend>Farbschema</legend>
-                {(Object.keys(THEME_LABELS) as Theme[]).map(t => (
+                {THEME_ORDER.map((t: Theme) => (
                     <label key={t} className="inline">
                         <input type="radio" name="theme" checked={theme === t} onChange={() => setTheme(t)}/>
                         {THEME_LABELS[t]}
                     </label>
                 ))}
             </fieldset>
-            <p className="muted small">Gilt nur für dieses Gerät. Schnell umschalten lässt es sich auch unten im Menü.</p>
+            <p className="muted small">
+                „Automatisch“ richtet sich nach der Einstellung von Windows, macOS oder Linux. Gilt nur für dieses Gerät;
+                schnell umschalten lässt es sich auch unten im Menü mit „Dunkler Modus“.
+            </p>
         </section>
     );
 }
