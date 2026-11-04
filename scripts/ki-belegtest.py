@@ -130,8 +130,8 @@ MODEL = "qwen3-vl-8b"
 SYSTEM = ("Du liest Belege der deutschen privaten Krankenversicherung und Beihilfe aus: Arztrechnungen, "
           "Zahnarztrechnungen, Rezepte, Rechnungen von Apotheken und Therapeuten, Bescheide, Kostenpläne und "
           "Verordnungen. Antworte nur mit JSON.")
-RULES = ("Regeln: Datumsangaben als JJJJ-MM-TT. Beträge mit Punkt als Dezimaltrennzeichen, ohne Währung "
-         "(z. B. 1234.56). IBAN ohne Leerzeichen. Steht ein Feld nicht auf dem Beleg, gib eine leere "
+RULES = ("Regeln: Datumsangaben und Beträge so, wie sie gedruckt sind (z. B. „20.11.2026“, „1.234,56 €“) – "
+         "nichts umrechnen. IBAN ohne Leerzeichen. Steht ein Feld nicht auf dem Beleg, gib eine leere "
          "Zeichenkette zurück – nichts schätzen oder erfinden.")
 COPY_RULES = ("Regeln: Schreibe alles so ab, wie es gedruckt ist – Datumsangaben, Beträge und Nummern unverändert "
               "(z. B. „12.10.2026“, „1.234,56 €“), nichts umrechnen. Tabellenzeilen: die Zellen von links nach rechts "

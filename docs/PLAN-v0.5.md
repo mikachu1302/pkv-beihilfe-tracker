@@ -1,8 +1,8 @@
 # v0.5.0 – Local AI: reading documents and asking questions (plan)
 
 Status: implemented · 2026-11-03 – steps 2–6 done; what differs from the plan below is under
-"Implementation" at the end. No separate test with real documents – they show up in use. Next:
-[PLAN-v0.6.md](PLAN-v0.6.md) (checking invoices against other documents).
+"Implementation" at the end. No separate test with real documents – they show up in use. The
+follow-up [PLAN-v0.6.md](PLAN-v0.6.md) (checking invoices against other documents) was dropped.
 
 v0.5.0 brings two AI features, both **optional** (without the server everything works as today)
 and both **started by the user** – nothing runs on its own:
@@ -107,7 +107,7 @@ read in the headless app, as the inbox fills them):
 | API key | **Entered by hand once per device** in the settings (password field), kept in the device configuration (`config.json` in the OS config folder, 0600). Write-only towards the frontend: it hands the key to the backend once (`Svc.SetAIKey`) and afterwards only learns "stored" and the last four characters. Not the OS keyring (one more dependency, a keyring service on Linux, little gain for a LAN-only key). The app never reads `.env`. |
 | Conflicts | **GiroCode > AI confirmed by the OCR text > OCR (label) > AI alone.** The losing value is shown as a hint next to the field, never replaced silently; a value the user typed always stays. |
 | Chat | **Part of v0.5.0** – "Fragen" with the AI translating, the app computing. |
-| Refund documents | Reading Bescheide with AI moves to v0.6.0, where the comparison needs it anyway. |
+| Refund documents | Reading Bescheide with AI moved to v0.6.0, which was dropped – Bescheide are read by the text recognition only. |
 
 ## Shared parts
 
@@ -280,6 +280,16 @@ or was decided on the way:
 - Headless check against the real server with the made-up documents: the dark photo (text
   recognition 0 of 5 fields) is filled completely in ~20 s per page; the till receipt keeps the
   text recognition's total and gets provider, date and category confirmed.
+- **Fix after the release (2026-11-04): dates and amounts as printed.** Asked for YYYY-MM-DD and
+  "1234.56", the model converts – and in the test for v0.6 it turned 20.11.2026 into 2022-11-20,
+  which the date check (ten years back) would have let through. The prompt now asks for both as
+  printed; `airead.readDate` reads "20.11.2026", "20.11.26" and "20. Nov. 2026", `money.Parse`
+  the German amounts. Measured on 10 made-up invoices (the 6 hard ones of the test above and 4 of
+  `scripts/ki-testbelege.py`, 21 pages): **63 of 66 fields (95 %)**. First try (dates as printed,
+  amounts still "1234.56"): all dates right, but the total empty in 7 of 10. As printed: totals
+  10 of 10, invoice dates 10 of 10 – the totals of the dark photo and the till receipt, called a
+  limit of the model above, came from converting the amount. Left: the treatment end on two
+  multi-page invoices (the dentist invoice as before; new: the 3-page GOÄ invoice) and a payee once.
 
 **Questions**
 - The question set moved from `scripts/ki-fragentest.py` to `internal/ask/testdata/fragen.json`

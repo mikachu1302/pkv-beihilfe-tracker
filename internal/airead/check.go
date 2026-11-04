@@ -2,6 +2,7 @@ package airead
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -96,7 +97,7 @@ func checkDates(a Answer, ocr extract.Draft, today civil.Date) (map[string]civil
 		if s == "" {
 			return civil.Date{}
 		}
-		d, err := civil.Parse(s)
+		d, err := readDate(s)
 		if err != nil || d.Before(today.AddYears(-pastYears)) || !future && d.After(today.AddDays(futureMargin)) {
 			bad = append(bad, fmt.Sprintf("%s „%s“", label, s))
 			return civil.Date{}
@@ -139,6 +140,32 @@ func checkDates(a Answer, ocr extract.Draft, today civil.Date) (map[string]civil
 	}
 	return out, "Unplausible Datumsangaben der KI nicht übernommen: " + strings.Join(bad, ", ") + "."
 }
+
+// readDate reads a date as the model copied it: "20.11.2026", "20.11.26",
+// "20. November 2026", "20. Nov. 2026" – or "2026-11-20".
+func readDate(s string) (civil.Date, error) {
+	d, err := civil.Parse(s)
+	if err == nil {
+		return d, nil
+	}
+	m := monthDateRe.FindStringSubmatch(s)
+	if m == nil {
+		return civil.Date{}, err
+	}
+	w := match.Fold(m[2])
+	for i, name := range months {
+		if len(w) >= 3 && strings.HasPrefix(name, w) || i == 2 && w == "mrz" {
+			return civil.Parse(fmt.Sprintf("%s.%d.%s", m[1], i+1, m[3]))
+		}
+	}
+	return civil.Date{}, err
+}
+
+var (
+	monthDateRe = regexp.MustCompile(`^(\d{1,2})\.?\s*(\pL+)\.?\s*(\d{4})$`)
+	months      = []string{"januar", "februar", "maerz", "april", "mai", "juni", "juli", "august",
+		"september", "oktober", "november", "dezember"}
+)
 
 // text tidies a value of the answer: single spaces, no quotes around it;
 // overlong values (a model rambling) are dropped.

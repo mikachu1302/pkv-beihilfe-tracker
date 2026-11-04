@@ -171,6 +171,44 @@ func TestChecks(t *testing.T) {
 	}
 }
 
+// The model copies dates and amounts as printed (asked to convert them, it
+// turned 20.11.2026 into 2022-11-20 and left amounts empty).
+func TestValuesAsPrinted(t *testing.T) {
+	a := full()
+	a.Rechnungsdatum, a.BehandlungVon, a.BehandlungBis, a.FaelligAm = "14.03.2026", "3.3.26", "10. März 2026", "14. Apr. 2026"
+	a.Betrag = "1.286,40 €"
+	d := Merge(a, Input{Now: now}).Draft
+	if d.InvoiceDate.String() != "2026-03-14" || d.ServiceFrom.String() != "2026-03-03" ||
+		d.ServiceTo.String() != "2026-03-10" || d.Due.String() != "2026-04-14" || d.Amount != 128640 || len(d.Notes) != 0 {
+		t.Errorf("draft %+v", d)
+	}
+	for _, s := range []string{"286,40", "286,40 €", "EUR 286,40", "286.40"} {
+		a.Betrag = s
+		if d := Merge(a, Input{Now: now}).Draft; d.Amount != 28640 {
+			t.Errorf("Betrag %q: %v", s, d.Amount)
+		}
+	}
+
+	for s, want := range map[string]string{
+		"2026-11-20": "2026-11-20", "20.11.2026": "2026-11-20", "20.11.26": "2026-11-20",
+		"20. November 2026": "2026-11-20", "20 November 2026": "2026-11-20", "20. Nov. 2026": "2026-11-20",
+		"1. Maerz 2026": "2026-03-01", "1. Mrz. 2026": "2026-03-01", "5. Sept. 2026": "2026-09-05",
+		"30. Juni 2026": "2026-06-30", "30. Juli 2026": "2026-07-30",
+	} {
+		if d, err := readDate(s); err != nil || d.String() != want {
+			t.Errorf("readDate(%q) = %v, %v; want %s", s, d, err, want)
+		}
+	}
+	// Not dates: no month, a word that only starts like one, too short to
+	// tell (Juni/Juli), a day the month does not have, a year missing.
+	for _, s := range []string{"20. Novitäten 2026", "20. Ju 2026", "31. Februar 2026", "20. November",
+		"November 2026", "20.11.", "Datum: 20.11.2026"} {
+		if d, err := readDate(s); err == nil {
+			t.Errorf("readDate(%q) = %v, want an error", s, d)
+		}
+	}
+}
+
 func TestRefundNote(t *testing.T) {
 	r := Merge(Answer{Art: "bescheid", Betrag: "120.00"}, Input{Now: now})
 	if r.AIKind != "refund" || !strings.Contains(strings.Join(r.Draft.Notes, " "), "Erstattungsbescheid") {
@@ -197,7 +235,8 @@ func TestSchemaAndPrompt(t *testing.T) {
 		t.Errorf("order %s", schema)
 	}
 	m := Messages([]string{"data:image/jpeg;base64,AA", "data:image/jpeg;base64,BB"})
-	if len(m) != 2 || len(m[1].Content.([]ai.Part)) != 3 || !strings.Contains(prompt, "- betrag: Gesamtbetrag") {
+	if len(m) != 2 || len(m[1].Content.([]ai.Part)) != 3 || !strings.Contains(prompt, "- betrag: Gesamtbetrag") ||
+		!strings.Contains(prompt, "so, wie sie gedruckt sind") || strings.Contains(prompt, "JJJJ") {
 		t.Errorf("messages %+v", m)
 	}
 }

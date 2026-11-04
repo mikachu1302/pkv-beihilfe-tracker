@@ -144,8 +144,11 @@ var prompt = func() string {
 	for _, f := range fields {
 		fmt.Fprintf(&b, "- %s: %s\n", f.key, f.text)
 	}
-	b.WriteString("\nRegeln: Datumsangaben als JJJJ-MM-TT. Betrag mit Punkt als Dezimaltrennzeichen, ohne Währung " +
-		"(z. B. 1234.56). IBAN ohne Leerzeichen. Steht ein Feld nicht auf dem Beleg, gib eine leere " +
+	// Dates and amounts as printed: asked to convert them, the model turned
+	// 20.11.2026 into 2022-11-20 and left amounts empty (tests of 2026-11-03
+	// and -04, docs/PLAN-v0.6.md); readDate and money.Parse read them.
+	b.WriteString("\nRegeln: Datumsangaben und Beträge so, wie sie gedruckt sind (z. B. „20.11.2026“, " +
+		"„1.234,56 €“) – nichts umrechnen. IBAN ohne Leerzeichen. Steht ein Feld nicht auf dem Beleg, gib eine leere " +
 		"Zeichenkette zurück – nichts schätzen oder erfinden.")
 	return b.String()
 }()

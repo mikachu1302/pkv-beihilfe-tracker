@@ -96,16 +96,17 @@ Die vollständigen Antworten liegen danach in `~/Belegtest/ki-ergebnisse/` (eine
 Die Zusammenfassung des Skripts (Zeit pro Seite, Felder richtig, auffällige Fehler) reicht als
 Rückmeldung; die Belege selbst müssen dafür nicht weitergegeben werden.
 
-## Belegarten für den Abgleich (v0.6)
+## Belegarten für den Abgleich (v0.6, verworfen)
 
-Für den Abgleich ([PLAN-v0.6.md](PLAN-v0.6.md)) liest die KI mehr als die Kopfdaten: die
-Positionen einer Rechnung, die Zeilen eines Bescheids mit Hinweisen und Abzügen, einen Heil- und
-Kostenplan, eine Verordnung. Dafür **schreibt das Modell nur ab**, wie es gedruckt ist: Kopfdaten,
-die Tabelle als Spaltenüberschriften und Zeilen (Zellen mit „ | “ getrennt), die Summenzeilen,
-die Hinweise. Datumsangaben, Beträge und die Zuordnung der Spalten deutet das Skript so, wie es
-später die App tut – Felder direkt ausfüllen ließ das Modell bei Bescheiden die Beträge leer und
-rechnete Jahreszahlen falsch um (Messung im Plan). Je Beleg steht in `erwartet.json` die Belegart
-(`"art"`) und was nach dem Deuten herauskommen soll:
+Der Abgleich wurde nicht gebaut; Skript und Testbelege bleiben für Messungen. Für den Abgleich
+([PLAN-v0.6.md](PLAN-v0.6.md)) liest die KI mehr als die Kopfdaten: die Positionen einer Rechnung,
+die Zeilen eines Bescheids mit Hinweisen und Abzügen, einen Heil- und Kostenplan, eine Verordnung.
+Dafür **schreibt das Modell nur ab**, wie es gedruckt ist: Kopfdaten, die Tabelle als
+Spaltenüberschriften und Zeilen (Zellen mit „ | “ getrennt), die Summenzeilen, die Hinweise.
+Datumsangaben, Beträge und die Zuordnung der Spalten deutet das Skript so, wie es die App getan hätte
+– Felder direkt ausfüllen ließ das Modell bei Bescheiden die Beträge leer und rechnete Jahreszahlen
+falsch um (Messung im Plan). Je Beleg steht in `erwartet.json` die Belegart (`"art"`) und was nach
+dem Deuten herauskommen soll:
 
 | `art` | Felder | Listen |
 |---|---|---|
