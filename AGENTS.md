@@ -26,15 +26,18 @@ The plan documents say *what* the app does; this file says *how* to work on it.
 ## Architecture rules
 
 - **Go computes, the UI displays.** Sums, SOLL/IST, matching, checks, deadlines live in Go
-  (`calc`, `match`, `ask`, `airead`, …) with unit tests; the frontend shows DTOs. If the UI needs
-  a number, add it to the DTO (e.g. `InvoiceRowDTO.Owed`) instead of computing it in TypeScript –
-  a float sum in the browser once showed "-0,00 €".
+  (`calc`, `match`, `check`, `ask`, `airead`, …) with unit tests; the frontend shows DTOs. If the
+  UI needs a number, add it to the DTO (e.g. `InvoiceRowDTO.Owed`) instead of computing it in
+  TypeScript – a float sum in the browser once showed "-0,00 €".
 - **Money is `money.Cents` (int64), rates `money.Rate`, dates `civil.Date`.** No floats, no
   `time.Time` for calendar dates. DTOs carry amounts as strings; input accepts the German format.
 - **AI: the model reads and phrases, the app computes and checks.** The model fills a fixed JSON
   schema (questions → a query, documents → fields/positions); every sum, comparison and rule is
-  Go code. Order of trust: GiroCode > AI confirmed by OCR > OCR label > AI alone > guess; the
-  losing value stays visible as an alternative. AI only runs on a manual trigger.
+  Go code. For tables (positions, Bescheid lines) the model **transcribes** what is printed –
+  dates and amounts unchanged, rows as cells separated by " | " – and Go interprets them: asked
+  to fill named fields, it left amounts empty and turned 2026 into 2022 (`docs/PLAN-v0.6.md`).
+  Order of trust: GiroCode > AI confirmed by OCR > OCR label > AI alone > guess; the losing value
+  stays visible as an alternative. AI only runs on a manual trigger.
 - **Rules on text read whole words of a folded string** (`match.Fold`, `match.NameWords`), never
   substrings: "zurück" must not fire in "zurückbekommen", "ERGO" not in "Ergotherapie", "Datum"
   not in "Geburtsdatum". Handle negation ("ohne Klärungsbedarf"). Every such rule gets a negative

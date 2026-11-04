@@ -1,6 +1,6 @@
 # v0.6.0 – Checking invoices against other documents with AI (plan)
 
-Status: step 1 done (test: transcribed documents are read at 99 %) · 2026-11-03 – open points decided · builds on v0.5.0 ([PLAN-v0.5.md](PLAN-v0.5.md): AI client, settings,
+Status: steps 1–2 done (transcribed documents are read at 99 %; the checks are code with tests) · 2026-11-03 – open points decided · builds on v0.5.0 ([PLAN-v0.5.md](PLAN-v0.5.md): AI client, settings,
 manual trigger, order of trust).
 
 For an invoice already in the app, the user starts a **check** ("Abgleich"): the invoice and other
@@ -90,7 +90,7 @@ What follows for the plan:
 ## Checks (code, `internal/check` – new)
 
 **The invoice in itself**
-- positions add up to the total (±1 cent per position for rounding);
+- positions add up to the total (within half a cent per position for rounding);
 - position dates inside the treatment period; the same number twice on one day (hint);
 - read header vs. the invoice in the app (amount, date, provider, number) – a mismatch means the
   stored data is wrong or it is another invoice.
@@ -142,12 +142,59 @@ cut shows in the app as a deviation with its reason from the Bescheid (decided 2
    positions, Bescheid lines and note texts are read reliably when transcribed (99 %).
    `scripts/ki-testbelege.py` creates the documents, `scripts/ki-belegtest.py` reads and scores
    them (`auswerten` re-scores saved answers without the server).
-2. `internal/check` with unit tests (made-up invoices, Bescheide, plans, prescriptions).
+2. ~~`internal/check` with unit tests (made-up invoices, Bescheide, plans, prescriptions)~~ – done
+   2026-11-04, see "Implementation".
 3. Transcription schemas per document type and their interpretation in Go (tested against the
    recorded answers), dates as printed in v0.5's reading too, the job with progress events, cancel.
 4. UI: the panel in the invoice form, the result list, the actions.
 5. Type recognition and reminders in the inbox.
 6. Docs (README privacy section: what is sent for a check).
+
+## Implementation
+
+**Step 2: the checks (`internal/check`, 2026-11-04)**
+- `check.Run` takes the invoice of the app (with the settings) and the documents as interpreted –
+  `Bill`, `Notice`, `Plan`, `Prescription`, amounts as `money.Cents`, dates as `civil.Date` – and
+  returns one group of findings per document. Each finding has a status, a stable code, a German
+  text with the numbers (ready to be taken over as the note of a Klärungsbedarf), detail lines
+  (positions, the notes of a Bescheid) and the page. The types are what step 3's interpretation
+  will produce; the tests use the made-up documents of step 1 as Go values.
+- Four statuses instead of three: ✓ passt, **ℹ Hinweis** (information without a verdict: differences
+  to a cost plan, a field missing in the app, a deduction of the Bescheid), ⚠ prüfen, ✗ Abweichung.
+  Only the refund against SOLL can be ✗ – everything a misread number could cause is ⚠.
+- Sums: positions = fee (when a fee line is printed), fee + material/lab = total, otherwise
+  positions + material/lab = total. A total computed before rounding may differ from the sum of
+  the rounded positions by half a cent each, so up to that it fits ("Rundung"); the plan's
+  "±1 cent per position" would have hidden a misread last digit on long invoices.
+- Header against the app: amount, date, number, IBAN, treatment period (printed, else from the
+  first to the last position) – a difference is ⚠, a field empty in the app ℹ, the agreeing ones in
+  one ✓ finding. Each field has its own code (`header_amount` …) for an action on it in step 4.
+  The provider is compared by name words (all words of one name in the other: "Hans Probe" =
+  "Dr. med. Hans Probe, Facharzt …"); a difference is only ℹ, names are written in many ways.
+- Bescheid: the payer comes from the caller (step 3 recognises it from the transcribed name with
+  the inbox's `guessPayer`); unknown → ⚠ "bitte zuordnen". The line(s) of the invoice are found by
+  `match.Match` with this invoice as the only candidate and its claim as before the booking – the
+  matcher's penalty for "bereits erstattet" would otherwise hide the line of a Bescheid already
+  booked, which is the usual case for a check. Several lines adding up to the invoice (fee and
+  lab) are found as a group.
+- The refund finding is ✓ within a cent, ℹ within the clarification tolerance of the settings (as
+  the app's own deviation), ✗ above; its details give the cut ("Nicht beihilfefähig: 10,49 €
+  (beihilfefähig 233,38 € von 243,87 €)" – "erstattungsfähig" for a PKV), a rate different from
+  the app's, and the texts of the notes the line refers to. A different rate is also its own ⚠
+  (the coverage in the settings may be wrong). Each line is checked in itself (eligible ≤ billed,
+  refund = rate × eligible), the Bescheid as a whole (refunds − deductions = payout), and whether
+  the refund is recorded in the app (ℹ if not, ⚠ if a different amount).
+- Cost plan: positions summed per number and tooth over all days (0090 twice on two days = 2× in
+  the plan); lists of the positions billed but not planned, planned but not billed, and billed
+  differently; fee, material/lab and total with the difference in euros and per cent; the plan's
+  date after the start of treatment is ⚠. The own share is shown after the refunds or as expected
+  before them – never below zero (two shares rounded up exceed the invoice by a cent).
+- Prescription: positions belong to a remedy when every word of its name is a whole word of the
+  position's number and text, with the usual abbreviations written out (KG, KGG, MT, MLD, KMT, WP);
+  of several, the most specific. More sessions than prescribed is ⚠ with the dates of the extra
+  ones; the first treatment before the prescription or after its validity is ⚠.
+- Not yet: the AI summary of cut texts (step 3 – the details carry the notes as printed); linking
+  a note to the positions it names.
 
 ## Open points
 
