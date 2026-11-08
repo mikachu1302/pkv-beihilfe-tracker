@@ -137,8 +137,10 @@ func Messages(s *model.Settings, today civil.Date, history []Turn, question stri
 	return append(msgs, ai.Message{Role: "user", Content: question})
 }
 
-// QuestionTimeout bounds the AI's work on one question (a few seconds usually).
-const QuestionTimeout = 60 * time.Second
+// QuestionTimeout bounds the AI's work on one question: a few seconds usually,
+// but the home server may first finish a phone's answer with its other model
+// and switch models (docs/KI-TEST.md) – its handoff asks for at least 120 s.
+const QuestionTimeout = 120 * time.Second
 
 // Request is the request for a question: schema, instructions, history.
 func Request(s *model.Settings, today civil.Date, history []Turn, question string) ai.Request {

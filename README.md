@@ -183,6 +183,10 @@ creates a data folder with made-up invoices to point it at.
     field is filled.
   - "Fragen" sends the question, today's date and the app's vocabulary (payer names, categories,
     statuses) – never an invoice. The app computes the answer from its own data.
+  - Only a model that reads images is used: the app refuses one the server lists as text-only
+    (`architecture.input_modalities`), for documents and questions alike. On the home server
+    the text-only model searches the web, so health data must never reach it
+    ([docs/KI-TEST.md](docs/KI-TEST.md)).
   - The connection is plain HTTP inside the home network, protected by an API key. The key is
     kept in the device configuration (`config.json` in the OS config folder, readable by the user
     only), never in the data folder, and never shown again after it was entered.

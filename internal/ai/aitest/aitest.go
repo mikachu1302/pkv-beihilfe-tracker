@@ -41,6 +41,7 @@ func (r Request) Text(role string) string {
 type Server struct {
 	Key    string                 // the key it wants; "" = none
 	Models []string               // offered models; nil = qwen3-vl-8b
+	Inputs map[string][]string    // what a model reads, as llama.cpp's router reports it ("text", "image"); none = not reported
 	Answer func(r Request) string // the content of the answer (JSON as text)
 
 	mu       sync.Mutex
@@ -71,9 +72,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if models == nil {
 			models = []string{"qwen3-vl-8b"}
 		}
-		list := []map[string]string{}
+		list := []map[string]any{}
 		for _, m := range models {
-			list = append(list, map[string]string{"id": m, "object": "model"})
+			entry := map[string]any{"id": m, "object": "model"}
+			if in, ok := s.Inputs[m]; ok {
+				entry["architecture"] = map[string]any{"input_modalities": in, "output_modalities": []string{"text"}}
+			}
+			list = append(list, entry)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": list})
 	case "/v1/chat/completions":

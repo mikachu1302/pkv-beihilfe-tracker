@@ -34,7 +34,7 @@ func TestChat(t *testing.T) {
 		t.Fatal(err)
 	}
 	models, err := c.Models(t.Context())
-	if err != nil || len(models) != 1 || models[0] != "qwen3-vl-8b" {
+	if err != nil || len(models) != 1 || models[0].ID != "qwen3-vl-8b" || models[0].Inputs != nil {
 		t.Fatalf("models %v %v", models, err)
 	}
 	a, err := c.Chat(t.Context(), Request{Name: "beleg", Schema: schema(),
@@ -76,6 +76,53 @@ func TestErrors(t *testing.T) {
 	}
 }
 
+// The home server also offers a text-only model that searches the web:
+// nothing goes to a model the server lists as reading no images.
+func TestTextOnlyModel(t *testing.T) {
+	srv, fake := fakeServer(t, `{"ok": "ja"}`)
+	fake.Models = []string{"qwen3-vl-8b", "qwen3.5-4b", "anderes"}
+	fake.Inputs = map[string][]string{"qwen3-vl-8b": {"text", "image"}, "qwen3.5-4b": {"text"}}
+	chat := func(model string) error {
+		_, err := (&Client{URL: srv.URL + "/v1", Model: model, Key: "key"}).Chat(t.Context(), Request{Schema: schema()})
+		return err
+	}
+	err := chat("qwen3.5-4b")
+	if !errors.Is(err, ErrTextOnly) || !strings.Contains(err.Error(), "„qwen3.5-4b“") || len(fake.Requests()) != 0 {
+		t.Errorf("text-only model: %v, %d requests sent", err, len(fake.Requests()))
+	}
+	// Reads images; the server does not say; not listed (the server decides).
+	for _, model := range []string{"qwen3-vl-8b", "anderes", "nicht-gelistet"} {
+		if err := chat(model); err != nil {
+			t.Errorf("%s: %v", model, err)
+		}
+	}
+	if n := len(fake.Requests()); n != 3 {
+		t.Errorf("%d requests sent, want 3", n)
+	}
+
+	// Without the model list nothing is sent.
+	var chats atomic.Int32
+	broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/chat/completions" {
+			chats.Add(1)
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(broken.Close)
+	if _, err := (&Client{URL: broken.URL + "/v1", Model: "qwen3.5-4b"}).Chat(t.Context(), Request{}); err == nil || chats.Load() != 0 {
+		t.Errorf("without a model list: %v, %d chats", err, chats.Load())
+	}
+
+	// Aliases count as the model.
+	m := Model{ID: "qwen3.5-4b", Aliases: []string{"chat"}, Inputs: []string{"text"}}
+	if !m.Is("chat") || !m.Is("qwen3.5-4b") || m.Is("qwen3") || !m.TextOnly() {
+		t.Errorf("model %+v", m)
+	}
+	if (Model{ID: "x"}).TextOnly() || (Model{ID: "x", Inputs: []string{"text", "image"}}).TextOnly() {
+		t.Error("unknown or image model counted as text-only")
+	}
+}
+
 func TestUnreachable(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	addr := srv.URL
@@ -114,6 +161,10 @@ func TestModelLoadingAndMissing(t *testing.T) {
 func slowServer(t *testing.T, release chan struct{}, started *atomic.Int32) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/models" { // the model check before each request
+			_, _ = w.Write([]byte(`{"data":[]}`))
+			return
+		}
 		_, _ = io.Copy(io.Discard, r.Body) // only then does the server notice a closed connection
 		started.Add(1)
 		select {

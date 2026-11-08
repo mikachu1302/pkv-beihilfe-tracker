@@ -290,6 +290,16 @@ or was decided on the way:
   10 of 10, invoice dates 10 of 10 – the totals of the dark photo and the till receipt, called a
   limit of the model above, came from converting the amount. Left: the treatment end on two
   multi-page invoices (the dentist invoice as before; new: the 3-page GOÄ invoice) and a payee once.
+- **The server got a second model (2026-11-08).** Next to `qwen3-vl-8b` it now offers `qwen3.5-4b`
+  for chat on the phones: text only, and it searches the web (queries go to a cloud search
+  service). Health data must not go there, and the model is a free setting. `ai.Client.Chat` now
+  lists the models first and refuses one the server reports as text-only
+  (`architecture.input_modalities` without `image`, as llama.cpp's router reports it) – for
+  documents and questions alike; without the list nothing is sent. A model the server says
+  nothing about, or does not list, is left to the server as before. "Verbindung testen" names
+  only models that read images ("geeignet: …") and says why a text-only one is refused. Only one
+  model is in memory, so a question may wait for a phone's answer and the switch (~8 s):
+  `ask.QuestionTimeout` 60 → 120 s, as the server's handoff asks.
 
 **Questions**
 - The question set moved from `scripts/ki-fragentest.py` to `internal/ask/testdata/fragen.json`

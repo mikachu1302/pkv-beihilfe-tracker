@@ -37,7 +37,9 @@ The plan documents say *what* the app does; this file says *how* to work on it.
   turned 20.11.2026 into 2022-11-20 and left most totals empty (`docs/PLAN-v0.5.md`,
   `docs/PLAN-v0.6.md`). Tables, too, are better copied (cells separated by " | ").
   Order of trust: GiroCode > AI confirmed by OCR > OCR label > AI alone > guess; the losing value
-  stays visible as an alternative. AI only runs on a manual trigger.
+  stays visible as an alternative. AI only runs on a manual trigger, and only with a model that
+  reads images: `ai.Client.Chat` refuses one the server lists as text-only – on the home server
+  that model searches the web, and health data must not go there.
 - **Rules on text read whole words of a folded string** (`match.Fold`, `match.NameWords`), never
   substrings: "zurück" must not fire in "zurückbekommen", "ERGO" not in "Ergotherapie", "Datum"
   not in "Geburtsdatum". Handle negation ("ohne Klärungsbedarf"). Every such rule gets a negative

@@ -112,12 +112,37 @@ func TestTestAI(t *testing.T) {
 	_, _ = s.SetAIKey(fake.Key)
 	fake.Models = []string{"llama-3.2-3b"}
 	res, _ = s.TestAI(t.Context())
-	if res.OK || !strings.Contains(res.Checks[2].Text, "vorhanden: llama-3.2-3b") {
+	if res.OK || !strings.Contains(res.Checks[2].Text, "geeignet: llama-3.2-3b") {
 		t.Errorf("model %+v", res)
 	}
 
-	// Works while switched off (testing before switching on); a request needs it on.
+	// The home server: a model that reads images and one for text only (it
+	// searches the web) – the test names only the first, and refuses the second.
+	fake.Models = []string{"qwen3-vl-8b", "qwen3.5-4b"}
+	fake.Inputs = map[string][]string{"qwen3-vl-8b": {"text", "image"}, "qwen3.5-4b": {"text"}}
+	res, _ = s.TestAI(t.Context())
+	if !res.OK || res.Checks[2].Text != "Modell „qwen3-vl-8b“ vorhanden, liest Bilder" {
+		t.Errorf("image model %+v", res)
+	}
 	cur := s.AISettings()
+	cur.Model = "qwen3.5-4b"
+	if _, err := s.SetAISettings(cur); err != nil {
+		t.Fatal(err)
+	}
+	res, _ = s.TestAI(t.Context())
+	if res.OK || !strings.Contains(res.Checks[2].Text, "liest keine Bilder") || !strings.HasSuffix(res.Checks[2].Text, "geeignet: qwen3-vl-8b") {
+		t.Errorf("text-only model %+v", res)
+	}
+	cur.Model = "gibtsnicht"
+	_, _ = s.SetAISettings(cur)
+	if res, _ = s.TestAI(t.Context()); res.OK || strings.Contains(res.Checks[2].Text, "qwen3.5-4b") {
+		t.Errorf("missing model names the text-only one: %+v", res)
+	}
+	cur.Model = ai.DefaultModel
+	_, _ = s.SetAISettings(cur)
+
+	// Works while switched off (testing before switching on); a request needs it on.
+	cur = s.AISettings()
 	cur.On = false
 	if _, err := s.SetAISettings(cur); err != nil {
 		t.Fatal(err)

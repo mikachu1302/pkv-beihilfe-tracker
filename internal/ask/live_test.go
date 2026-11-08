@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/mikachu1302/pkv-beihilfe-tracker/internal/ai"
 )
@@ -45,7 +44,7 @@ func TestQuestionsLive(t *testing.T) {
 	right, rawRight := 0, 0
 	var took []float64
 	for i, item := range set.Questions {
-		a, err := c.Chat(t.Context(), ai.Request{Name: "abfrage", Schema: Schema(s), MaxTokens: 400, Timeout: 90 * time.Second,
+		a, err := c.Chat(t.Context(), ai.Request{Name: "abfrage", Schema: Schema(s), MaxTokens: 400, Timeout: QuestionTimeout,
 			Messages: Messages(s, today, history, item.Question)})
 		if err != nil {
 			t.Fatalf("%d. %s: %v", i+1, item.Question, err)

@@ -113,7 +113,7 @@ export function AISettingsSection() {
                     <input id="ai-url" value={url} spellCheck={false} onChange={e => setUrl(e.target.value)} onBlur={saveEdited}
                            onKeyDown={e => e.key === "Enter" && saveEdited()}/>
                 </Field>
-                <Field label="Modell" htmlFor="ai-model" hint="Ein Modell, das auch Bilder liest">
+                <Field label="Modell" htmlFor="ai-model" hint="Ein Modell, das auch Bilder liest – eines nur für Text nimmt die App nicht">
                     <input id="ai-model" value={model} spellCheck={false} onChange={e => setModel(e.target.value)} onBlur={saveEdited}
                            onKeyDown={e => e.key === "Enter" && saveEdited()}/>
                 </Field>

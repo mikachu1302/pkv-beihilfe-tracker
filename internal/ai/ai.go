@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -39,6 +40,7 @@ var (
 	ErrUnreachable = errors.New("KI-Server nicht erreichbar")
 	ErrKey         = errors.New("Der KI-Server lehnt den API-Schlüssel ab")
 	ErrModel       = errors.New("Modell auf dem KI-Server nicht vorhanden")
+	ErrTextOnly    = errors.New("Das eingestellte Modell liest keine Bilder")
 	ErrTimeout     = errors.New("Der KI-Server hat nicht rechtzeitig geantwortet")
 	ErrAnswer      = errors.New("Die Antwort des KI-Servers ist nicht lesbar")
 	ErrNotSet      = errors.New("KI ist nicht eingerichtet")
@@ -150,21 +152,64 @@ func (c *Client) Health(ctx context.Context) error {
 	return nil
 }
 
+// Model is a model the server offers.
+type Model struct {
+	ID      string
+	Aliases []string // other names the server takes for it (llama.cpp router)
+	// Inputs are the kinds of input it takes ("text", "image") as the server
+	// reports them (llama.cpp: architecture.input_modalities); nil if it
+	// does not say.
+	Inputs []string
+}
+
+// Is reports whether name is the model's ID or one of its aliases.
+func (m Model) Is(name string) bool { return m.ID == name || slices.Contains(m.Aliases, name) }
+
+// TextOnly reports whether the server says the model reads no images.
+func (m Model) TextOnly() bool { return m.Inputs != nil && !slices.Contains(m.Inputs, "image") }
+
 // Models lists the models the server offers (GET /v1/models, with the key).
-func (c *Client) Models(ctx context.Context) ([]string, error) {
+func (c *Client) Models(ctx context.Context) ([]Model, error) {
 	var out struct {
 		Data []struct {
-			ID string `json:"id"`
+			ID           string   `json:"id"`
+			Aliases      []string `json:"aliases"`
+			Architecture struct {
+				Inputs []string `json:"input_modalities"`
+			} `json:"architecture"`
 		} `json:"data"`
 	}
 	if err := c.do(ctx, http.MethodGet, "/models", nil, &out, ListTimeout); err != nil {
 		return nil, c.quick(err)
 	}
-	ids := make([]string, 0, len(out.Data))
+	models := make([]Model, 0, len(out.Data))
 	for _, m := range out.Data {
-		ids = append(ids, m.ID)
+		models = append(models, Model{ID: m.ID, Aliases: m.Aliases, Inputs: m.Architecture.Inputs})
 	}
-	return ids, nil
+	return models, nil
+}
+
+// checkModel refuses a model the server lists as reading text only. The app
+// reads documents with the model, and on the home server the text-only model
+// searches the web (docs/KI-TEST.md) – health data must not go there, not
+// even a question. A server that does not say what a model reads, or does
+// not list it, decides itself; without the list nothing is sent.
+func (c *Client) checkModel(ctx context.Context) error {
+	models, err := c.Models(ctx)
+	if err != nil {
+		return err
+	}
+	for _, m := range models {
+		if m.Is(c.Model) && m.TextOnly() {
+			return TextOnlyError(c.Model)
+		}
+	}
+	return nil
+}
+
+// TextOnlyError is the message for a model that reads no images.
+func TextOnlyError(model string) error {
+	return fmt.Errorf("%w: „%s“ – die App nutzt nur Modelle, die auch Bilder lesen (Einstellungen · KI)", ErrTextOnly, model)
 }
 
 // Message is one chat message. Content is a string or a list of Parts.
@@ -199,7 +244,7 @@ type Request struct {
 	Schema    any           // JSON schema of the answer (enforced by a grammar in llama.cpp); a map or json.RawMessage
 	Name      string        // name of the schema, e.g. "beleg"
 	MaxTokens int           // 0 = 800
-	Timeout   time.Duration // for this request, after the lock was taken; 0 = 60 s
+	Timeout   time.Duration // for this request, after the lock was taken and the model checked; 0 = 60 s
 	NoWait    bool          // fail with ErrBusy instead of waiting for another request
 }
 
@@ -218,14 +263,17 @@ type Answer struct {
 	Took    time.Duration
 }
 
-// Chat sends one request (waiting for the lock first) and returns the JSON
-// object the model answered with.
+// Chat sends one request (waiting for the lock first, refusing a text-only
+// model) and returns the JSON object the model answered with.
 func (c *Client) Chat(ctx context.Context, r Request) (Answer, error) {
 	release, err := c.Lock.acquire(ctx, r.NoWait)
 	if err != nil {
 		return Answer{}, err
 	}
 	defer release()
+	if err := c.checkModel(ctx); err != nil {
+		return Answer{}, err
+	}
 	timeout := r.Timeout
 	if timeout == 0 {
 		timeout = 60 * time.Second

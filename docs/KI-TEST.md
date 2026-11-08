@@ -6,20 +6,23 @@ offenen Punkte in [PLAN-v0.5.md](PLAN-v0.5.md).
 
 ## Der Server
 
-Eingerichtet am 2026-11-03 auf dem Galaxy Book4 Edge (Snapdragon X Elite, 16 GB, Windows 11):
+Eingerichtet am 2026-11-03 auf dem Galaxy Book4 Edge (Snapdragon X Elite, 16 GB, Windows 11),
+Stand 2026-11-08:
 
 | | |
 |---|---|
 | Adresse | `http://192.168.178.38:8080/v1` (OpenAI-kompatibel) |
 | Erreichbar? | `http://192.168.178.38:8080/health` → `{"status":"ok"}` (ohne Schlüssel) |
 | Schlüssel | API-Schlüssel (`Authorization: Bearer …`) – liegt auf dem Server, wird separat weitergegeben und **nie** ins Repository geschrieben |
-| Modell | `qwen3-vl-8b` (Qwen3-VL-8B-Instruct, Q4_0, mit Bildverständnis) |
-| Software | llama.cpp `llama-server`; Text auf der CPU, Bilder auf der Adreno-GPU (OpenCL) |
+| Modell für die App | **`qwen3-vl-8b`** (Qwen3-VL-8B-Instruct, Q4_0, mit Bildverständnis) – bleibt auf dem Server, keine Cloud |
+| Zweites Modell | `qwen3.5-4b` – nur Text, für den Chat auf den Handys, **sucht selbstständig im Internet** (Suchanfragen gehen an einen Suchdienst in der Cloud). **Nie für die App:** Gesundheitsdaten dürfen nicht dorthin. Die App nimmt kein Modell, das der Server als „nur Text“ meldet (`architecture.input_modalities` in `/v1/models`). |
+| Modellwechsel | Nur ein Modell im Speicher. Ist gerade das andere geladen, wartet die erste Anfrage etwa 8 s; antwortet das andere Modell gerade (ein Handy), wartet sie, bis diese Antwort fertig ist |
+| Software | llama.cpp `llama-server` (b12069) im Router-Modus hinter einem kleinen Such-Proxy; Text auf der CPU, Bilder auf der Adreno-GPU (OpenCL) |
 | Betrieb | startet beim Booten, auch ohne Anmeldung; am Netzteil, Deckel zu |
-| Last | bis zu 4 Anfragen gleichzeitig (gemeinsam 16k Token Kontext); zwei Handys nutzen ihn mit |
+| Last | bis zu 4 Anfragen gleichzeitig je Modell (gemeinsam 16k Token Kontext); zwei Handys nutzen ihn mit |
 
 Gemessen beim Einrichten: eine Rechnung als Bild (1000×1400 px) → JSON in etwa **47 s**, alle
-Felder richtig.
+Felder richtig (2026-11-08: etwa 44 s; Schreiben 8–20 Token/s).
 
 Den Schlüssel als `API_KEY=…` in die Datei `.env` im Wurzelordner des Repositorys schreiben –
 sie ist von Git ausgeschlossen (`.gitignore`) und wird vom Testskript gelesen. Alternativ die

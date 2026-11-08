@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"unicode"
 
@@ -148,14 +147,35 @@ func (s *Service) TestAI(ctx context.Context) (AITestDTO, error) {
 	default:
 		step(true, "Schlüssel angenommen")
 	}
+	// The models the app may use: not listed as text-only (ai.Client refuses those).
+	var mine *ai.Model
+	var usable []string
+	for i, m := range models {
+		if m.Is(c.Model) {
+			mine = &models[i]
+		}
+		if !m.TextOnly() {
+			usable = append(usable, m.ID)
+		}
+	}
+	offer := "der Server hat kein Modell, das Bilder liest"
+	if len(usable) > 0 {
+		offer = "geeignet: " + strings.Join(usable, ", ")
+	}
 	switch {
 	case len(models) == 0:
 		step(false, "Der Server nennt keine Modelle")
 		return out, nil
-	case !slices.Contains(models, c.Model):
-		step(false, fmt.Sprintf("Modell „%s“ nicht gefunden – vorhanden: %s", c.Model, strings.Join(models, ", ")))
+	case mine == nil:
+		step(false, fmt.Sprintf("Modell „%s“ nicht gefunden – %s", c.Model, offer))
 		return out, nil
+	case mine.TextOnly():
+		step(false, fmt.Sprintf("Modell „%s“ liest keine Bilder – die App nutzt nur Modelle, die auch Bilder lesen; %s", c.Model, offer))
+		return out, nil
+	case mine.Inputs != nil:
+		out.OK = step(true, fmt.Sprintf("Modell „%s“ vorhanden, liest Bilder", c.Model))
+	default:
+		out.OK = step(true, fmt.Sprintf("Modell „%s“ vorhanden", c.Model))
 	}
-	out.OK = step(true, fmt.Sprintf("Modell „%s“ vorhanden", c.Model))
 	return out, nil
 }
