@@ -183,6 +183,9 @@ creates a data folder with made-up invoices to point it at.
     field is filled.
   - "Fragen" sends the question, today's date and the app's vocabulary (payer names, categories,
     statuses) – never an invoice. The app computes the answer from its own data.
+  - Settings · KI asks the server for its list of models (for the choice of model) while the
+    page is open with the AI switched on, and after a connection test – that request carries
+    only the key, no data.
   - Only a model that reads images is used: the app refuses one the server lists as text-only
     (`architecture.input_modalities`), for documents and questions alike. On the home server
     the text-only model searches the web, so health data must never reach it

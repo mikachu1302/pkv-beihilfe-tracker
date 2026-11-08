@@ -300,6 +300,11 @@ or was decided on the way:
   only models that read images ("geeignet: …") and says why a text-only one is refused. Only one
   model is in memory, so a question may wait for a phone's answer and the switch (~8 s):
   `ask.QuestionTimeout` 60 → 120 s, as the server's handoff asks.
+- **Choice of model (2026-11-08):** Settings · KI offers the server's models that read images in a
+  list (`Svc.AIModels`, the same rule as the connection test), with "Anderes Modell eintragen …"
+  for a name typed by hand. The list is asked for while the page is open with the AI on, after
+  another address or key and after each connection test – a request with nothing but the key.
+  Without a list (AI off and not tested, server away) the name is typed as before.
 
 **Questions**
 - The question set moved from `scripts/ki-fragentest.py` to `internal/ask/testdata/fragen.json`

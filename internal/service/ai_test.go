@@ -162,6 +162,32 @@ func TestTestAI(t *testing.T) {
 	}
 }
 
+// The choice in Settings · KI offers only models that read images (or that
+// the server says nothing about); it works while the AI is off.
+func TestAIModels(t *testing.T) {
+	s := newTestService(t)
+	fake := &aitest.Server{Models: []string{"qwen3-vl-8b", "qwen3.5-4b", "anderes"},
+		Inputs: map[string][]string{"qwen3-vl-8b": {"text", "image"}, "qwen3.5-4b": {"text"}}}
+	withAI(t, s, fake)
+	cur := s.AISettings()
+	cur.On = false
+	if _, err := s.SetAISettings(cur); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.AIModels(t.Context())
+	if err != nil || strings.Join(got, ",") != "qwen3-vl-8b,anderes" {
+		t.Errorf("models %v %v", got, err)
+	}
+	fake.Models = []string{"qwen3.5-4b"}
+	if got, err := s.AIModels(t.Context()); err != nil || got == nil || len(got) != 0 {
+		t.Errorf("only text-only: %#v %v", got, err) // an empty list, not null (the UI falls back to typing)
+	}
+	_, _ = s.SetAIKey("falsch-falsch-falsch")
+	if _, err := s.AIModels(t.Context()); !errors.Is(err, ai.ErrKey) {
+		t.Errorf("wrong key: %v", err)
+	}
+}
+
 func TestTestAIUnreachable(t *testing.T) {
 	s := newTestService(t)
 	srv := httptest.NewServer(&aitest.Server{})

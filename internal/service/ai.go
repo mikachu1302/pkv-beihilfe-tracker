@@ -115,6 +115,33 @@ func (s *Service) aiClient(anyway bool) (*ai.Client, error) {
 	return &ai.Client{URL: d.URL, Model: d.Model, Key: s.cfg.AI.Key, Lock: s.aiLock}, nil
 }
 
+// AIModels lists the server's models the app can use, for the choice in
+// Settings · KI. Works while the AI is switched off, like TestAI; it sends
+// nothing but the key.
+func (s *Service) AIModels(ctx context.Context) ([]string, error) {
+	c, err := s.aiClient(true)
+	if err != nil {
+		return nil, err
+	}
+	models, err := c.Models(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return usableModels(models), nil
+}
+
+// usableModels are the IDs of the models not listed as text-only
+// (ai.Client refuses those).
+func usableModels(models []ai.Model) []string {
+	out := []string{}
+	for _, m := range models {
+		if !m.TextOnly() {
+			out = append(out, m.ID)
+		}
+	}
+	return out
+}
+
 // TestAI checks the connection: is the server there, does it take the key,
 // does it have the model. Each step that ran is in the result.
 func (s *Service) TestAI(ctx context.Context) (AITestDTO, error) {
@@ -147,17 +174,13 @@ func (s *Service) TestAI(ctx context.Context) (AITestDTO, error) {
 	default:
 		step(true, "Schlüssel angenommen")
 	}
-	// The models the app may use: not listed as text-only (ai.Client refuses those).
 	var mine *ai.Model
-	var usable []string
 	for i, m := range models {
 		if m.Is(c.Model) {
 			mine = &models[i]
 		}
-		if !m.TextOnly() {
-			usable = append(usable, m.ID)
-		}
 	}
+	usable := usableModels(models)
 	offer := "der Server hat kein Modell, das Bilder liest"
 	if len(usable) > 0 {
 		offer = "geeignet: " + strings.Join(usable, ", ")
